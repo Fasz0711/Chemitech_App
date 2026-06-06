@@ -20,7 +20,7 @@ public class MainMenuManager : MonoBehaviour
 
     // ─── Nombres de Escenas ─────────────────────────────────────────────────
     [Header("Nombres de Escenas")]
-    [SerializeField] private string escenaJugar = "GameScene";
+    [SerializeField] private string escenaJugar = "GuestPromptScene";
     [SerializeField] private string escenaDiario = "DiaryScene";
     [SerializeField] private string escenaAjustes = "SettingsScene";
     [SerializeField] private string escenaLogin = "LoginScene";

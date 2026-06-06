@@ -1161,7 +1161,7 @@ MonoBehaviour:
   btnDiario: {fileID: 0}
   btnAjustes: {fileID: 0}
   btnIniciarSesion: {fileID: 0}
-  escenaJugar: GameScene
+  escenaJugar: GuestPromptScene
   escenaDiario: DiaryScene
   escenaAjustes: SettingsScene
   escenaLogin: LoginScene
