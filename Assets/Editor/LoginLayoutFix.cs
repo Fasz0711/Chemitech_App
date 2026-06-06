@@ -310,6 +310,136 @@ public static class LoginLayoutFix
     }
 
     // ═══════════════════════════════════════════════════════════════════════
+    // ChemiTech/Fix/Wire Login Manager
+    // Añade LoginManager a la escena (si falta) y cablea todos los botones
+    // e inputs para que el toggle y el resto de la lógica funcionen.
+    // ═══════════════════════════════════════════════════════════════════════
+    [MenuItem("ChemiTech/Fix/Wire Login Manager")]
+    static void WireLoginManager()
+    {
+        var mgr = Object.FindFirstObjectByType<LoginManager>();
+        if (mgr == null)
+        {
+            var canvas = GameObject.Find("Canvas");
+            if (canvas == null)
+            {
+                EditorUtility.DisplayDialog("Error", "No se encontró 'Canvas' en la escena.", "OK");
+                return;
+            }
+            var mgrGo = new GameObject("LoginManager", typeof(RectTransform));
+            mgrGo.transform.SetParent(canvas.transform, false);
+            mgr = mgrGo.AddComponent<LoginManager>();
+            Debug.Log("[WireLoginManager] LoginManager creado en Canvas.");
+        }
+
+        var so = new SerializedObject(mgr);
+
+        // Inputs
+        var emailGO = GameObject.Find("EmailField");
+        var passGO  = GameObject.Find("PasswordField");
+        so.FindProperty("inputEmail").objectReferenceValue    = emailGO ? emailGO.GetComponent<TMP_InputField>()  : null;
+        so.FindProperty("inputPassword").objectReferenceValue = passGO  ? passGO.GetComponent<TMP_InputField>()   : null;
+
+        // Toggle ojo — vive dentro de PasswordField como hijo "BtnToggle"
+        Button toggleBtn = null;
+        if (passGO != null)
+        {
+            var t = passGO.transform.Find("BtnToggle");
+            if (t != null) toggleBtn = t.GetComponent<Button>();
+        }
+        so.FindProperty("btnTogglePassword").objectReferenceValue = toggleBtn;
+
+        // Botones por nombre
+        so.FindProperty("btnIniciarSesion").objectReferenceValue = FindBtn("BtnIniciarSesion");
+        so.FindProperty("btnOlvidaste").objectReferenceValue     = FindBtn("BtnOlvidaste");
+        so.FindProperty("btnRegistrate").objectReferenceValue    = FindBtn("BtnRegistrate");
+        so.FindProperty("btnCerrar").objectReferenceValue        = FindBtn("BtnCerrar");
+
+        so.ApplyModifiedProperties();
+        EditorSceneManager.MarkSceneDirty(
+            UnityEngine.SceneManagement.SceneManager.GetActiveScene());
+
+        string ok(bool b) => b ? "✓" : "✗ NO ENCONTRADO";
+        EditorUtility.DisplayDialog("Wire Login Manager",
+            $"inputEmail:       {ok(emailGO != null)}\n" +
+            $"inputPassword:    {ok(passGO  != null)}\n" +
+            $"btnToggle:        {ok(toggleBtn != null)}\n" +
+            $"btnIniciarSesion: {ok(FindBtn("BtnIniciarSesion") != null)}\n" +
+            $"btnOlvidaste:     {ok(FindBtn("BtnOlvidaste") != null)}\n" +
+            $"btnRegistrate:    {ok(FindBtn("BtnRegistrate") != null)}\n" +
+            $"btnCerrar:        {ok(FindBtn("BtnCerrar") != null)}\n\n" +
+            "Guarda con Ctrl+S y prueba con Play.", "OK");
+    }
+
+    static Button FindBtn(string name)
+    {
+        var go = GameObject.Find(name);
+        return go ? go.GetComponent<Button>() : null;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ChemiTech/Fix/Text Buttons
+    // Mueve el TextMeshProUGUI de BtnOlvidaste y BtnRegistrate a un hijo
+    // para que sea visible (un GO no puede tener Image + TMP a la vez).
+    // ═══════════════════════════════════════════════════════════════════════
+    [MenuItem("ChemiTech/Fix/Text Buttons")]
+    static void FixTextButtons()
+    {
+        var fnt = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/Fredoka-Medium SDF.asset");
+
+        FixTextButton(fnt, "BtnOlvidaste",
+            "¿Olvidaste tu contraseña?",
+            21f, Hex("B7EFFF"), TextAlignmentOptions.Right);
+
+        FixTextButton(fnt, "BtnRegistrate",
+            "¿No tienes cuenta?  <color=#FFD23F><b>Regístrate</b></color>",
+            22f, new Color(1f, 1f, 1f, 0.8f), TextAlignmentOptions.Center);
+
+        EditorSceneManager.MarkSceneDirty(
+            UnityEngine.SceneManagement.SceneManager.GetActiveScene());
+        EditorUtility.DisplayDialog("¡Listo!",
+            "Botones corregidos.\nGuarda con Ctrl+S.", "OK");
+    }
+
+    static void FixTextButton(TMP_FontAsset fnt, string goName,
+        string text, float fontSize, Color color, TextAlignmentOptions align)
+    {
+        var go = GameObject.Find(goName);
+        if (go == null) { Debug.LogWarning($"[FixTextButton] No encontró: {goName}"); return; }
+
+        // Eliminar TMP del root (conflicto con Image)
+        var rootTmp = go.GetComponent<TextMeshProUGUI>();
+        if (rootTmp != null) Object.DestroyImmediate(rootTmp);
+
+        // Crear / reusar hijo Label
+        var labelT  = go.transform.Find("Label");
+        var labelGo = labelT != null ? labelT.gameObject
+                    : new GameObject("Label", typeof(RectTransform));
+        labelGo.transform.SetParent(go.transform, false);
+
+        // Ocupar todo el espacio del padre
+        var rt = labelGo.GetComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.pivot     = new Vector2(0.5f, 0.5f);
+        rt.offsetMin = rt.offsetMax = Vector2.zero;
+
+        var tmp = labelGo.GetComponent<TextMeshProUGUI>();
+        if (tmp == null) tmp = labelGo.AddComponent<TextMeshProUGUI>();
+        tmp.text              = text;
+        tmp.font              = fnt;
+        tmp.fontSize          = fontSize;
+        tmp.color             = color;
+        tmp.alignment         = align;
+        tmp.richText          = true;
+        tmp.overflowMode      = TextOverflowModes.Overflow;
+        tmp.enableWordWrapping = false;
+
+        EditorUtility.SetDirty(go);
+        Debug.Log($"[FixTextButton] ✓ {goName} corregido.");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
     // ChemiTech/Fix/Rounded Panels
     // Genera un sprite de rectángulo redondeado y lo aplica a LoginPanel
     // y PanelInner para que los bordes se vean suaves.
