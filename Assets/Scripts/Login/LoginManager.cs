@@ -18,7 +18,7 @@ public class LoginManager : MonoBehaviour
 
     [Header("Escenas")]
     [SerializeField] private string escenaMenu     = "SampleScene";
-    [SerializeField] private string escenaRegistro = "RegisterScene";
+    [SerializeField] private string escenaRegistro = "RegisterEmailScene";
 
     [Header("Feedback")]
     [SerializeField] private TextMeshProUGUI txtError;

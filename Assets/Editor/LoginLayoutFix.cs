@@ -231,7 +231,11 @@ public static class LoginLayoutFix
         colors.selectedColor    = new Color(0.9f, 0.9f, 1f, 1f);
         colors.pressedColor     = new Color(0.8f, 0.8f, 0.8f, 1f);
         field.colors = colors;
-        field.interactable = true;
+        field.interactable     = true;
+        field.customCaretColor = true;
+        field.caretColor       = Color.white;
+        field.caretWidth       = 2;
+        field.caretBlinkRate   = 0.85f;
 
         EditorUtility.SetDirty(go);
         return field;
