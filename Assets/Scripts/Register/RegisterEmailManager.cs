@@ -13,7 +13,8 @@ public class RegisterEmailManager : MonoBehaviour
     [SerializeField] private Button btnSiguiente;
 
     [Header("Escenas")]
-    [SerializeField] private string escenaAtras = "LoginScene";
+    [SerializeField] private string escenaAtras     = "LoginScene";
+    [SerializeField] private string escenaSiguiente = "RegisterPasswordScene";
 
     private void Start()
     {
@@ -25,13 +26,12 @@ public class RegisterEmailManager : MonoBehaviour
 
     private void OnSiguiente()
     {
-        // TODO: validar email y cargar siguiente paso del registro
         string email = inputEmail ? inputEmail.text.Trim() : "";
         if (string.IsNullOrEmpty(email))
         {
             Debug.LogWarning("[RegisterEmail] El campo de correo está vacío.");
             return;
         }
-        Debug.Log($"[RegisterEmail] Siguiente paso con: {email}");
+        SceneManager.LoadScene(escenaSiguiente);
     }
 }
