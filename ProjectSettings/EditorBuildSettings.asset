@@ -20,5 +20,11 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/RegisterPasswordScene.unity
     guid: f7d72c380fe9c2b4cb2e933efd98c2fa
+  - enabled: 1
+    path: Assets/Scenes/RegisterUsernameScene.unity
+    guid: a9e5aa75f2cfad448af0e298011b5b01
+  - enabled: 1
+    path: Assets/Scenes/MisUniversosScene.unity
+    guid: 4aaa663cbe46e3247a1480399409cb17
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
