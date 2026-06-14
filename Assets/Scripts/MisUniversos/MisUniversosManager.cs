@@ -13,6 +13,6 @@ public class MisUniversosManager : MonoBehaviour
     private void Start()
     {
         if (btnAtras) btnAtras.onClick.AddListener(() => SceneManager.LoadScene(escenaAtras));
-        if (btnCrear) btnCrear.onClick.AddListener(() => Debug.Log("[MisUniversos] Crear universo — pendiente."));
+        if (btnCrear) btnCrear.onClick.AddListener(() => SceneManager.LoadScene("CrearUniversoScene"));
     }
 }
