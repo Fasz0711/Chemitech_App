@@ -28,7 +28,6 @@ public class CrearUniversoManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI[] colorChecks;
 
     [Header("Botones")]
-
     [SerializeField] private Button btnAtras;
     [SerializeField] private Button btnCancelar;
     [SerializeField] private Button btnCrear;

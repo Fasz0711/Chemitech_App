@@ -150,7 +150,7 @@ public static class CrearUniversoBuilder
         var prevIconGo  = MakeEmpty(panelGo.transform, "PreviewIcon");
         SetRT(prevIconGo, new Vector2(PREV_X, 38f), new Vector2(90f, 90f));
         var prevIconImg = prevIconGo.AddComponent<Image>();
-        prevIconImg.sprite = iconSprites[1]; // índice 1 = planeta (default)
+        prevIconImg.sprite = iconSprites[1]; // planeta por defecto
         prevIconImg.type   = Image.Type.Simple; prevIconImg.preserveAspect = true;
 
         var prevNameGo  = MakeEmpty(panelGo.transform, "PreviewNameLabel");
@@ -275,6 +275,7 @@ public static class CrearUniversoBuilder
         so.FindProperty("previewCircle").objectReferenceValue   = prevCircImg;
         so.FindProperty("previewIcon").objectReferenceValue     = prevIconImg;
         so.FindProperty("previewNameLabel").objectReferenceValue = prevNameTmp;
+        so.FindProperty("btnAtras").objectReferenceValue        = btnAtrasH;
         so.FindProperty("btnCancelar").objectReferenceValue     = btnCancelar;
         so.FindProperty("btnCrear").objectReferenceValue        = btnCrear;
 
@@ -313,7 +314,7 @@ public static class CrearUniversoBuilder
         };
     }
 
-    // 1 — Galaxia: campo estelar con nébula central
+    // 0 — Galaxia
     static Sprite GenGalaxyIcon()
     {
         int s = 64;
@@ -332,7 +333,7 @@ public static class CrearUniversoBuilder
         return SaveIcon(px, s, "icon_galaxy");
     }
 
-    // 2 — Planeta tipo Saturno con anillo
+    // 1 — Planeta tipo Saturno con anillo
     static Sprite GenPlanetIcon()
     {
         int s = 64;
@@ -342,14 +343,11 @@ public static class CrearUniversoBuilder
         Color pDark  = new Color(0.10f,0.38f,0.75f,1f);
         Color pLight = new Color(0.38f,0.72f,0.98f,1f);
         Color ring   = new Color(0.98f,0.80f,0.25f,1f);
-        // Anillo detrás del planeta
         DrawEllipseRing(px, s, cx, cy, rA, rB, rT, ring);
-        // Planeta (encima del anillo)
         for(int y=0;y<s;y++) for(int x=0;x<s;x++){
             float dx=x-cx, dy=y-cy, d=Mathf.Sqrt(dx*dx+dy*dy);
             if(d<=pr){ float lum=Mathf.Clamp01(0.45f-dy/pr*0.35f); px[y*s+x]=Color.Lerp(pDark,pLight,lum); }
         }
-        // Anillo delante del planeta (mitad superior)
         for(int y=0;y<s;y++) for(int x=0;x<s;x++){
             float dx=x-cx, dy=y-cy;
             if(dy>=0) continue;
@@ -361,16 +359,15 @@ public static class CrearUniversoBuilder
         return SaveIcon(px, s, "icon_planet");
     }
 
-    // 3 — Cometa: círculo naranja con cola
+    // 2 — Cometa
     static Sprite GenCometIcon()
     {
         int s = 64;
         var px = ClearPx(s);
         float hx=44f, hy=18f;
-        // Cola (degradado hacia abajo-izquierda)
         for(int y=0;y<s;y++) for(int x=0;x<s;x++){
             float dx=x-hx, dy=y-hy;
-            float proj=(dx*(-1)+dy*(-1))/Mathf.Sqrt(2f); // proyección en dir (-1,-1)/√2 → cola
+            float proj=(dx*(-1)+dy*(-1))/Mathf.Sqrt(2f);
             float perp=(dx*(-1)+dy*1)/Mathf.Sqrt(2f);
             if(proj>0 && proj<30 && Mathf.Abs(perp)<4.5f*(1f-proj/30f)){
                 float a=(1f-proj/30f);
@@ -382,7 +379,7 @@ public static class CrearUniversoBuilder
         return SaveIcon(px, s, "icon_comet");
     }
 
-    // 4 — Estrella de 5 puntas amarilla
+    // 3 — Estrella de 5 puntas
     static Sprite GenStarIcon()
     {
         int s = 64;
@@ -392,7 +389,7 @@ public static class CrearUniversoBuilder
         return SaveIcon(px, s, "icon_star");
     }
 
-    // 5 — Destello de 4+4 puntas dorado
+    // 4 — Destello de 4+4 puntas
     static Sprite GenBurstIcon()
     {
         int s = 64;
@@ -403,7 +400,7 @@ public static class CrearUniversoBuilder
         return SaveIcon(px, s, "icon_burst");
     }
 
-    // 6 — Satélite: cuerpo central + paneles solares
+    // 5 — Satélite
     static Sprite GenSatelliteIcon()
     {
         int s = 64;
@@ -420,7 +417,7 @@ public static class CrearUniversoBuilder
         return SaveIcon(px, s, "icon_satellite");
     }
 
-    // 7 — Globo terrestre: esfera azul con meridianos
+    // 6 — Globo terrestre
     static Sprite GenGlobeIcon()
     {
         int s = 64;
@@ -437,12 +434,11 @@ public static class CrearUniversoBuilder
         DrawEllipseRing(px,s,cx,cy+10f,20f,3.5f,1f,line);
         DrawEllipseRing(px,s,cx,cy-10f,20f,3.5f,1f,line);
         for(int y=0;y<s;y++){ float dy=y-cy; if(Mathf.Abs(dy)<r){ int ix=(int)cx; if(Mathf.Sqrt((ix-cx)*(ix-cx)+dy*dy)<r) px[y*s+ix]=line; } }
-        // Recortar al círculo
         for(int y=0;y<s;y++) for(int x=0;x<s;x++){ float d=Mathf.Sqrt((x-cx)*(x-cx)+(y-cy)*(y-cy)); if(d>r) px[y*s+x]=Color.clear; }
         return SaveIcon(px, s, "icon_globe");
     }
 
-    // 8 — Telescopio: tubo diagonal + trípode
+    // 7 — Telescopio
     static Sprite GenTelescopeIcon()
     {
         int s = 64;
@@ -450,7 +446,6 @@ public static class CrearUniversoBuilder
         Color tube  = new Color(0.38f,0.40f,0.52f,1f);
         Color metal = new Color(0.58f,0.60f,0.72f,1f);
         Color lens  = new Color(0.30f,0.72f,1.00f,1f);
-        // Tubo diagonal (de arriba-derecha a abajo-izquierda)
         for(int y=0;y<s;y++) for(int x=0;x<s;x++){
             float t=(x+y-58f)/Mathf.Sqrt(2f);
             float n=(x-y)/Mathf.Sqrt(2f);
