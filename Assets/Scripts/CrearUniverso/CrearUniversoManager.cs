@@ -96,8 +96,12 @@ public class CrearUniversoManager : MonoBehaviour
         for (int i = 0; i < iconBorders.Length; i++)
             if (iconBorders[i]) iconBorders[i].color = (i == idx) ? COL_ICON_SEL : COL_ICON_UNSEL;
 
-        if (previewIcon && iconSprites != null && idx < iconSprites.Length)
-            previewIcon.sprite = iconSprites[idx];
+        if (previewIcon && iconButtons != null && idx < iconButtons.Length && iconButtons[idx])
+        {
+            // Lee el sprite del hijo "IconImg" del botón, sin necesitar iconSprites[] cableado
+            var child = iconButtons[idx].transform.GetChild(0).GetComponent<Image>();
+            if (child) previewIcon.sprite = child.sprite;
+        }
     }
 
     void SelectColor(int idx)
