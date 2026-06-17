@@ -34,6 +34,7 @@ public class RegisterEmailManager : MonoBehaviour
 
     Coroutine _debounce;
     bool _emailValido;
+    int _validationId;
 
     void Start()
     {
@@ -62,6 +63,7 @@ public class RegisterEmailManager : MonoBehaviour
 
     void OnEmailChanged(string value)
     {
+        _validationId++;
         _emailValido = false;
         SetBotonActivo(false);
 
@@ -89,21 +91,21 @@ public class RegisterEmailManager : MonoBehaviour
     {
         yield return new WaitForSeconds(DEBOUNCE);
 
-        if (inputEmail) inputEmail.interactable = false;
+        int myId = _validationId;
 
         ApiManager.Instance.ValidateEmail(email,
             onSuccess: _ =>
             {
+                if (myId != _validationId) return;
                 _emailValido = true;
                 ShowFeedback("¡Correo disponible!", COLOR_OK);
                 SetBotonActivo(true);
-                if (inputEmail) inputEmail.interactable = true;
             },
             onError: (code, detail) =>
             {
+                if (myId != _validationId) return;
                 _emailValido = false;
                 SetBotonActivo(false);
-                if (inputEmail) inputEmail.interactable = true;
 
                 switch (detail)
                 {

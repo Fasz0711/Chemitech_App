@@ -37,6 +37,12 @@ public class ApiManager : MonoBehaviour
         StartCoroutine(Post("/authentication/validate/email", body, onSuccess, onError));
     }
 
+    public void ValidatePassword(string password, Action<string> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new PasswordRequest { password = password });
+        StartCoroutine(Post("/authentication/validate/password", body, onSuccess, onError));
+    }
+
     // ── Core HTTP ─────────────────────────────────────────────────────────────
 
     IEnumerator Post(string endpoint, string jsonBody, Action<string> onSuccess, Action<int, string> onError)
@@ -74,7 +80,8 @@ public class ApiManager : MonoBehaviour
 
     // ── DTOs ──────────────────────────────────────────────────────────────────
 
-    [Serializable] class EmailRequest   { public string email; }
+    [Serializable] class EmailRequest    { public string email; }
+    [Serializable] class PasswordRequest { public string password; }
     [Serializable] class MessageResponse { public string message; }
     [Serializable] class DetailResponse  { public string detail; }
 }
