@@ -29,5 +29,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/CrearUniversoScene.unity
     guid: 2d1a9667e9aa094499a708114d952963
+  - enabled: 1
+    path: Assets/Scenes/CuentaCreadaScene.unity
+    guid: d71822b5eec794c438ce256da3a44fd3
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}

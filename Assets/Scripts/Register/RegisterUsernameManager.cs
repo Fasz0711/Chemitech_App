@@ -29,7 +29,8 @@ public class RegisterUsernameManager : MonoBehaviour
     [SerializeField] private Button btnSiguiente;
 
     [Header("Escenas")]
-    [SerializeField] private string escenaAtras = "RegisterPasswordScene";
+    [SerializeField] private string escenaAtras     = "RegisterPasswordScene";
+    [SerializeField] private string escenaSiguiente = "CuentaCreadaScene";
 
     static readonly Color BG_MET   = new Color(0.18f, 0.75f, 0.35f, 0.85f);
     static readonly Color BG_UNMET = new Color(1f,    1f,    1f,    0.10f);
@@ -45,10 +46,7 @@ public class RegisterUsernameManager : MonoBehaviour
 
     private void OnAtras() => SceneManager.LoadScene(escenaAtras);
 
-    private void OnSiguiente()
-    {
-        Debug.Log("[RegisterUsername] Siguiente — pendiente.");
-    }
+    private void OnSiguiente() => SceneManager.LoadScene(escenaSiguiente);
 
     private void OnUsernameChanged(string value) => UpdateValidation(value);
 
