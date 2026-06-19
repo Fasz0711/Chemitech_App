@@ -1,340 +1,365 @@
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.SceneManagement;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using UnityEngine.EventSystems;
 using TMPro;
 
+/// <summary>
+/// Builder ADITIVO de MisUniversosScene. NO usa NewScene: abre la escena
+/// existente y solo AGREGA lo que falta (estado de lista, badge, manager),
+/// agrupando el estado vacío ya presente. Re-ejecutarlo NO resetea posiciones.
+/// </summary>
 public static class MisUniversosBuilder
 {
-    const float RW = 1600f, RH = 900f;
-    const float PANEL_W   = 760f;
-    const float HEADER_H  = 82f;
-    const float CONTENT_H = 440f;
-    const float GAP       = 16f;
+    const string ScenePath = "Assets/Scenes/MisUniversosScene.unity";
 
     [MenuItem("ChemiTech/Build Mis Universos Scene")]
     public static void Build()
     {
-        if (!EditorUtility.DisplayDialog("Construir Mis Universos Scene",
-            "Esto creará Assets/Scenes/MisUniversosScene.unity.\n¿Continuar?",
-            "Sí, construir", "Cancelar"))
+        if (!EditorUtility.DisplayDialog("Construir Mis Universos Scene (aditivo)",
+            "Esto ABRE la escena existente y solo AGREGA la funcionalidad de lista.\n" +
+            "NO borra ni reposiciona lo que ya tienes.\n\n¿Continuar?",
+            "Sí, continuar", "Cancelar"))
             return;
 
-        EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        // ── Abrir la escena existente (sin destruir nada) ─────────────────────
+        var scene = EditorSceneManager.GetActiveScene();
+        if (scene.path != ScenePath)
+        {
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+            scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+        }
 
-        // ── Assets ───────────────────────────────────────────────────────────
+        // ── Assets ────────────────────────────────────────────────────────────
         var fnt        = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/Fredoka-Medium SDF.asset");
-        var circleSpr  = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/AtomCircle.png");
-        var bgSpr      = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/MainMenuBG.png");
         var roundedSpr = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/Login/rounded-panel.png");
-        var planetSpr  = GeneratePlanetSprite();
-        var ringSpr    = GenerateRingSprite();
+        var uiSpr      = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        var circleSpr  = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/AtomCircle.png");
+        var iconSprites = LoadIconSprites();
 
-        // ── Cámara ───────────────────────────────────────────────────────────
-        var camGo = new GameObject("Main Camera");
-        camGo.tag = "MainCamera";
-        var cam = camGo.AddComponent<Camera>();
-        cam.clearFlags      = CameraClearFlags.SolidColor;
-        cam.backgroundColor = Hex("0A1240");
-        cam.orthographic    = true;
-        cam.depth           = -1;
-        camGo.AddComponent<AudioListener>();
+        // ── Localizar nodos existentes ────────────────────────────────────────
+        var canvas = FindInScene(scene, "Canvas");
+        if (canvas == null) { EditorUtility.DisplayDialog("Error", "No se encontró 'Canvas' en la escena.", "OK"); return; }
+        var contentPanel = FindChildRecursive(canvas.transform, "ContentPanel");
+        if (contentPanel == null) { EditorUtility.DisplayDialog("Error", "No se encontró 'ContentPanel'.", "OK"); return; }
+        var headerPanel     = FindChildRecursive(canvas.transform, "HeaderPanel");
+        var btnAtras        = FindChildRecursive(canvas.transform, "BtnAtras")?.GetComponent<Button>();
+        var btnCrearEmptyGo = FindChildRecursive(contentPanel.transform, "BtnCrear");
 
-        // ── EventSystem ───────────────────────────────────────────────────────
-        var esGo = new GameObject("EventSystem");
-        esGo.AddComponent<EventSystem>();
-        esGo.AddComponent<StandaloneInputModule>();
+        // ── 1) Agrupar el estado vacío existente (solo una vez) ───────────────
+        var emptyState = FindChildRecursive(contentPanel.transform, "EmptyState");
+        if (emptyState == null)
+        {
+            emptyState = MakeFill(contentPanel.transform, "EmptyState");
+            emptyState.transform.SetAsFirstSibling();
+            var toMove = new System.Collections.Generic.List<Transform>();
+            foreach (Transform child in contentPanel.transform)
+                if (child.gameObject != emptyState) toMove.Add(child);
+            foreach (var t in toMove)
+                t.SetParent(emptyState.transform, true); // worldPositionStays = true (preserva posición)
+        }
 
-        // ── Canvas ────────────────────────────────────────────────────────────
-        var cGo = new GameObject("Canvas");
-        var cv  = cGo.AddComponent<Canvas>();
-        cv.renderMode = RenderMode.ScreenSpaceOverlay;
-        var csc = cGo.AddComponent<CanvasScaler>();
-        csc.uiScaleMode         = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        csc.referenceResolution = new Vector2(RW, RH);
-        csc.matchWidthOrHeight  = 0.5f;
-        cGo.AddComponent<GraphicRaycaster>();
+        // ── 2) Crear el estado de lista (solo una vez) ────────────────────────
+        var listState = FindChildRecursive(contentPanel.transform, "ListState");
+        if (listState == null)
+        {
+            listState = BuildListState(contentPanel.transform, fnt, roundedSpr,
+                out _listContent, out _cardTemplate, out _btnCrearList);
+            listState.SetActive(false);
+        }
+        else
+        {
+            _listContent  = FindChildRecursive(listState.transform, "Content")?.GetComponent<RectTransform>();
+            _cardTemplate = FindChildRecursive(listState.transform, "CardTemplate");
+            _btnCrearList = FindChildRecursive(listState.transform, "BtnCrearList")?.GetComponent<Button>();
+        }
 
-        // ── Fondo ─────────────────────────────────────────────────────────────
-        var bgGo  = MakeEmpty(cGo.transform, "Background");
-        var bgRT  = bgGo.GetComponent<RectTransform>();
-        bgRT.anchorMin = Vector2.zero; bgRT.anchorMax = Vector2.one;
-        bgRT.offsetMin = bgRT.offsetMax = Vector2.zero;
-        var bgImg = bgGo.AddComponent<Image>();
-        bgImg.sprite = bgSpr; bgImg.color = Color.white; bgImg.type = Image.Type.Simple;
+        // ── 3) Badge de conteo en el avatar (solo una vez) ────────────────────
+        GameObject badgeGroup = null; TextMeshProUGUI badgeTxt = null;
+        if (headerPanel != null)
+        {
+            var avatar = FindChildRecursive(headerPanel.transform, "AvatarIcon");
+            if (avatar != null)
+            {
+                badgeGroup = FindChildRecursive(avatar.transform, "CountBadge");
+                if (badgeGroup == null)
+                    badgeGroup = BuildCountBadge(avatar.transform, circleSpr, fnt, out badgeTxt);
+                else
+                    badgeTxt = FindChildRecursive(badgeGroup.transform, "Num")?.GetComponent<TextMeshProUGUI>();
+            }
+        }
 
-        // ── Posiciones verticales del layout ──────────────────────────────────
-        float totalH    = HEADER_H + GAP + CONTENT_H;   // 538
-        float headerCY  =  totalH / 2f - HEADER_H  / 2f; // +228
-        float contentCY = -totalH / 2f + CONTENT_H / 2f; // -49
+        // ── 4) Manager: reusar o crear, y reconectar referencias ──────────────
+        var mgrGo = FindChildRecursive(canvas.transform, "MisUniversosManager");
+        if (mgrGo == null)
+        {
+            mgrGo = new GameObject("MisUniversosManager", typeof(RectTransform));
+            mgrGo.transform.SetParent(canvas.transform, false);
+        }
+        var mgr = mgrGo.GetComponent<MisUniversosManager>();
+        if (mgr == null) mgr = mgrGo.AddComponent<MisUniversosManager>();
 
-        // ── Header: borde ─────────────────────────────────────────────────────
-        var hBorderGo  = MakeEmpty(cGo.transform, "HeaderBorder");
-        SetRT(hBorderGo, new Vector2(0f, headerCY), new Vector2(PANEL_W + 8f, HEADER_H + 8f));
-        var hBorderImg = hBorderGo.AddComponent<Image>();
-        hBorderImg.sprite = roundedSpr; hBorderImg.type = Image.Type.Sliced;
-        hBorderImg.color  = new Color(1f, 1f, 1f, 0.22f);
-
-        // ── Header: panel ─────────────────────────────────────────────────────
-        var headerGo  = MakeEmpty(cGo.transform, "HeaderPanel");
-        SetRT(headerGo, new Vector2(0f, headerCY), new Vector2(PANEL_W, HEADER_H));
-        var headerImg = headerGo.AddComponent<Image>();
-        headerImg.sprite = roundedSpr; headerImg.type = Image.Type.Sliced;
-        headerImg.color  = Hex("1E2050");
-
-        // Botón Atrás
-        const float BTN_SZ = 52f, H_PAD = 14f;
-        float backX = -PANEL_W / 2f + H_PAD + BTN_SZ / 2f;
-        var backGo  = MakeEmpty(headerGo.transform, "BtnAtras");
-        SetRT(backGo, new Vector2(backX, 0f), new Vector2(BTN_SZ, BTN_SZ));
-        var backImg = backGo.AddComponent<Image>();
-        backImg.sprite = roundedSpr; backImg.type = Image.Type.Sliced; backImg.color = Hex("2A2D5A");
-        var btnAtras = backGo.AddComponent<Button>();
-        btnAtras.targetGraphic = backImg;
-        var backLbl = MakeEmpty(backGo.transform, "Label");
-        Stretch(backLbl);
-        var backTmp = backLbl.AddComponent<TextMeshProUGUI>();
-        backTmp.text = "<"; backTmp.font = fnt; backTmp.fontSize = 28f;
-        backTmp.fontStyle = FontStyles.Bold; backTmp.color = Color.white;
-        backTmp.alignment = TextAlignmentOptions.Center;
-
-        // Avatar (placeholder)
-        float avatarX = backX + BTN_SZ / 2f + 8f + BTN_SZ / 2f;
-        var avatarGo  = MakeEmpty(headerGo.transform, "AvatarIcon");
-        SetRT(avatarGo, new Vector2(avatarX, 0f), new Vector2(BTN_SZ, BTN_SZ));
-        var avatarImg = avatarGo.AddComponent<Image>();
-        avatarImg.sprite = roundedSpr; avatarImg.type = Image.Type.Sliced;
-        avatarImg.color  = Hex("3DBE6C");
-
-        // Título del header
-        float titleStartX = avatarX + BTN_SZ / 2f + 14f;
-        float titleW      = PANEL_W / 2f - titleStartX - H_PAD;
-        float titleCX     = titleStartX + titleW / 2f;
-        var hTitleGo  = MakeEmpty(headerGo.transform, "TitleLabel");
-        SetRT(hTitleGo, new Vector2(titleCX, 0f), new Vector2(titleW, HEADER_H));
-        var hTitleTmp = hTitleGo.AddComponent<TextMeshProUGUI>();
-        hTitleTmp.text      = "Mis Universos";
-        hTitleTmp.font      = fnt;
-        hTitleTmp.fontSize  = 36f;
-        hTitleTmp.fontStyle = FontStyles.Bold;
-        hTitleTmp.color     = Color.white;
-        hTitleTmp.alignment = TextAlignmentOptions.Left | TextAlignmentOptions.Midline;
-        hTitleTmp.overflowMode = TextOverflowModes.Overflow;
-
-        // ── Contenido: borde ──────────────────────────────────────────────────
-        var cBorderGo  = MakeEmpty(cGo.transform, "PanelBorder");
-        SetRT(cBorderGo, new Vector2(0f, contentCY), new Vector2(PANEL_W + 14f, CONTENT_H + 14f));
-        var cBorderImg = cBorderGo.AddComponent<Image>();
-        cBorderImg.sprite = roundedSpr; cBorderImg.type = Image.Type.Sliced;
-        cBorderImg.color  = new Color(1f, 1f, 1f, 0.22f);
-
-        // ── Contenido: panel ──────────────────────────────────────────────────
-        var contentGo  = MakeEmpty(cGo.transform, "ContentPanel");
-        SetRT(contentGo, new Vector2(0f, contentCY), new Vector2(PANEL_W, CONTENT_H));
-        var contentImg = contentGo.AddComponent<Image>();
-        contentImg.sprite = roundedSpr; contentImg.type = Image.Type.Sliced;
-        contentImg.color  = Hex("242659");
-
-        // ── Átomos ────────────────────────────────────────────────────────────
-        MakeAtom(contentGo.transform, circleSpr, fnt, "Atom_H",  "H",  new Vector2(-268f,  55f), 70f, Hex("888888"));
-        MakeAtom(contentGo.transform, circleSpr, fnt, "Atom_O",  "O",  new Vector2( 263f,  55f), 70f, Hex("E53535"));
-        MakeAtom(contentGo.transform, circleSpr, fnt, "Atom_C",  "C",  new Vector2(-233f, -118f), 56f, Hex("555568"));
-        MakeAtom(contentGo.transform, circleSpr, fnt, "Atom_Na", "Na", new Vector2( 258f, -118f), 56f, Hex("FFD23F"));
-
-        // ── Anillo orbital (debe estar ANTES del planeta en jerarquía) ─────────
-        var ringGo  = MakeEmpty(contentGo.transform, "OrbitRing");
-        SetRT(ringGo, new Vector2(10f, 82f), new Vector2(162f, 52f));
-        ringGo.transform.localRotation = Quaternion.Euler(0f, 0f, 12f);
-        var ringImg = ringGo.AddComponent<Image>();
-        ringImg.sprite = ringSpr; ringImg.type = Image.Type.Simple; ringImg.preserveAspect = false;
-        ringImg.color  = new Color(0.45f, 0.82f, 1f, 0.65f);
-
-        // ── Planeta ───────────────────────────────────────────────────────────
-        var planetGo  = MakeEmpty(contentGo.transform, "Planet");
-        SetRT(planetGo, new Vector2(0f, 92f), new Vector2(100f, 100f));
-        var planetImg = planetGo.AddComponent<Image>();
-        planetImg.sprite = planetSpr; planetImg.type = Image.Type.Simple; planetImg.preserveAspect = true;
-
-        // ── Destellos decorativos ─────────────────────────────────────────────
-        MakeSparkle(contentGo.transform, "Sparkle1", new Vector2(-192f, 128f), 22f, new Color(0.7f, 0.9f, 1f, 0.9f));
-        MakeSparkle(contentGo.transform, "Sparkle2", new Vector2( 178f,  18f), 16f, new Color(1f,   1f,  1f, 0.8f));
-        MakeSparkle(contentGo.transform, "Sparkle3", new Vector2( -55f, -42f), 14f, new Color(0.6f, 0.8f, 1f, 0.7f));
-
-        // ── Título principal ──────────────────────────────────────────────────
-        var mainTitleGo  = MakeEmpty(contentGo.transform, "MainTitle");
-        SetRT(mainTitleGo, new Vector2(0f, -16f), new Vector2(PANEL_W - 40f, 68f));
-        var mainTitleTmp = mainTitleGo.AddComponent<TextMeshProUGUI>();
-        mainTitleTmp.text               = "Aún no tienes universos";
-        mainTitleTmp.font               = fnt;
-        mainTitleTmp.fontSize           = 46f;
-        mainTitleTmp.fontStyle          = FontStyles.Bold;
-        mainTitleTmp.color              = Color.white;
-        mainTitleTmp.alignment          = TextAlignmentOptions.Center;
-        mainTitleTmp.enableWordWrapping = false;
-
-        // ── Subtítulo ─────────────────────────────────────────────────────────
-        var subGo  = MakeEmpty(contentGo.transform, "Subtitle");
-        SetRT(subGo, new Vector2(0f, -90f), new Vector2(PANEL_W - 180f, 66f));
-        var subTmp = subGo.AddComponent<TextMeshProUGUI>();
-        subTmp.text = "¡Crea tu primer universo y empieza a combinar\nátomos para descubrir moléculas increíbles! 🌎✨";
-        subTmp.font               = fnt;
-        subTmp.fontSize           = 22f;
-        subTmp.color              = new Color(1f, 1f, 1f, 0.75f);
-        subTmp.alignment          = TextAlignmentOptions.Center;
-        subTmp.enableWordWrapping = true;
-
-        // ── Botón "Crear mi primer Universo" ──────────────────────────────────
-        var btnGo  = MakeEmpty(contentGo.transform, "BtnCrear");
-        SetRT(btnGo, new Vector2(0f, -170f), new Vector2(370f, 62f));
-        var btnImg = btnGo.AddComponent<Image>();
-        btnImg.sprite = roundedSpr; btnImg.type = Image.Type.Sliced; btnImg.color = Hex("00BCD4");
-        var btnCrear = btnGo.AddComponent<Button>();
-        btnCrear.targetGraphic = btnImg;
-        var btnLbl = MakeEmpty(btnGo.transform, "Label");
-        Stretch(btnLbl);
-        var btnTmp = btnLbl.AddComponent<TextMeshProUGUI>();
-        btnTmp.text               = "+ Crear mi primer Universo";
-        btnTmp.font               = fnt;
-        btnTmp.fontSize           = 25f;
-        btnTmp.fontStyle          = FontStyles.Bold;
-        btnTmp.color              = Color.white;
-        btnTmp.alignment          = TextAlignmentOptions.Center;
-        btnTmp.overflowMode       = TextOverflowModes.Overflow;
-        btnTmp.enableWordWrapping = false;
-
-        // ── Manager ───────────────────────────────────────────────────────────
-        var mgrGo = MakeEmpty(cGo.transform, "MisUniversosManager");
-        var mgr   = mgrGo.AddComponent<MisUniversosManager>();
-        var so    = new SerializedObject(mgr);
-        so.FindProperty("btnAtras").objectReferenceValue = btnAtras;
-        so.FindProperty("btnCrear").objectReferenceValue = btnCrear;
+        var so = new SerializedObject(mgr);
+        SetRef(so, "btnAtras",        btnAtras);
+        SetRef(so, "countBadge",      badgeTxt);
+        SetRef(so, "countBadgeGroup", badgeGroup);
+        SetRef(so, "emptyStateGroup", emptyState);
+        SetRef(so, "listGroup",       listState);
+        SetRef(so, "listContent",     _listContent);
+        SetRef(so, "cardTemplate",    _cardTemplate);
+        SetRef(so, "btnCrearEmpty",   btnCrearEmptyGo?.GetComponent<Button>());
+        SetRef(so, "btnCrearList",    _btnCrearList);
+        WireSprites(so, "iconSprites", iconSprites);
         so.ApplyModifiedProperties();
 
         // ── Guardar ───────────────────────────────────────────────────────────
-        var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
-        EditorSceneManager.SaveScene(scene, "Assets/Scenes/MisUniversosScene.unity");
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene, ScenePath);
         AssetDatabase.Refresh();
 
-        Debug.Log("[MisUniversosBuilder] ✓ MisUniversosScene creada.");
+        Debug.Log("[MisUniversosBuilder] ✓ Lista agregada (aditivo, sin resetear posiciones).");
         EditorUtility.DisplayDialog("¡Listo!",
-            "MisUniversosScene creada.\n\n" +
-            "Pasos finales:\n" +
-            "1. File → Build Settings → Add Open Scenes\n" +
-            "2. Reemplaza AvatarIcon con la imagen real en el Inspector",
+            "Se agregó la lista de universos sin tocar tus posiciones.\n\n" +
+            "El estado vacío y la lista alternan según haya universos guardados.",
             "OK");
     }
 
-    // ── Generador de sprite planeta (esfera azul con sombreado) ───────────────
-    static Sprite GeneratePlanetSprite()
+    // refs temporales compartidas entre ramas
+    static RectTransform _listContent;
+    static GameObject    _cardTemplate;
+    static Button        _btnCrearList;
+
+    // ── Construcción del estado de lista ──────────────────────────────────────
+    static GameObject BuildListState(Transform parent, TMP_FontAsset fnt, Sprite rounded,
+        out RectTransform listContent, out GameObject cardTemplate, out Button btnCrearList)
     {
-        const string path = "Assets/Sprites/planet-blue.png";
-        const int size = 128;
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-        var px  = new Color[size * size];
-        float cx = (size - 1) / 2f, cy = (size - 1) / 2f;
-        float r  = size / 2f - 2f;
-        var baseDark  = new Color(0.04f, 0.22f, 0.52f, 1f);
-        var baseLight = new Color(0.28f, 0.78f, 0.96f, 1f);
-        // Normalized light direction (upper-left)
-        float lx = -0.4f, ly = 0.6f, lz = 0.7f;
-        float lLen = Mathf.Sqrt(lx*lx + ly*ly + lz*lz);
-        lx /= lLen; ly /= lLen; lz /= lLen;
-        for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-            {
-                float dx = x - cx, dy = y - cy;
-                float d  = Mathf.Sqrt(dx*dx + dy*dy);
-                if (d > r) { px[y*size+x] = Color.clear; continue; }
-                float nx = dx / r, ny = dy / r;
-                float nz = Mathf.Sqrt(Mathf.Max(0f, 1f - nx*nx - ny*ny));
-                float dot = nx*lx + ny*ly + nz*lz;
-                float lum = Mathf.Clamp01(dot * 0.7f + 0.38f);
-                px[y*size+x] = Color.Lerp(baseDark, baseLight, lum);
-            }
-        tex.SetPixels(px); tex.Apply();
-        System.IO.File.WriteAllBytes(path, tex.EncodeToPNG());
-        AssetDatabase.ImportAsset(path);
-        var ti = AssetImporter.GetAtPath(path) as TextureImporter;
-        if (ti != null) { ti.textureType = TextureImporterType.Sprite; ti.spritePixelsPerUnit = 100; ti.SaveAndReimport(); }
-        return AssetDatabase.LoadAssetAtPath<Sprite>(path);
+        var listState = MakeFill(parent, "ListState");
+
+        // Botón "+ Crear nuevo Universo" arriba (top-stretch)
+        var btnGo = MakeEmpty(listState.transform, "BtnCrearList");
+        var btnRT = btnGo.GetComponent<RectTransform>();
+        btnRT.anchorMin = new Vector2(0f, 1f); btnRT.anchorMax = new Vector2(1f, 1f);
+        btnRT.pivot = new Vector2(0.5f, 1f);
+        btnRT.offsetMin = new Vector2(22f, -86f); btnRT.offsetMax = new Vector2(-22f, -22f);
+        var btnImg = btnGo.AddComponent<Image>();
+        btnImg.sprite = rounded; btnImg.type = Image.Type.Sliced; btnImg.color = Hex("19A7CE");
+        btnCrearList = btnGo.AddComponent<Button>(); btnCrearList.targetGraphic = btnImg;
+        var btnLbl = MakeEmpty(btnGo.transform, "Label"); Stretch(btnLbl);
+        var btnTmp = btnLbl.AddComponent<TextMeshProUGUI>();
+        btnTmp.text = "+ Crear nuevo Universo"; btnTmp.font = fnt; btnTmp.fontSize = 28f;
+        btnTmp.fontStyle = FontStyles.Bold; btnTmp.color = Color.white;
+        btnTmp.alignment = TextAlignmentOptions.Center; btnTmp.overflowMode = TextOverflowModes.Overflow;
+
+        // ScrollView (debajo del botón, llena el resto)
+        var scrollGo = MakeEmpty(listState.transform, "ScrollView");
+        var scrollRT = scrollGo.GetComponent<RectTransform>();
+        scrollRT.anchorMin = new Vector2(0f, 0f); scrollRT.anchorMax = new Vector2(1f, 1f);
+        scrollRT.offsetMin = new Vector2(22f, 20f); scrollRT.offsetMax = new Vector2(-22f, -98f);
+        var scroll = scrollGo.AddComponent<ScrollRect>();
+        scroll.horizontal = false; scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.scrollSensitivity = 26f;
+
+        // Viewport
+        var vpGo = MakeEmpty(scrollGo.transform, "Viewport");
+        var vpRT = vpGo.GetComponent<RectTransform>();
+        vpRT.anchorMin = Vector2.zero; vpRT.anchorMax = Vector2.one;
+        vpRT.offsetMin = new Vector2(0f, 0f); vpRT.offsetMax = new Vector2(-16f, 0f);
+        vpRT.pivot = new Vector2(0f, 1f);
+        var vpImg = vpGo.AddComponent<Image>(); vpImg.color = new Color(1f, 1f, 1f, 0.02f);
+        vpGo.AddComponent<RectMask2D>();
+
+        // Content
+        var contentGo = MakeEmpty(vpGo.transform, "Content");
+        var contentRT = contentGo.GetComponent<RectTransform>();
+        contentRT.anchorMin = new Vector2(0f, 1f); contentRT.anchorMax = new Vector2(1f, 1f);
+        contentRT.pivot = new Vector2(0.5f, 1f); contentRT.anchoredPosition = Vector2.zero;
+        var vlg = contentGo.AddComponent<VerticalLayoutGroup>();
+        vlg.spacing = 14f; vlg.padding = new RectOffset(4, 4, 4, 4);
+        vlg.childControlWidth = true; vlg.childControlHeight = true;
+        vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;
+        vlg.childAlignment = TextAnchor.UpperCenter;
+        var fitter = contentGo.AddComponent<ContentSizeFitter>();
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        scroll.viewport = vpRT; scroll.content = contentRT;
+
+        // Scrollbar vertical
+        var sbGo = MakeEmpty(scrollGo.transform, "ScrollbarV");
+        var sbRT = sbGo.GetComponent<RectTransform>();
+        sbRT.anchorMin = new Vector2(1f, 0f); sbRT.anchorMax = new Vector2(1f, 1f);
+        sbRT.pivot = new Vector2(1f, 1f);
+        sbRT.offsetMin = new Vector2(-12f, 0f); sbRT.offsetMax = new Vector2(0f, 0f);
+        var sbImg = sbGo.AddComponent<Image>(); sbImg.sprite = rounded; sbImg.type = Image.Type.Sliced;
+        sbImg.color = new Color(1f, 1f, 1f, 0.08f);
+        var scrollbar = sbGo.AddComponent<Scrollbar>(); scrollbar.direction = Scrollbar.Direction.BottomToTop;
+        var handleGo = MakeEmpty(sbGo.transform, "Handle"); Stretch(handleGo);
+        var handleImg = handleGo.AddComponent<Image>(); handleImg.sprite = rounded; handleImg.type = Image.Type.Sliced;
+        handleImg.color = new Color(1f, 1f, 1f, 0.30f);
+        scrollbar.targetGraphic = handleImg; scrollbar.handleRect = handleGo.GetComponent<RectTransform>();
+        scroll.verticalScrollbar = scrollbar;
+        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
+
+        // Plantilla de tarjeta (inactiva)
+        cardTemplate = BuildCardTemplate(contentGo.transform, fnt, rounded);
+        cardTemplate.SetActive(false);
+
+        listContent = contentRT;
+        return listState;
     }
 
-    // ── Generador de sprite anillo orbital (círculo hueco) ────────────────────
-    static Sprite GenerateRingSprite()
+    static GameObject BuildCardTemplate(Transform parent, TMP_FontAsset fnt, Sprite rounded)
     {
-        const string path = "Assets/Sprites/orbit-ring.png";
-        const int size = 128;
-        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-        var px  = new Color[size * size];
-        float cx = (size - 1) / 2f, cy = (size - 1) / 2f;
-        float outerR = size / 2f - 2f;
-        float innerR = outerR - 9f;
-        var col = new Color(0.5f, 0.85f, 1f, 1f);
-        for (int y = 0; y < size; y++)
-            for (int x = 0; x < size; x++)
-            {
-                float d = Mathf.Sqrt((x - cx)*(x - cx) + (y - cy)*(y - cy));
-                px[y*size+x] = (d >= innerR && d <= outerR) ? col : Color.clear;
-            }
-        tex.SetPixels(px); tex.Apply();
-        System.IO.File.WriteAllBytes(path, tex.EncodeToPNG());
-        AssetDatabase.ImportAsset(path);
-        var ti = AssetImporter.GetAtPath(path) as TextureImporter;
-        if (ti != null) { ti.textureType = TextureImporterType.Sprite; ti.spritePixelsPerUnit = 100; ti.SaveAndReimport(); }
-        return AssetDatabase.LoadAssetAtPath<Sprite>(path);
+        var card = MakeEmpty(parent, "CardTemplate");
+        var cardImg = card.AddComponent<Image>();
+        cardImg.sprite = rounded; cardImg.type = Image.Type.Sliced; cardImg.color = Hex("3A3D70");
+        var le = card.AddComponent<LayoutElement>(); le.minHeight = 96f; le.preferredHeight = 96f;
+        var hlg = card.AddComponent<HorizontalLayoutGroup>();
+        hlg.padding = new RectOffset(16, 16, 12, 12); hlg.spacing = 16f;
+        hlg.childAlignment = TextAnchor.MiddleLeft;
+        hlg.childControlWidth = true; hlg.childControlHeight = true;
+        hlg.childForceExpandWidth = false; hlg.childForceExpandHeight = false;
+
+        // IconFrame + Icon
+        var frameGo = MakeEmpty(card.transform, "IconFrame");
+        var frameImg = frameGo.AddComponent<Image>();
+        frameImg.sprite = rounded; frameImg.type = Image.Type.Sliced; frameImg.color = Hex("4DD9E8");
+        var frameLe = frameGo.AddComponent<LayoutElement>();
+        frameLe.minWidth = 72f; frameLe.preferredWidth = 72f; frameLe.minHeight = 72f; frameLe.preferredHeight = 72f;
+        var iconGo = MakeEmpty(frameGo.transform, "Icon");
+        var iconRT = iconGo.GetComponent<RectTransform>();
+        iconRT.anchorMin = Vector2.zero; iconRT.anchorMax = Vector2.one;
+        iconRT.offsetMin = new Vector2(11f, 11f); iconRT.offsetMax = new Vector2(-11f, -11f);
+        var iconImg = iconGo.AddComponent<Image>();
+        iconImg.color = Color.white; iconImg.preserveAspect = true; iconImg.raycastTarget = false;
+
+        // TextColumn
+        var colGo = MakeEmpty(card.transform, "TextColumn");
+        var colLe = colGo.AddComponent<LayoutElement>(); colLe.flexibleWidth = 1f;
+        var cvlg = colGo.AddComponent<VerticalLayoutGroup>();
+        cvlg.spacing = 2f; cvlg.childAlignment = TextAnchor.MiddleLeft;
+        cvlg.childControlWidth = true; cvlg.childControlHeight = true;
+        cvlg.childForceExpandWidth = true; cvlg.childForceExpandHeight = false;
+        var nameGo = MakeEmpty(colGo.transform, "NameLabel");
+        var nameTmp = nameGo.AddComponent<TextMeshProUGUI>();
+        nameTmp.text = "Nombre"; nameTmp.font = fnt; nameTmp.fontSize = 27f;
+        nameTmp.fontStyle = FontStyles.Bold; nameTmp.color = Color.white;
+        nameTmp.alignment = TextAlignmentOptions.Left; nameTmp.enableWordWrapping = false;
+        nameTmp.overflowMode = TextOverflowModes.Ellipsis;
+        var timeGo = MakeEmpty(colGo.transform, "TimeLabel");
+        var timeTmp = timeGo.AddComponent<TextMeshProUGUI>();
+        timeTmp.text = "Hace un momento"; timeTmp.font = fnt; timeTmp.fontSize = 16f;
+        timeTmp.color = new Color(1f, 1f, 1f, 0.55f);
+        timeTmp.alignment = TextAlignmentOptions.Left; timeTmp.enableWordWrapping = false;
+
+        // BtnJugar
+        var jugarGo = MakeEmpty(card.transform, "BtnJugar");
+        var jugarImg = jugarGo.AddComponent<Image>();
+        jugarImg.sprite = rounded; jugarImg.type = Image.Type.Sliced; jugarImg.color = Hex("19A7CE");
+        var jugarLe = jugarGo.AddComponent<LayoutElement>();
+        jugarLe.minWidth = 110f; jugarLe.preferredWidth = 110f; jugarLe.minHeight = 56f; jugarLe.preferredHeight = 56f;
+        jugarGo.AddComponent<Button>().targetGraphic = jugarImg;
+        var jLbl = MakeEmpty(jugarGo.transform, "Label"); Stretch(jLbl);
+        var jTmp = jLbl.AddComponent<TextMeshProUGUI>();
+        jTmp.text = "Jugar"; jTmp.font = fnt; jTmp.fontSize = 24f; jTmp.fontStyle = FontStyles.Bold;
+        jTmp.color = Color.white; jTmp.alignment = TextAlignmentOptions.Center; jTmp.overflowMode = TextOverflowModes.Overflow;
+
+        // BtnEditar
+        var editGo = MakeEmpty(card.transform, "BtnEditar");
+        var editImg = editGo.AddComponent<Image>();
+        editImg.sprite = rounded; editImg.type = Image.Type.Sliced; editImg.color = Hex("2A2D5A");
+        var editLe = editGo.AddComponent<LayoutElement>();
+        editLe.minWidth = 56f; editLe.preferredWidth = 56f; editLe.minHeight = 56f; editLe.preferredHeight = 56f;
+        editGo.AddComponent<Button>().targetGraphic = editImg;
+        var eLbl = MakeEmpty(editGo.transform, "Label"); Stretch(eLbl);
+        var eTmp = eLbl.AddComponent<TextMeshProUGUI>();
+        eTmp.text = "✎"; eTmp.font = fnt; eTmp.fontSize = 26f; eTmp.color = Color.white;
+        eTmp.alignment = TextAlignmentOptions.Center; eTmp.overflowMode = TextOverflowModes.Overflow;
+
+        return card;
     }
 
-    // ── Átomo con label ───────────────────────────────────────────────────────
-    static void MakeAtom(Transform parent, Sprite spr, TMP_FontAsset fnt,
-        string goName, string label, Vector2 pos, float size, Color color)
+    static GameObject BuildCountBadge(Transform avatar, Sprite circleSpr, TMP_FontAsset fnt, out TextMeshProUGUI num)
     {
-        var go  = MakeEmpty(parent, goName);
-        SetRT(go, pos, new Vector2(size, size));
-        var img = go.AddComponent<Image>();
-        img.sprite = spr; img.color = color; img.type = Image.Type.Simple; img.preserveAspect = true;
-        go.AddComponent<FloatingAtom>();
-
-        if (string.IsNullOrEmpty(label)) return;
-        var lblGo = MakeEmpty(go.transform, "Label");
-        Stretch(lblGo);
-        var tmp = lblGo.AddComponent<TextMeshProUGUI>();
-        tmp.text      = label;
-        tmp.font      = fnt;
-        tmp.fontSize  = size * 0.42f;
-        tmp.fontStyle = FontStyles.Bold;
-        tmp.color     = Color.white;
-        tmp.alignment = TextAlignmentOptions.Center;
-        tmp.overflowMode = TextOverflowModes.Overflow;
+        var badge = MakeEmpty(avatar, "CountBadge");
+        var rt = badge.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(1f, 0f); rt.anchorMax = new Vector2(1f, 0f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = new Vector2(-2f, 2f);
+        rt.sizeDelta = new Vector2(26f, 26f);
+        var img = badge.AddComponent<Image>();
+        img.sprite = circleSpr; img.type = Image.Type.Simple; img.color = Hex("F5A623");
+        var numGo = MakeEmpty(badge.transform, "Num"); Stretch(numGo);
+        num = numGo.AddComponent<TextMeshProUGUI>();
+        num.text = "0"; num.font = fnt; num.fontSize = 16f; num.fontStyle = FontStyles.Bold;
+        num.color = Hex("1E2050"); num.alignment = TextAlignmentOptions.Center;
+        num.overflowMode = TextOverflowModes.Overflow;
+        return badge;
     }
 
-    // ── Destello decorativo ───────────────────────────────────────────────────
-    static void MakeSparkle(Transform parent, string name, Vector2 pos, float fontSize, Color color)
+    // ── Helpers de assets ─────────────────────────────────────────────────────
+    static Sprite[] LoadIconSprites()
     {
-        var go  = MakeEmpty(parent, name);
-        SetRT(go, pos, new Vector2(30f, 30f));
-        var tmp = go.AddComponent<TextMeshProUGUI>();
-        tmp.text         = "✦";
-        tmp.font         = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/Fredoka-Medium SDF.asset");
-        tmp.fontSize     = fontSize;
-        tmp.color        = color;
-        tmp.alignment    = TextAlignmentOptions.Center;
-        tmp.overflowMode = TextOverflowModes.Overflow;
+        var arr = new Sprite[UniverseTheme.IconNames.Length];
+        for (int i = 0; i < arr.Length; i++)
+            arr[i] = AssetDatabase.LoadAssetAtPath<Sprite>($"Assets/Sprites/Icons/{UniverseTheme.IconNames[i]}.png");
+        return arr;
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Helpers de jerarquía ──────────────────────────────────────────────────
+    static GameObject FindInScene(Scene scene, string name)
+    {
+        foreach (var root in scene.GetRootGameObjects())
+        {
+            if (root.name == name) return root;
+            var found = FindChildRecursive(root.transform, name);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    static GameObject FindChildRecursive(Transform parent, string name)
+    {
+        foreach (Transform child in parent)
+        {
+            if (child.name == name) return child.gameObject;
+            var found = FindChildRecursive(child, name);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    static void SetRef(SerializedObject so, string prop, Object value)
+    {
+        var p = so.FindProperty(prop);
+        if (p == null) { Debug.LogWarning($"[MisUniversosBuilder] propiedad '{prop}' no existe."); return; }
+        p.objectReferenceValue = value;
+    }
+
+    static void WireSprites(SerializedObject so, string prop, Sprite[] arr)
+    {
+        var p = so.FindProperty(prop);
+        if (p == null) return;
+        p.arraySize = arr.Length;
+        for (int i = 0; i < arr.Length; i++)
+            p.GetArrayElementAtIndex(i).objectReferenceValue = arr[i];
+    }
+
+    // ── Helpers de RectTransform ──────────────────────────────────────────────
+    static GameObject MakeFill(Transform parent, string name)
+    {
+        var go = MakeEmpty(parent, name);
+        Stretch(go);
+        return go;
+    }
+
     static void Stretch(GameObject go)
     {
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
-        rt.pivot     = new Vector2(0.5f, 0.5f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
         rt.offsetMin = rt.offsetMax = Vector2.zero;
-    }
-
-    static void SetRT(GameObject go, Vector2 pos, Vector2 size)
-    {
-        var rt = go.GetComponent<RectTransform>();
-        rt.anchoredPosition = pos; rt.sizeDelta = size;
     }
 
     static GameObject MakeEmpty(Transform parent, string name)

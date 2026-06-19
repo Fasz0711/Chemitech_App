@@ -128,6 +128,9 @@ public class CrearUniversoManager : MonoBehaviour
             if (validationLabel) validationLabel.gameObject.SetActive(true);
             return;
         }
-        Debug.Log($"[CrearUniverso] nombre={name} icono={selIcon} color={selColor} — pendiente.");
+
+        UniverseStore.Add(UniverseData.New(name, selIcon, selColor));
+        Debug.Log($"[CrearUniverso] Universo guardado: nombre={name} icono={selIcon} color={selColor}");
+        SceneManager.LoadScene(escenaAtras); // vuelve a MisUniversosScene
     }
 }
