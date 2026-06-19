@@ -43,9 +43,41 @@ public class ApiManager : MonoBehaviour
         StartCoroutine(Post("/authentication/validate/password", body, onSuccess, onError));
     }
 
+    public void ValidateUsername(string username, Action<string> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new UsernameRequest { username = username });
+        StartCoroutine(Post("/authentication/validate/username", body, onSuccess, onError));
+    }
+
+    public void CreateAccount(string email, string password, string username,
+                              Action<string> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new AccountRequest
+        {
+            email = email, password = password, username = username
+        });
+
+        StartCoroutine(PostRaw("/authentication/account", body,
+            onSuccess: json =>
+            {
+                string userId = JsonUtility.FromJson<AccountResponse>(json).userId;
+                onSuccess?.Invoke(userId);
+            },
+            onError: onError));
+    }
+
     // ── Core HTTP ─────────────────────────────────────────────────────────────
 
+    // Variante que entrega el campo "message" ya parseado.
     IEnumerator Post(string endpoint, string jsonBody, Action<string> onSuccess, Action<int, string> onError)
+    {
+        return PostRaw(endpoint, jsonBody,
+            json => onSuccess?.Invoke(JsonUtility.FromJson<MessageResponse>(json).message),
+            onError);
+    }
+
+    // Variante que entrega el cuerpo crudo (JSON) para que el caller lo parsee.
+    IEnumerator PostRaw(string endpoint, string jsonBody, Action<string> onSuccess, Action<int, string> onError)
     {
         string url = BASE_URL + endpoint;
         byte[] raw = Encoding.UTF8.GetBytes(jsonBody);
@@ -61,8 +93,7 @@ public class ApiManager : MonoBehaviour
 
         if (req.result == UnityWebRequest.Result.Success)
         {
-            var resp = JsonUtility.FromJson<MessageResponse>(responseText);
-            onSuccess?.Invoke(resp.message);
+            onSuccess?.Invoke(responseText);
         }
         else
         {
@@ -82,6 +113,9 @@ public class ApiManager : MonoBehaviour
 
     [Serializable] class EmailRequest    { public string email; }
     [Serializable] class PasswordRequest { public string password; }
+    [Serializable] class UsernameRequest { public string username; }
+    [Serializable] class AccountRequest  { public string email; public string password; public string username; }
+    [Serializable] class AccountResponse { public string userId; }
     [Serializable] class MessageResponse { public string message; }
     [Serializable] class DetailResponse  { public string detail; }
 }

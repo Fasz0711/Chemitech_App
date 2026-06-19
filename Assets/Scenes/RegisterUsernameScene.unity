@@ -433,18 +433,21 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RegisterUsernameManager
   inputUsername: {fileID: 975713155}
-  validationLabel: {fileID: 2139929327}
+  txtFeedback: {fileID: 2139929327}
   reqLengthBg: {fileID: 1323955425}
-  reqUpperBg: {fileID: 442065345}
-  reqNumberBg: {fileID: 547062464}
-  reqSymbolBg: {fileID: 1049222519}
+  reqCharsBg: {fileID: 442065345}
+  reqSpacesBg: {fileID: 547062464}
+  reqUnderscoreBg: {fileID: 1049222519}
   reqLengthTxt: {fileID: 849024603}
-  reqUpperTxt: {fileID: 1791718383}
-  reqNumberTxt: {fileID: 1348404898}
-  reqSymbolTxt: {fileID: 1990694832}
+  reqCharsTxt: {fileID: 0}
+  reqSpacesTxt: {fileID: 0}
+  reqUnderscoreTxt: {fileID: 0}
   btnAtras: {fileID: 362771697}
   btnSiguiente: {fileID: 1982550183}
+  colorActivo: {r: 0.3, g: 0.85, b: 0.91, a: 1}
+  colorInactivo: {r: 1, g: 1, b: 1, a: 0.15}
   escenaAtras: RegisterPasswordScene
+  escenaSiguiente: CuentaCreadaScene
 --- !u!1 &357091921
 GameObject:
   m_ObjectHideFlags: 0
@@ -1657,7 +1660,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\u25CB  8+ caracteres"
+  m_text: "\u25CB  5+ caracteres"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: c36c1fd836d7bf54b8348f253d796ebe, type: 2}
   m_sharedMaterial: {fileID: 7748610628807972, guid: c36c1fd836d7bf54b8348f253d796ebe, type: 2}
@@ -3491,7 +3494,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\u25CB  Un n\xFAmero"
+  m_text: "\u25CB  Sin espacios"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: c36c1fd836d7bf54b8348f253d796ebe, type: 2}
   m_sharedMaterial: {fileID: 7748610628807972, guid: c36c1fd836d7bf54b8348f253d796ebe, type: 2}
@@ -5105,7 +5108,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\u25CB  Una may\xFAscula"
+  m_text: "\u25CB  Sin caracteres especiales"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: c36c1fd836d7bf54b8348f253d796ebe, type: 2}
   m_sharedMaterial: {fileID: 7748610628807972, guid: c36c1fd836d7bf54b8348f253d796ebe, type: 2}
@@ -5550,7 +5553,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "\u25CB  Un s\xEDmbolo"
+  m_text: "\u25CB  No solo guiones bajos"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: c36c1fd836d7bf54b8348f253d796ebe, type: 2}
   m_sharedMaterial: {fileID: 7748610628807972, guid: c36c1fd836d7bf54b8348f253d796ebe, type: 2}
