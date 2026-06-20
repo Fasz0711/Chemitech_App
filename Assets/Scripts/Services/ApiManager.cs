@@ -66,6 +66,20 @@ public class ApiManager : MonoBehaviour
             onError: onError));
     }
 
+    public void Login(string email, string password,
+                      Action<LoginResponse> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new LoginRequest { email = email, password = password });
+
+        StartCoroutine(PostRaw("/session/login", body,
+            onSuccess: json =>
+            {
+                var resp = JsonUtility.FromJson<LoginResponse>(json);
+                onSuccess?.Invoke(resp);
+            },
+            onError: onError));
+    }
+
     // ── Core HTTP ─────────────────────────────────────────────────────────────
 
     // Variante que entrega el campo "message" ya parseado.
@@ -116,6 +130,17 @@ public class ApiManager : MonoBehaviour
     [Serializable] class UsernameRequest { public string username; }
     [Serializable] class AccountRequest  { public string email; public string password; public string username; }
     [Serializable] class AccountResponse { public string userId; }
+    [Serializable] class LoginRequest    { public string email; public string password; }
     [Serializable] class MessageResponse { public string message; }
     [Serializable] class DetailResponse  { public string detail; }
+
+    [Serializable]
+    public class LoginResponse
+    {
+        public string message;
+        public string accessToken;
+        public string refreshToken;
+        public string tokenType;
+        public int    expiresIn;
+    }
 }

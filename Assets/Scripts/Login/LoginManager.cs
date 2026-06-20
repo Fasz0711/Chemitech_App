@@ -19,6 +19,7 @@ public class LoginManager : MonoBehaviour
     [Header("Escenas")]
     [SerializeField] private string escenaMenu     = "SampleScene";
     [SerializeField] private string escenaRegistro = "RegisterEmailScene";
+    [SerializeField] private string escenaDestino  = "MisUniversosScene";
 
     [Header("Feedback")]
     [SerializeField] private TextMeshProUGUI txtError;
@@ -43,9 +44,13 @@ public class LoginManager : MonoBehaviour
         SetPasswordVisible(false);
     }
 
+    private bool loggingIn = false;
+
     // ── Handlers ─────────────────────────────────────────────────────────────
     private void OnLogin()
     {
+        if (loggingIn) return;
+
         string email    = inputEmail    ? inputEmail.text.Trim() : "";
         string password = inputPassword ? inputPassword.text     : "";
 
@@ -55,9 +60,39 @@ public class LoginManager : MonoBehaviour
             return;
         }
 
-        Debug.Log($"[LoginManager] Intentando login con: {email}");
         HideError();
-        SceneManager.LoadScene(escenaMenu);
+        SetLoading(true);
+
+        ApiManager.Instance.Login(email, password,
+            onSuccess: resp =>
+            {
+                SessionData.SetTokens(resp.accessToken, resp.refreshToken, resp.tokenType, resp.expiresIn);
+                SessionData.SetSession("", "", email);
+                SceneManager.LoadScene(escenaDestino);
+            },
+            onError: (code, detail) =>
+            {
+                SetLoading(false);
+                ShowError(MapError(detail));
+            }
+        );
+    }
+
+    private string MapError(string detail)
+    {
+        switch (detail)
+        {
+            case "ERR_INVALID_CREDENTIALS":
+                return "Correo o contraseña incorrectos.";
+            default:
+                return "No se pudo iniciar sesión. Intenta de nuevo.";
+        }
+    }
+
+    private void SetLoading(bool value)
+    {
+        loggingIn = value;
+        if (btnIniciarSesion) btnIniciarSesion.interactable = !value;
     }
 
     private void OnOlvidaste()

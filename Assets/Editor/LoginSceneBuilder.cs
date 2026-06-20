@@ -114,7 +114,6 @@ public static class LoginSceneBuilder
         mSO.FindProperty("btnRegistrate").objectReferenceValue  = panel.btnRegister;
         mSO.FindProperty("btnCerrar").objectReferenceValue      = panel.btnClose;
         mSO.FindProperty("btnTogglePassword").objectReferenceValue = panel.btnToggle;
-        mSO.FindProperty("sprOjoOculto").objectReferenceValue   = sprEye;
         mSO.ApplyModifiedProperties();
 
         // ── Guardar escena ────────────────────────────────────────────────────
