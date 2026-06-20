@@ -230,7 +230,7 @@ public static class ZonaJuegoBuilder
         MakeHoldArrow(zoom.transform, "VertUp",     0f, new(0,40),  rounded, triangle);
         MakeHoldArrow(zoom.transform, "VertDown", 180f, new(0,-40), rounded, triangle);
 
-        // ── Hotbar (6 slots, abajo-centro) ────────────────────────────────────
+        // ── Hotbar (6 slots ricos: icono + símbolo + badge) ───────────────────
         const int SLOTS = 6; const float SLOT = 64f, GAP = 8f;
         float innerW = SLOTS * SLOT + (SLOTS - 1) * GAP;
         var bar = UI(hudT, "Hotbar", new(0.5f,0), new(0.5f,0), new(0.5f,0), new(0,40), new(innerW + 28f, SLOT + 24f));
@@ -240,11 +240,35 @@ public static class ZonaJuegoBuilder
         barInnerRT.anchorMin=Vector2.zero; barInnerRT.anchorMax=Vector2.one;
         barInnerRT.offsetMin=new Vector2(3,3); barInnerRT.offsetMax=new Vector2(-3,-3);
         var barInnerImg = barInner.AddComponent<Image>(); barInnerImg.sprite=rounded; barInnerImg.type=Image.Type.Sliced; barInnerImg.color=Hex("12163A");
+
+        var slotButtons = new Button[SLOTS];
+        var slotIcons   = new Image[SLOTS];
+        var slotSymbols = new TextMeshProUGUI[SLOTS];
+        var slotBadges  = new GameObject[SLOTS];
         float startX = -innerW/2f + SLOT/2f;
         for (int i = 0; i < SLOTS; i++)
         {
             float x = startX + i * (SLOT + GAP);
             var slot = MakeButton(barInner.transform, $"Slot_{i}", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), new(x,0), new(SLOT,SLOT), rounded, Hex("20244F"));
+            slotButtons[i] = slot.GetComponent<Button>();
+
+            var icon = UI(slot.transform, "Icon", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(46,46));
+            var iconImg = icon.AddComponent<Image>(); iconImg.sprite=circleSpr; iconImg.color=Color.white; iconImg.raycastTarget=false;
+            icon.SetActive(false); slotIcons[i] = iconImg;
+
+            var symGo = UI(slot.transform, "Symbol", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(SLOT,SLOT));
+            var symTmp = symGo.AddComponent<TextMeshProUGUI>();
+            symTmp.text=""; symTmp.font=fnt; symTmp.fontSize=24f; symTmp.fontStyle=FontStyles.Bold; symTmp.color=Color.white;
+            symTmp.alignment=TextAlignmentOptions.Center; symTmp.raycastTarget=false; symTmp.overflowMode=TextOverflowModes.Overflow;
+            symGo.SetActive(false); slotSymbols[i] = symTmp;
+
+            var badge = UI(slot.transform, "Badge", new(0,1), new(0,1), new(0.5f,0.5f), new(3,-3), new(20,20));
+            var badgeImg = badge.AddComponent<Image>(); badgeImg.sprite=circleSpr; badgeImg.color=Hex("F5A623"); badgeImg.raycastTarget=false;
+            var bnumGo = UI(badge.transform, "Num", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero); Stretch(bnumGo);
+            var bnum = bnumGo.AddComponent<TextMeshProUGUI>();
+            bnum.text=(i+1).ToString(); bnum.font=fnt; bnum.fontSize=13f; bnum.fontStyle=FontStyles.Bold; bnum.color=Hex("1E2050");
+            bnum.alignment=TextAlignmentOptions.Center; bnum.raycastTarget=false; bnum.overflowMode=TextOverflowModes.Overflow;
+            badge.SetActive(false); slotBadges[i] = badge;
         }
 
         // ── "Presiona para colocar átomo" (abajo-izquierda) ───────────────────
@@ -261,7 +285,206 @@ public static class ZonaJuegoBuilder
         selLbl.text="Selector de\nátomos"; selLbl.font=fnt; selLbl.fontSize=20f; selLbl.fontStyle=FontStyles.Bold;
         selLbl.color=Hex("23204A"); selLbl.alignment=TextAlignmentOptions.Center; selLbl.enableWordWrapping=true;
 
+        // ── Modal selector de átomos ──────────────────────────────────────────
+        var refs = BuildAtomSelectorModal(hudT, fnt, rounded, circleSpr);
+
+        // El hotbar debe renderizar SOBRE el dim del modal (queda interactivo)
+        bar.transform.SetAsLastSibling();
+
+        // ── Controller del selector + hotbar ──────────────────────────────────
+        var ctrlGo = NewChild(hudT, "AtomSelector");
+        var ctrl = ctrlGo.AddComponent<AtomSelectorController>();
+        var cso = new SerializedObject(ctrl);
+        SetRef(cso, "modalRoot",    refs.modalRoot);
+        SetRef(cso, "btnOpen",      selector.GetComponent<Button>());
+        SetRef(cso, "btnClose",     refs.btnClose);
+        SetRef(cso, "searchInput",  refs.search);
+        WireArr(cso, "filterButtons", refs.filterBtns);
+        WireArr(cso, "filterBgs",     refs.filterBgs);
+        WireArr(cso, "filterLabels",  refs.filterLabels);
+        SetRef(cso, "gridContent",  refs.gridContent);
+        SetRef(cso, "atomTemplate", refs.atomTemplate);
+        SetRef(cso, "infoPopup",    refs.infoPopup);
+        SetRef(cso, "infoText",     refs.infoText);
+        WireArr(cso, "slotButtons", slotButtons);
+        WireArr(cso, "slotIcons",   slotIcons);
+        WireArr(cso, "slotSymbols", slotSymbols);
+        WireArr(cso, "slotBadges",  slotBadges);
+        SetRef(cso, "atomCircle",   circleSpr);
+        cso.ApplyModifiedProperties();
+
         return hud;
+    }
+
+    // ── Modal del selector de átomos ──────────────────────────────────────────
+    class SelRefs
+    {
+        public GameObject        modalRoot;
+        public Button            btnClose;
+        public TMP_InputField    search;
+        public Button[]          filterBtns;
+        public Image[]           filterBgs;
+        public TextMeshProUGUI[] filterLabels;
+        public RectTransform     gridContent;
+        public GameObject        atomTemplate;
+        public RectTransform     infoPopup;
+        public TextMeshProUGUI   infoText;
+    }
+
+    static SelRefs BuildAtomSelectorModal(Transform parent, TMP_FontAsset fnt, Sprite rounded, Sprite circleSpr)
+    {
+        var r = new SelRefs();
+
+        var modal = UI(parent, "AtomSelectorModal", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero);
+        Stretch(modal);
+        r.modalRoot = modal;
+
+        var dim = UI(modal.transform, "Dim", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero);
+        Stretch(dim);
+        var dimImg = dim.AddComponent<Image>(); dimImg.color = new Color(0,0,0,0.62f); dimImg.raycastTarget = true;
+
+        const float PW = 1000f, PH = 440f;
+        var panel = UI(modal.transform, "Panel", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), new(0,46), new(PW,PH));
+        var panelBorder = panel.AddComponent<Image>(); panelBorder.sprite=rounded; panelBorder.type=Image.Type.Sliced; panelBorder.color=Color.white;
+        var inner = UI(panel.transform, "Inner", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero);
+        var innerRT = inner.GetComponent<RectTransform>();
+        innerRT.anchorMin=Vector2.zero; innerRT.anchorMax=Vector2.one; innerRT.offsetMin=new Vector2(4,4); innerRT.offsetMax=new Vector2(-4,-4);
+        var innerImg = inner.AddComponent<Image>(); innerImg.sprite=rounded; innerImg.type=Image.Type.Sliced; innerImg.color=Hex("1B1F46");
+
+        // X cerrar (esquina superior derecha, sobresaliendo)
+        var closeGo = UI(panel.transform, "BtnClose", new(1,1), new(1,1), new(0.5f,0.5f), Vector2.zero, new(54,54));
+        var closeImg = closeGo.AddComponent<Image>(); closeImg.sprite=circleSpr; closeImg.color=Hex("E0484B");
+        r.btnClose = closeGo.AddComponent<Button>(); r.btnClose.targetGraphic = closeImg;
+        Label(closeGo.transform, fnt, "X", 26f, FontStyles.Bold, Color.white);
+
+        // Buscador
+        var searchGo = UI(inner.transform, "Search", new(0,1), new(0,1), new(0,1), new(24,-20), new(400,52));
+        r.search = MakeSearchInput(searchGo, fnt, rounded, "Buscar átomo o número atómico...");
+
+        // Filtros (5)
+        string[] tabs = { "Todos", "Metales", "Gases", "No metales", "Metaloides" };
+        float[]  tw   = { 76f, 96f, 76f, 104f, 104f };
+        r.filterBtns = new Button[5]; r.filterBgs = new Image[5]; r.filterLabels = new TextMeshProUGUI[5];
+        float tx = 24f + 400f + 16f;
+        for (int i = 0; i < 5; i++)
+        {
+            var tab = UI(inner.transform, $"Filter_{i}", new(0,1), new(0,1), new(0,1), new(tx + tw[i]/2f, -46f), new(tw[i], 44f));
+            var tabImg = tab.AddComponent<Image>(); tabImg.sprite=rounded; tabImg.type=Image.Type.Sliced;
+            tabImg.color = (i==0) ? new Color(0.10f,0.65f,0.81f,1f) : new Color(1,1,1,0.06f);
+            r.filterBtns[i] = tab.AddComponent<Button>(); r.filterBtns[i].targetGraphic = tabImg;
+            r.filterBgs[i] = tabImg;
+            var tlGo = UI(tab.transform, "Label", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero); Stretch(tlGo);
+            var tl = tlGo.AddComponent<TextMeshProUGUI>();
+            tl.text=tabs[i]; tl.font=fnt; tl.fontSize=17f; tl.fontStyle=FontStyles.Bold;
+            tl.color = (i==0) ? Color.white : new Color(1,1,1,0.7f);
+            tl.alignment=TextAlignmentOptions.Center; tl.raycastTarget=false; tl.overflowMode=TextOverflowModes.Overflow;
+            r.filterLabels[i] = tl;
+            tx += tw[i] + 8f;
+        }
+
+        // Scroll + grid
+        var scrollGo = UI(inner.transform, "Scroll", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero);
+        var scrollRT = scrollGo.GetComponent<RectTransform>();
+        scrollRT.anchorMin=Vector2.zero; scrollRT.anchorMax=Vector2.one; scrollRT.offsetMin=new Vector2(18,18); scrollRT.offsetMax=new Vector2(-18,-86);
+        var scroll = scrollGo.AddComponent<ScrollRect>(); scroll.horizontal=false; scroll.vertical=true; scroll.movementType=ScrollRect.MovementType.Clamped; scroll.scrollSensitivity=28f;
+
+        var vp = UI(scrollGo.transform, "Viewport", new(0,0), new(1,1), new(0f,1f), Vector2.zero, Vector2.zero);
+        var vpRT = vp.GetComponent<RectTransform>(); vpRT.anchorMin=Vector2.zero; vpRT.anchorMax=Vector2.one; vpRT.offsetMin=Vector2.zero; vpRT.offsetMax=new Vector2(-14,0);
+        var vpImg = vp.AddComponent<Image>(); vpImg.color=new Color(1,1,1,0.015f); vp.AddComponent<RectMask2D>();
+
+        var content = UI(vp.transform, "Content", new(0,1), new(1,1), new(0.5f,1f), Vector2.zero, Vector2.zero);
+        var contentRT = content.GetComponent<RectTransform>(); contentRT.anchorMin=new Vector2(0,1); contentRT.anchorMax=new Vector2(1,1); contentRT.pivot=new Vector2(0.5f,1f); contentRT.anchoredPosition=Vector2.zero;
+        var glg = content.AddComponent<GridLayoutGroup>();
+        glg.cellSize=new Vector2(96,96); glg.spacing=new Vector2(14,14); glg.padding=new RectOffset(6,6,6,6);
+        glg.constraint=GridLayoutGroup.Constraint.FixedColumnCount; glg.constraintCount=8; glg.childAlignment=TextAnchor.UpperCenter;
+        var fit = content.AddComponent<ContentSizeFitter>(); fit.verticalFit=ContentSizeFitter.FitMode.PreferredSize;
+        scroll.viewport=vpRT; scroll.content=contentRT;
+        r.gridContent = contentRT;
+
+        r.atomTemplate = BuildAtomCell(content.transform, fnt, rounded, circleSpr);
+        r.atomTemplate.SetActive(false);
+
+        // Popup de info
+        var popup = UI(modal.transform, "InfoPopup", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(250,52));
+        var popBorder = popup.AddComponent<Image>(); popBorder.sprite=rounded; popBorder.type=Image.Type.Sliced; popBorder.color=Color.white;
+        var popInner = UI(popup.transform, "Inner", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero);
+        var popInnerRT = popInner.GetComponent<RectTransform>(); popInnerRT.anchorMin=Vector2.zero; popInnerRT.anchorMax=Vector2.one; popInnerRT.offsetMin=new Vector2(3,3); popInnerRT.offsetMax=new Vector2(-3,-3);
+        var popInnerImg = popInner.AddComponent<Image>(); popInnerImg.sprite=rounded; popInnerImg.type=Image.Type.Sliced; popInnerImg.color=Hex("0F1336");
+        var popTxtGo = UI(popInner.transform, "Text", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero); Stretch(popTxtGo);
+        r.infoText = popTxtGo.AddComponent<TextMeshProUGUI>();
+        r.infoText.text="—"; r.infoText.font=fnt; r.infoText.fontSize=20f; r.infoText.fontStyle=FontStyles.Bold; r.infoText.color=Color.white;
+        r.infoText.alignment=TextAlignmentOptions.Center; r.infoText.raycastTarget=false; r.infoText.overflowMode=TextOverflowModes.Overflow;
+        r.infoPopup = popup.GetComponent<RectTransform>();
+        popup.SetActive(false);
+
+        modal.SetActive(false);
+        return r;
+    }
+
+    static GameObject BuildAtomCell(Transform parent, TMP_FontAsset fnt, Sprite rounded, Sprite circleSpr)
+    {
+        var cell = UI(parent, "AtomTemplate", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(96,96));
+        var cellImg = cell.AddComponent<Image>(); cellImg.color=new Color(0,0,0,0); cellImg.raycastTarget=true;
+        var btn = cell.AddComponent<Button>(); btn.targetGraphic = cellImg;
+
+        // Ring (selección) detrás de todo
+        var ring = UI(cell.transform, "Ring", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero);
+        var ringRT = ring.GetComponent<RectTransform>(); ringRT.anchorMin=Vector2.zero; ringRT.anchorMax=Vector2.one; ringRT.offsetMin=new Vector2(-3,-3); ringRT.offsetMax=new Vector2(3,3);
+        var ringImg = ring.AddComponent<Image>(); ringImg.sprite=rounded; ringImg.type=Image.Type.Sliced; ringImg.color=Hex("3FE0FF"); ringImg.raycastTarget=false;
+        ring.SetActive(false);
+
+        // Bg oscuro
+        var bg = UI(cell.transform, "Bg", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero); Stretch(bg);
+        var bgImg = bg.AddComponent<Image>(); bgImg.sprite=rounded; bgImg.type=Image.Type.Sliced; bgImg.color=Hex("20244F"); bgImg.raycastTarget=false;
+
+        // Círculo de átomo
+        var circ = UI(cell.transform, "Circle", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(70,70));
+        var circImg = circ.AddComponent<Image>(); circImg.sprite=circleSpr; circImg.color=Color.white; circImg.preserveAspect=true; circImg.raycastTarget=false;
+
+        // Símbolo
+        var sym = UI(cell.transform, "Symbol", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(70,70));
+        var symTmp = sym.AddComponent<TextMeshProUGUI>();
+        symTmp.text="H"; symTmp.font=fnt; symTmp.fontSize=27f; symTmp.fontStyle=FontStyles.Bold; symTmp.color=Color.white;
+        symTmp.alignment=TextAlignmentOptions.Center; symTmp.raycastTarget=false; symTmp.overflowMode=TextOverflowModes.Overflow;
+
+        return cell;
+    }
+
+    static TMP_InputField MakeSearchInput(GameObject go, TMP_FontAsset fnt, Sprite rounded, string placeholder)
+    {
+        var bg = go.AddComponent<Image>(); bg.sprite=rounded; bg.type=Image.Type.Sliced; bg.color=Hex("0F1336");
+
+        var area = new GameObject("Text Area", typeof(RectTransform));
+        area.transform.SetParent(go.transform, false);
+        var areaRT = area.GetComponent<RectTransform>();
+        areaRT.anchorMin=Vector2.zero; areaRT.anchorMax=Vector2.one; areaRT.offsetMin=new Vector2(18,6); areaRT.offsetMax=new Vector2(-16,-6);
+        area.AddComponent<RectMask2D>();
+
+        var ph = new GameObject("Placeholder", typeof(RectTransform));
+        ph.transform.SetParent(area.transform, false);
+        var phRT = ph.GetComponent<RectTransform>(); phRT.anchorMin=Vector2.zero; phRT.anchorMax=Vector2.one; phRT.offsetMin=phRT.offsetMax=Vector2.zero;
+        var phTmp = ph.AddComponent<TextMeshProUGUI>();
+        phTmp.text=placeholder; phTmp.font=fnt; phTmp.fontSize=20f; phTmp.color=new Color(1,1,1,0.35f);
+        phTmp.alignment=TextAlignmentOptions.Left|TextAlignmentOptions.Midline; phTmp.enableWordWrapping=false;
+
+        var txt = new GameObject("Text", typeof(RectTransform));
+        txt.transform.SetParent(area.transform, false);
+        var txtRT = txt.GetComponent<RectTransform>(); txtRT.anchorMin=Vector2.zero; txtRT.anchorMax=Vector2.one; txtRT.offsetMin=txtRT.offsetMax=Vector2.zero;
+        var txtTmp = txt.AddComponent<TextMeshProUGUI>();
+        txtTmp.text=""; txtTmp.font=fnt; txtTmp.fontSize=20f; txtTmp.color=Color.white;
+        txtTmp.alignment=TextAlignmentOptions.Left|TextAlignmentOptions.Midline; txtTmp.enableWordWrapping=false;
+
+        var field = go.AddComponent<TMP_InputField>();
+        var so = new SerializedObject(field);
+        so.FindProperty("m_TextViewport").objectReferenceValue  = areaRT;
+        so.FindProperty("m_TextComponent").objectReferenceValue = txtTmp;
+        so.FindProperty("m_Placeholder").objectReferenceValue   = phTmp;
+        so.FindProperty("m_TargetGraphic").objectReferenceValue = bg;
+        so.FindProperty("m_ContentType").enumValueIndex         = (int)TMP_InputField.ContentType.Standard;
+        so.FindProperty("m_LineType").enumValueIndex            = 0;
+        so.ApplyModifiedProperties();
+        field.interactable=true; field.customCaretColor=true; field.caretColor=Color.white; field.caretWidth=2; field.caretBlinkRate=0.85f;
+        return field;
     }
 
     // ── Cableado del manager ──────────────────────────────────────────────────
@@ -282,15 +505,17 @@ public static class ZonaJuegoBuilder
         SetRef(so, "padRight", FindChild(hud, "PadRight")?.GetComponent<HoldButton>());
         SetRef(so, "vertUp",   FindChild(hud, "VertUp")?.GetComponent<HoldButton>());
         SetRef(so, "vertDown", FindChild(hud, "VertDown")?.GetComponent<HoldButton>());
-        SetRef(so, "btnSelector", FindChild(hud, "BtnSelector")?.GetComponent<Button>());
-
-        var slotsProp = so.FindProperty("slots");
-        slotsProp.arraySize = 6;
-        for (int i = 0; i < 6; i++)
-            slotsProp.GetArrayElementAtIndex(i).objectReferenceValue =
-                FindChild(hud, $"Slot_{i}")?.GetComponent<Button>();
 
         so.ApplyModifiedProperties();
+    }
+
+    static void WireArr<T>(SerializedObject so, string prop, T[] arr) where T : Object
+    {
+        var p = so.FindProperty(prop);
+        if (p == null) { Debug.LogWarning($"[ZonaJuegoBuilder] propiedad '{prop}' no existe."); return; }
+        p.arraySize = arr.Length;
+        for (int i = 0; i < arr.Length; i++)
+            p.GetArrayElementAtIndex(i).objectReferenceValue = arr[i];
     }
 
     // ── Helpers de construcción ───────────────────────────────────────────────

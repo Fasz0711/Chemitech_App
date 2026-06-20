@@ -32,9 +32,7 @@ public class ZonaJuegoManager : MonoBehaviour
     [SerializeField] private HoldButton vertUp;   // sube la cámara
     [SerializeField] private HoldButton vertDown; // baja la cámara
 
-    [Header("Hotbar (6) y selector")]
-    [SerializeField] private Button[] slots;
-    [SerializeField] private Button   btnSelector;
+    // Hotbar y selector de átomos los maneja AtomSelectorController.
 
     [Header("Escenas")]
     [SerializeField] private string escenaSalir = "MisUniversosScene";
@@ -51,7 +49,6 @@ public class ZonaJuegoManager : MonoBehaviour
         if (btnPause)     btnPause.onClick.AddListener(OnPause);
         if (btnMover)     btnMover.onClick.AddListener(OnToggleMover);
         if (btnRecentrar && cam) btnRecentrar.onClick.AddListener(cam.Recenter);
-        if (btnSelector)  btnSelector.onClick.AddListener(OnSelector);
 
         if (cam)
         {
@@ -62,13 +59,6 @@ public class ZonaJuegoManager : MonoBehaviour
             if (vertUp)   vertUp.onHold   = () => cam.MoveVertical(+1f);
             if (vertDown) vertDown.onHold = () => cam.MoveVertical(-1f);
         }
-
-        if (slots != null)
-            for (int i = 0; i < slots.Length; i++)
-            {
-                int idx = i;
-                if (slots[i]) slots[i].onClick.AddListener(() => OnSlot(idx));
-            }
 
         UpdateMoverVisual();
     }
@@ -107,8 +97,4 @@ public class ZonaJuegoManager : MonoBehaviour
         if (moverIndicator)
             moverIndicator.color = moverMode ? Color.white : new Color(1f, 1f, 1f, 0.35f);
     }
-
-    void OnSelector() => Debug.Log("[ZonaJuego] Abrir Selector de átomos — pendiente.");
-
-    void OnSlot(int idx) => Debug.Log($"[ZonaJuego] Slot {idx} presionado — pendiente.");
 }
