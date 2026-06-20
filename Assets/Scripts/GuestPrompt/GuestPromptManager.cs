@@ -9,7 +9,8 @@ public class GuestPromptManager : MonoBehaviour
     [SerializeField] private Button btnContinuarSinCuenta;
 
     [Header("Escenas")]
-    [SerializeField] private string escenaLogin = "LoginScene";
+    [SerializeField] private string escenaLogin     = "LoginScene";
+    [SerializeField] private string escenaInvitado  = "MisUniversosScene";
 
     private void Start()
     {
@@ -21,7 +22,9 @@ public class GuestPromptManager : MonoBehaviour
 
     private void OnContinuarSinCuenta()
     {
-        // TODO: cargar escena de juego
-        Debug.Log("[GuestPrompt] Continuar sin cuenta — pendiente.");
+        // Sesión de invitado: sin token. Limpia cualquier sesión previa para que
+        // UniverseStore opere en modo invitado (universos solo en memoria).
+        SessionData.Clear();
+        SceneManager.LoadScene(escenaInvitado);
     }
 }
