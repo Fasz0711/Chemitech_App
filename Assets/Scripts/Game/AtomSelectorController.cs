@@ -47,6 +47,12 @@ public class AtomSelectorController : MonoBehaviour
     [Header("Sprites")]
     [SerializeField] private Sprite atomCircle;
 
+    [Header("Colocación 3D")]
+    [SerializeField] private AtomPlacementController placement;
+
+    static readonly Color SLOT_NORMAL = new Color(0.1255f, 0.1412f, 0.3098f, 1f); // #20244F
+    static readonly Color SLOT_ARMED  = new Color(0.10f,   0.65f,   0.81f,   1f);
+
     // Colores de filtro activo/inactivo
     static readonly Color TAB_ON     = new Color(0.10f, 0.65f, 0.81f, 1f);
     static readonly Color TAB_OFF    = new Color(1f, 1f, 1f, 0.06f);
@@ -134,18 +140,12 @@ public class AtomSelectorController : MonoBehaviour
         Open();
     }
 
-    void OpenFromSlot(int slot)
-    {
-        targetSlot = slot;          // apunta a ese slot
-        armedAtom  = -1;
-        Open();
-    }
-
     void Open()
     {
         if (modalRoot) modalRoot.SetActive(true);
         if (searchInput) searchInput.SetTextWithoutNotify("");
         SetFilter(AtomFilter.Todos);
+        HighlightSlot(-1);
         RefreshRings();
     }
 
@@ -208,9 +208,12 @@ public class AtomSelectorController : MonoBehaviour
     {
         bool modalOpen = modalRoot && modalRoot.activeSelf;
 
+        // El modal SOLO se abre con el botón "Selector de átomos".
+        // Con el modal cerrado, tocar un slot lleno ARMA ese átomo para colocarlo.
         if (!modalOpen)
         {
-            OpenFromSlot(slot);
+            if (slotAtom[slot] >= 0 && placement) placement.ArmForPlacement(slotAtom[slot]);
+            HighlightSlot(slotAtom[slot] >= 0 ? slot : -1);
             return;
         }
 
@@ -224,6 +227,16 @@ public class AtomSelectorController : MonoBehaviour
             targetSlot = slot;          // el próximo átomo actuará sobre este slot
         }
         RefreshRings();
+    }
+
+    void HighlightSlot(int armed)
+    {
+        if (slotButtons == null) return;
+        for (int i = 0; i < slotButtons.Length; i++)
+        {
+            var img = slotButtons[i] ? slotButtons[i].targetGraphic as Image : null;
+            if (img) img.color = (i == armed) ? SLOT_ARMED : SLOT_NORMAL;
+        }
     }
 
     // ── Estado de slots ───────────────────────────────────────────────────────

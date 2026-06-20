@@ -122,9 +122,25 @@ public static class ZonaJuegoBuilder
         var mgr = Ensure<ZonaJuegoManager>(mgrGo);
         WireManager(mgr, orbit, hud.transform);
 
-        // RotateCatcher.cam (también lo setea el manager en runtime)
-        var catcher = FindChild(canvasGo.transform, "RotateCatcher")?.GetComponent<DragRotateCatcher>();
-        if (catcher) catcher.cam = orbit;
+        // ── 8) Colocación de átomos en 3D ─────────────────────────────────────
+        var atomMat = GetOrCreateMat("Assets/Materials/Atom_Base.mat", Color.white, 0.1f, 0.45f);
+        var placeGo = FindChild(canvasGo.transform, "AtomPlacement") ?? NewChild(canvasGo.transform, "AtomPlacement");
+        var place = Ensure<AtomPlacementController>(placeGo);
+        var pso = new SerializedObject(place);
+        SetRef(pso, "cam",              cam);
+        SetRef(pso, "orbit",            orbit);
+        SetRef(pso, "atomBaseMaterial", atomMat);
+        SetRef(pso, "btnDeleteRoot",    FindChild(hud.transform, "DeleteBar"));
+        SetRef(pso, "btnDelete",        FindChild(hud.transform, "DeleteBar")?.GetComponent<Button>());
+        SetRef(pso, "labelFont",        fnt);
+        pso.ApplyModifiedProperties();
+
+        // selector → placement
+        var selCtrl = FindChild(canvasGo.transform, "AtomSelector")?.GetComponent<AtomSelectorController>();
+        if (selCtrl) { var sso = new SerializedObject(selCtrl); SetRef(sso, "placement", place); sso.ApplyModifiedProperties(); }
+
+        // manager → placement
+        var mso = new SerializedObject(mgr); SetRef(mso, "place", place); mso.ApplyModifiedProperties();
 
         // ── Guardar ───────────────────────────────────────────────────────────
         if (!System.IO.File.Exists(ScenePath))
@@ -148,14 +164,7 @@ public static class ZonaJuegoBuilder
     static GameObject BuildHud(Transform canvas, OrbitCameraController orbit, TMP_FontAsset fnt,
         Sprite rounded, Sprite circleSpr, Sprite beakerSpr, Sprite uiSpr, Sprite triangle)
     {
-        // RotateCatcher (transparente, al fondo, captura arrastres)
-        var catcher = UI(canvas, "RotateCatcher", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero);
-        Stretch(catcher);
-        var catcherImg = catcher.AddComponent<Image>();
-        catcherImg.color = new Color(0,0,0,0); catcherImg.raycastTarget = true;
-        var drc = catcher.AddComponent<DragRotateCatcher>(); drc.cam = orbit;
-
-        // Contenedor HUD (delante del catcher)
+        // Contenedor HUD (la rotación por arrastre la maneja AtomPlacementController)
         var hud = UI(canvas, "HUD", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero);
         Stretch(hud);
         var hudT = hud.transform;
@@ -284,6 +293,11 @@ public static class ZonaJuegoBuilder
         Stretch(selLblGo); var selLbl = selLblGo.AddComponent<TextMeshProUGUI>();
         selLbl.text="Selector de\nátomos"; selLbl.font=fnt; selLbl.fontSize=20f; selLbl.fontStyle=FontStyles.Bold;
         selLbl.color=Hex("23204A"); selLbl.alignment=TextAlignmentOptions.Center; selLbl.enableWordWrapping=true;
+
+        // ── Botón Eliminar (aparece solo al seleccionar un átomo) ─────────────
+        var deleteBar = MakeButton(hudT, "DeleteBar", new(0.5f,0), new(0.5f,0), new(0.5f,0), new(0,150), new(220,56), rounded, Hex("E0484B"));
+        Label(deleteBar.transform, fnt, "Eliminar átomo", 22f, FontStyles.Bold, Color.white);
+        deleteBar.SetActive(false);
 
         // ── Modal selector de átomos ──────────────────────────────────────────
         var refs = BuildAtomSelectorModal(hudT, fnt, rounded, circleSpr);
@@ -492,7 +506,6 @@ public static class ZonaJuegoBuilder
     {
         var so = new SerializedObject(mgr);
         SetRef(so, "cam", orbit);
-        SetRef(so, "rotateCatcher", FindChildInParents(hud, "RotateCatcher")?.GetComponent<DragRotateCatcher>());
         SetRef(so, "txtUniverse",  FindChild(hud, "UniverseName")?.GetComponent<TextMeshProUGUI>());
         SetRef(so, "txtTimer",     FindChild(hud, "Timer")?.GetComponent<TextMeshProUGUI>());
         SetRef(so, "btnPause",     FindChild(hud, "BtnPause")?.GetComponent<Button>());
