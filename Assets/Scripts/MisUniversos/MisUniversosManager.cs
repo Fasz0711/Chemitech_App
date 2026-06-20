@@ -92,7 +92,10 @@ public class MisUniversosManager : MonoBehaviour
         {
             var captured = u;
             btnJugar.onClick.AddListener(() =>
-                Debug.Log($"[MisUniversos] Jugar '{captured.name}' (id={captured.id}) — pendiente."));
+            {
+                PlayContext.Current = captured;
+                SceneManager.LoadScene("ZonaJuegoScene");
+            });
         }
 
         var btnEditar = card.transform.Find("BtnEditar")?.GetComponent<Button>();
