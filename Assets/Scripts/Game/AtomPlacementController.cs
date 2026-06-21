@@ -26,29 +26,23 @@ public class AtomPlacementController : MonoBehaviour
     [SerializeField] private Button               btnDelete;
     [SerializeField] private TMP_FontAsset        labelFont;
 
-    [Header("Ajustes")]
-    [SerializeField] private float atomScale       = 1.1f;
-    [SerializeField] private float moveSpeed       = 5f;
-    [SerializeField] private float rotateThreshold = 7f;   // px para considerar arrastre
-    [SerializeField] private float platformHalf    = 11.5f;
-    [SerializeField] private float maxHeight       = 12f;
-    [SerializeField] private bool  showLabels      = true;
+    [Header("Colisión")]
+    [SerializeField] private GameObject collisionModal;     // "¡ Colisión Detectada !"
+    [SerializeField] private Button     btnCollisionOk;     // "Entendido"
 
-    [Header("Debug")]
-    [SerializeField] private bool debugOverlay = false;
+    [Header("Ajustes")]
+    [SerializeField] private float atomScale         = 1.1f;
+    [SerializeField] private float moveSpeed         = 5f;
+    [SerializeField] private float rotateThreshold   = 7f;   // px para considerar arrastre
+    [SerializeField] private float platformHalf      = 11.5f;
+    [SerializeField] private float maxHeight         = 12f;
+    [SerializeField] private float minSeparationFrac = 0.9f; // colisión si dist < atomScale*esto
+    [SerializeField] private bool  showLabels        = true;
 
     Transform atomsRoot;
     int     armedAtom = -1;
     Atom3D  selected;
     int     nextId;
-
-    // log de diagnóstico (overlay en pantalla)
-    readonly System.Collections.Generic.List<string> _log = new System.Collections.Generic.List<string>();
-    void Log(string s)
-    {
-        _log.Add($"f{Time.frameCount}: {s}");
-        if (_log.Count > 9) _log.RemoveAt(0);
-    }
 
     // input
     Vector2 pointerDown, lastPointer;
@@ -63,17 +57,18 @@ public class AtomPlacementController : MonoBehaviour
 
     void Start()
     {
-        if (btnDelete) btnDelete.onClick.AddListener(DeleteSelected);
-        if (btnPlace)  btnPlace.onClick.AddListener(PlaceActiveAtom);
+        if (btnDelete)       btnDelete.onClick.AddListener(DeleteSelected);
+        if (btnPlace)        btnPlace.onClick.AddListener(PlaceActiveAtom);
+        if (btnCollisionOk)  btnCollisionOk.onClick.AddListener(HideCollision);
         ShowDelete(false);
-        if (reticleRoot) reticleRoot.SetActive(true);  // siempre visible
+        if (reticleRoot)     reticleRoot.SetActive(true);  // siempre visible
+        if (collisionModal)  collisionModal.SetActive(false);
     }
 
     /// <summary>Marca el átomo activo del hotbar (lo coloca el botón "Presiona para colocar átomo").</summary>
     public void ArmForPlacement(int atomIndex)
     {
         armedAtom = atomIndex;
-        if (debugOverlay) Log($"ARM atom={atomIndex}");
     }
 
     void Update()
@@ -91,14 +86,41 @@ public class AtomPlacementController : MonoBehaviour
             reticleDot.color = (armedAtom >= 0) ? AtomCatalog.All[armedAtom].color : Color.white;
     }
 
-    /// <summary>Coloca el átomo activo en el punto del suelo bajo el centro (retícula).</summary>
+    /// <summary>
+    /// Coloca el átomo activo en la retícula (centro), a la ALTURA de enfoque de
+    /// la cámara: subes/bajas la vista con las flechas verticales y el átomo va ahí.
+    /// </summary>
     public void PlaceActiveAtom()
     {
         if (armedAtom < 0 || !cam) return;
         Ray cray = cam.ScreenPointToRay(new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f));
-        var ground = new Plane(Vector3.up, Vector3.zero);
-        if (ground.Raycast(cray, out float e)) PlaceAtom(armedAtom, cray.GetPoint(e));
+        float planeY = orbit ? Mathf.Max(0f, orbit.FocusHeight) : 0f;
+        var plane = new Plane(Vector3.up, new Vector3(0f, planeY, 0f));
+        if (!plane.Raycast(cray, out float e)) return;
+
+        Vector3 raw = cray.GetPoint(e);
+        Vector3 pos = new Vector3(
+            Mathf.Clamp(raw.x, -platformHalf, platformHalf),
+            Mathf.Clamp(raw.y, atomScale * 0.5f, maxHeight),
+            Mathf.Clamp(raw.z, -platformHalf, platformHalf));
+
+        if (Overlaps(pos)) { ShowCollision(); return; }
+        PlaceAtom(armedAtom, pos);
     }
+
+    /// <summary>¿La posición se solaparía con un átomo ya colocado?</summary>
+    bool Overlaps(Vector3 pos)
+    {
+        if (!atomsRoot) return false;
+        float minDist = atomScale * minSeparationFrac;
+        foreach (Transform child in atomsRoot)
+            if (child.GetComponent<Atom3D>() && Vector3.Distance(child.position, pos) < minDist)
+                return true;
+        return false;
+    }
+
+    void ShowCollision() { if (collisionModal) collisionModal.SetActive(true); }
+    void HideCollision() { if (collisionModal) collisionModal.SetActive(false); }
 
     // ── Input unificado (touch nativo en móvil, mouse en desktop) ─────────────
     void HandlePointer()
@@ -127,25 +149,19 @@ public class AtomPlacementController : MonoBehaviour
         pointerDown = lastPointer = pos;
         dragging = false;
         activePointerId = pointerId;
-        if (debugOverlay) Log($"BEGIN id={pointerId} pos={pos}");
     }
 
     void MovePointer(Vector2 pos)
     {
         if (!dragging && !IsOverUI(activePointerId) && Vector2.Distance(pos, pointerDown) > DragThreshold())
-        {
             dragging = true;
-            if (debugOverlay) Log($"DRAG start (thr={DragThreshold():0})");
-        }
         if (dragging && orbit) orbit.Rotate(pos - lastPointer);
         lastPointer = pos;
     }
 
     void EndPointer(Vector2 pos)
     {
-        bool overUI = IsOverUI(activePointerId);
-        if (debugOverlay) Log($"END drag={dragging} overUI={overUI}");
-        if (!dragging && !overUI) HandleTap(pos);
+        if (!dragging && !IsOverUI(activePointerId)) HandleTap(pos);
         dragging = false;
     }
 
@@ -165,21 +181,20 @@ public class AtomPlacementController : MonoBehaviour
 
     void HandleTap(Vector3 screenPos)
     {
-        if (!cam) { if (debugOverlay) Log("TAP pero cam=null"); return; }
+        if (!cam) return;
 
         // 1) Rayo directo: ¿acierta el collider de un átomo?
         Ray ray = cam.ScreenPointToRay(screenPos);
         if (Physics.Raycast(ray, out RaycastHit hit, 500f))
         {
             var atom = hit.collider.GetComponentInParent<Atom3D>();
-            if (atom) { if (debugOverlay) Log($"TAP directo {atom.element}"); Select(atom); return; }
+            if (atom) { Select(atom); return; }
         }
 
         // 2) Tolerancia (touch): el átomo más cercano al toque en pantalla.
         var near = NearestAtomOnScreen(screenPos, TapTolerancePx());
-        if (near) { if (debugOverlay) Log($"TAP cercano {near.element}"); Select(near); return; }
+        if (near) { Select(near); return; }
 
-        if (debugOverlay) Log("TAP sin átomo → deselect");
         Deselect();
     }
 
@@ -203,15 +218,16 @@ public class AtomPlacementController : MonoBehaviour
     }
 
     // ── Colocar / mover / borrar ──────────────────────────────────────────────
-    void PlaceAtom(int index, Vector3 groundPos)
+    void PlaceAtom(int index, Vector3 worldPos)
     {
         var info = AtomCatalog.All[index];
-        float x = Mathf.Clamp(groundPos.x, -platformHalf, platformHalf);
-        float z = Mathf.Clamp(groundPos.z, -platformHalf, platformHalf);
+        float x = Mathf.Clamp(worldPos.x, -platformHalf, platformHalf);
+        float z = Mathf.Clamp(worldPos.z, -platformHalf, platformHalf);
+        float y = Mathf.Clamp(worldPos.y, atomScale * 0.5f, maxHeight);
 
         var root = new GameObject($"Atom_{info.symbol}_{nextId}");
         root.transform.SetParent(atomsRoot, false);
-        root.transform.position = new Vector3(x, atomScale * 0.5f, z);
+        root.transform.position = new Vector3(x, y, z);
 
         var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         sphere.name = "Sphere";
@@ -272,7 +288,6 @@ public class AtomPlacementController : MonoBehaviour
         selected = a;
         if (selected) selected.SetSelected(true);
         ShowDelete(selected != null);
-        if (debugOverlay) Log($"SELECT {(selected ? selected.element : "-")}");
     }
 
     void Deselect()
@@ -288,40 +303,10 @@ public class AtomPlacementController : MonoBehaviour
         Destroy(selected.gameObject);
         selected = null;
         ShowDelete(false);
-        if (debugOverlay) Log("DELETE");
     }
 
     void ShowDelete(bool show)
     {
         if (btnDeleteRoot) btnDeleteRoot.SetActive(show);
-    }
-
-    // ── Overlay de diagnóstico (IMGUI: visible también en el dispositivo) ─────
-    void OnGUI()
-    {
-        if (!debugOverlay) return;
-
-        int fontSize = Mathf.Max(14, Mathf.RoundToInt(Screen.height * 0.020f));
-        var style = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = fontSize,
-            alignment = TextAnchor.UpperLeft,
-            wordWrap = false,
-        };
-        style.normal.textColor = Color.white;
-
-        string head =
-            $"touches={Input.touchCount}  mouseBtn={Input.GetMouseButton(0)}  mousePos={(Vector2)Input.mousePosition}\n" +
-            $"dragging={dragging}  overUI={IsOverUI(activePointerId)}  thr={DragThreshold():0}\n" +
-            $"armed={armedAtom}  sel={(selected ? selected.element : "-")}  atoms={(atomsRoot ? atomsRoot.childCount : 0)}  cam={(cam ? "ok" : "NULL")}\n" +
-            "──────────────\n" +
-            string.Join("\n", _log);
-
-        float w = Screen.width * 0.62f;
-        float h = Screen.height * 0.55f;
-        GUI.color = new Color(0f, 0f, 0f, 0.6f);
-        GUI.Box(new Rect(6, 6, w, h), GUIContent.none);
-        GUI.color = Color.white;
-        GUI.Label(new Rect(14, 10, w - 16, h - 8), head, style);
     }
 }

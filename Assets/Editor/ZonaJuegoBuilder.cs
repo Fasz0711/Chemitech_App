@@ -135,6 +135,8 @@ public static class ZonaJuegoBuilder
         SetRef(pso, "btnPlace",         FindChild(hud.transform, "BtnPlace")?.GetComponent<Button>());
         SetRef(pso, "btnDeleteRoot",    FindChild(hud.transform, "DeleteBar"));
         SetRef(pso, "btnDelete",        FindChild(hud.transform, "DeleteBar")?.GetComponent<Button>());
+        SetRef(pso, "collisionModal",   FindChild(hud.transform, "CollisionModal"));
+        SetRef(pso, "btnCollisionOk",   FindChild(hud.transform, "BtnEntendido")?.GetComponent<Button>());
         SetRef(pso, "labelFont",        fnt);
         pso.ApplyModifiedProperties();
 
@@ -289,6 +291,9 @@ public static class ZonaJuegoBuilder
         // El hotbar debe renderizar SOBRE el dim del modal (queda interactivo)
         bar.transform.SetAsLastSibling();
 
+        // ── Modal de colisión (alerta central, encima de todo) ────────────────
+        BuildCollisionModal(hudT, fnt, rounded);
+
         // ── Controller del selector + hotbar ──────────────────────────────────
         var ctrlGo = NewChild(hudT, "AtomSelector");
         var ctrl = ctrlGo.AddComponent<AtomSelectorController>();
@@ -417,6 +422,39 @@ public static class ZonaJuegoBuilder
 
         modal.SetActive(false);
         return r;
+    }
+
+    static void BuildCollisionModal(Transform parent, TMP_FontAsset fnt, Sprite rounded)
+    {
+        var modal = UI(parent, "CollisionModal", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero);
+        Stretch(modal);
+
+        var dim = UI(modal.transform, "Dim", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero);
+        Stretch(dim);
+        var dimImg = dim.AddComponent<Image>(); dimImg.color = new Color(0,0,0,0.6f); dimImg.raycastTarget = true;
+
+        const float PW = 540f, PH = 300f;
+        var border = UI(modal.transform, "Border", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(PW+10f, PH+10f));
+        var bImg = border.AddComponent<Image>(); bImg.sprite=rounded; bImg.type=Image.Type.Sliced; bImg.color=Hex("2FD2E0");
+        var panel = UI(modal.transform, "Panel", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(PW, PH));
+        var pImg = panel.AddComponent<Image>(); pImg.sprite=rounded; pImg.type=Image.Type.Sliced; pImg.color=Hex("242659");
+
+        var title = UI(panel.transform, "Title", new(0.5f,1f), new(0.5f,1f), new(0.5f,1f), new(0,-30), new(PW-50f, 60f));
+        var tTmp = title.AddComponent<TextMeshProUGUI>();
+        tTmp.text="¡ Colisión Detectada !"; tTmp.font=fnt; tTmp.fontSize=34f; tTmp.fontStyle=FontStyles.Bold;
+        tTmp.color=Color.white; tTmp.alignment=TextAlignmentOptions.Center; tTmp.enableWordWrapping=false;
+        tTmp.overflowMode=TextOverflowModes.Overflow;
+
+        var msg = UI(panel.transform, "Message", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), new(0,18), new(PW-70f, 90f));
+        var mTmp = msg.AddComponent<TextMeshProUGUI>();
+        mTmp.text="No puedes colocar un átomo encima de otro,\nintenta colocando en otro lugar";
+        mTmp.font=fnt; mTmp.fontSize=21f; mTmp.color=new Color(1,1,1,0.8f);
+        mTmp.alignment=TextAlignmentOptions.Center; mTmp.enableWordWrapping=true;
+
+        var btn = MakeButton(panel.transform, "BtnEntendido", new(0.5f,0f), new(0.5f,0f), new(0.5f,0f), new(0,30), new(300,58), rounded, Hex("19A7CE"));
+        Label(btn.transform, fnt, "Entendido", 28f, FontStyles.Bold, Hex("0E3A4A"));
+
+        modal.SetActive(false);
     }
 
     static GameObject BuildAtomCell(Transform parent, TMP_FontAsset fnt, Sprite rounded, Sprite circleSpr)

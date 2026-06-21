@@ -37,6 +37,9 @@ public class OrbitCameraController : MonoBehaviour
     float   curYaw, curPitch, curDist;
     Vector3 curTarget;
 
+    /// <summary>Altura (Y) del punto de enfoque actual de la cámara.</summary>
+    public float FocusHeight => curTarget.y;
+
     void Awake()
     {
         desYaw = curYaw = defYaw;
