@@ -18,11 +18,7 @@ public class ZonaJuegoManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI txtUniverse;
     [SerializeField] private TextMeshProUGUI txtTimer;
     [SerializeField] private Button btnPause;
-    [SerializeField] private Button btnMover;
     [SerializeField] private Button btnRecentrar;
-
-    [Header("Mover (modo)")]
-    [SerializeField] private Image moverIndicator;
 
     [Header("Controles de cámara")]
     [SerializeField] private HoldButton padUp;
@@ -38,14 +34,12 @@ public class ZonaJuegoManager : MonoBehaviour
     [SerializeField] private string escenaSalir = "MisUniversosScene";
 
     float elapsed;
-    bool  moverMode = true;
 
     void Start()
     {
         if (txtUniverse) txtUniverse.text = PlayContext.UniverseName;
 
         if (btnPause)     btnPause.onClick.AddListener(OnPause);
-        if (btnMover)     btnMover.onClick.AddListener(OnToggleMover);
         if (btnRecentrar && cam) btnRecentrar.onClick.AddListener(cam.Recenter);
 
         // d-pad y flechas: si hay un átomo seleccionado lo mueven; si no, mueven la cámara.
@@ -55,8 +49,6 @@ public class ZonaJuegoManager : MonoBehaviour
         if (padRight) padRight.onHold = () => MovePlane(Vector2.right);
         if (vertUp)   vertUp.onHold   = () => MoveVert(+1f);
         if (vertDown) vertDown.onHold = () => MoveVert(-1f);
-
-        UpdateMoverVisual();
     }
 
     void Update()
@@ -91,18 +83,5 @@ public class ZonaJuegoManager : MonoBehaviour
     {
         Debug.Log("[ZonaJuego] Pausa — saliendo a MisUniversos (temporal).");
         SceneManager.LoadScene(escenaSalir);
-    }
-
-    void OnToggleMover()
-    {
-        moverMode = !moverMode;
-        UpdateMoverVisual();
-        Debug.Log($"[ZonaJuego] Modo Mover = {moverMode}");
-    }
-
-    void UpdateMoverVisual()
-    {
-        if (moverIndicator)
-            moverIndicator.color = moverMode ? Color.white : new Color(1f, 1f, 1f, 0.35f);
     }
 }

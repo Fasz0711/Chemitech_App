@@ -130,6 +130,9 @@ public static class ZonaJuegoBuilder
         SetRef(pso, "cam",              cam);
         SetRef(pso, "orbit",            orbit);
         SetRef(pso, "atomBaseMaterial", atomMat);
+        SetRef(pso, "reticleRoot",      FindChild(hud.transform, "PlacementReticle"));
+        SetRef(pso, "reticleDot",       FindChild(hud.transform, "Dot")?.GetComponent<Image>());
+        SetRef(pso, "btnPlace",         FindChild(hud.transform, "BtnPlace")?.GetComponent<Button>());
         SetRef(pso, "btnDeleteRoot",    FindChild(hud.transform, "DeleteBar"));
         SetRef(pso, "btnDelete",        FindChild(hud.transform, "DeleteBar")?.GetComponent<Button>());
         SetRef(pso, "labelFont",        fnt);
@@ -156,7 +159,7 @@ public static class ZonaJuegoBuilder
         EditorUtility.DisplayDialog("¡Listo!",
             "ZonaJuegoScene creada/actualizada.\n\n" +
             "File → Build Settings → Add Open Scenes\n" +
-            "Arrastra para rotar · d-pad mueve · flechas zoom · Recentrar resetea.",
+            "Arrastrar rota · d-pad/flechas mueven cámara o átomo · tocar coloca/selecciona.",
             "OK");
     }
 
@@ -173,15 +176,6 @@ public static class ZonaJuegoBuilder
         // Pausa (top-left)
         var pause = MakeButton(hudT, "BtnPause", new(0,1), new(0,1), new(0,1), new(24,-22), new(58,58), rounded, Hex("7C4DFF"));
         Label(pause.transform, fnt, "II", 26f, FontStyles.Bold, Color.white);
-
-        // Mover (cyan, junto a pausa)
-        var mover = MakeButton(hudT, "BtnMover", new(0,1), new(0,1), new(0,1), new(96,-22), new(214,58), rounded, Hex("19A7CE"));
-        var moverCircle = UI(mover.transform, "MoverIndicator", new(0,0.5f), new(0,0.5f), new(0,0.5f), new(20,0), new(34,34));
-        var moverImg = moverCircle.AddComponent<Image>(); moverImg.sprite = circleSpr; moverImg.color = Color.white;
-        var moverLblGo = UI(mover.transform, "Label", new(0,0), new(1,1), new(0.5f,0.5f), new(24,0), Vector2.zero);
-        Stretch(moverLblGo); var moverLbl = moverLblGo.AddComponent<TextMeshProUGUI>();
-        moverLbl.text="Mover"; moverLbl.font=fnt; moverLbl.fontSize=28f; moverLbl.fontStyle=FontStyles.Bold;
-        moverLbl.color=Color.white; moverLbl.alignment=TextAlignmentOptions.Center; moverLbl.overflowMode=TextOverflowModes.Overflow;
 
         // Pill Universo + timer (top-center)
         var pill = UI(hudT, "UniversoPill", new(0.5f,1), new(0.5f,1), new(0.5f,1), new(0,-22), new(390,56));
@@ -218,15 +212,6 @@ public static class ZonaJuegoBuilder
         var recenter = MakeButton(hudT, "BtnRecentrar", new(1,1), new(1,1), new(1,1), new(-24,-22), new(186,56), rounded, Hex("B9A7F0"));
         Label(recenter.transform, fnt, "⟳  Recentrar", 24f, FontStyles.Bold, Hex("23204A"));
 
-        // ── Hint "Arrastra para rotar" (centro-derecha, arriba) ───────────────
-        var hint = UI(hudT, "RotateHint", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), new(150,170), new(220,44));
-        var hintCircle = UI(hint.transform, "HandIcon", new(0,0.5f), new(0,0.5f), new(0,0.5f), new(2,0), new(40,40));
-        var hcImg = hintCircle.AddComponent<Image>(); hcImg.sprite=circleSpr; hcImg.color=Hex("2FD2E0");
-        Label(hintCircle.transform, fnt, "✋", 20f, FontStyles.Normal, Color.white);
-        var hintPill = UI(hint.transform, "HintPill", new(0,0.5f), new(0,0.5f), new(0,0.5f), new(46,0), new(174,38));
-        var hpImg = hintPill.AddComponent<Image>(); hpImg.sprite=rounded; hpImg.type=Image.Type.Sliced; hpImg.color=Hex("19A7CE");
-        Label(hintPill.transform, fnt, "Arrastra para rotar", 17f, FontStyles.Bold, Color.white);
-
         // ── D-pad (izquierda-medio): pan sobre el plano ───────────────────────
         var pad = UI(hudT, "DPad", new(0,0.5f), new(0,0.5f), new(0,0.5f), new(110,-30), new(170,170));
         MakeHoldArrow(pad.transform, "PadUp",      0f, new(0,52),  rounded, triangle);
@@ -253,7 +238,7 @@ public static class ZonaJuegoBuilder
         var slotButtons = new Button[SLOTS];
         var slotIcons   = new Image[SLOTS];
         var slotSymbols = new TextMeshProUGUI[SLOTS];
-        var slotBadges  = new GameObject[SLOTS];
+        var slotBadges  = new GameObject[SLOTS]; // sin números (quedan en null)
         float startX = -innerW/2f + SLOT/2f;
         for (int i = 0; i < SLOTS; i++)
         {
@@ -270,20 +255,11 @@ public static class ZonaJuegoBuilder
             symTmp.text=""; symTmp.font=fnt; symTmp.fontSize=24f; symTmp.fontStyle=FontStyles.Bold; symTmp.color=Color.white;
             symTmp.alignment=TextAlignmentOptions.Center; symTmp.raycastTarget=false; symTmp.overflowMode=TextOverflowModes.Overflow;
             symGo.SetActive(false); slotSymbols[i] = symTmp;
-
-            var badge = UI(slot.transform, "Badge", new(0,1), new(0,1), new(0.5f,0.5f), new(3,-3), new(20,20));
-            var badgeImg = badge.AddComponent<Image>(); badgeImg.sprite=circleSpr; badgeImg.color=Hex("F5A623"); badgeImg.raycastTarget=false;
-            var bnumGo = UI(badge.transform, "Num", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero); Stretch(bnumGo);
-            var bnum = bnumGo.AddComponent<TextMeshProUGUI>();
-            bnum.text=(i+1).ToString(); bnum.font=fnt; bnum.fontSize=13f; bnum.fontStyle=FontStyles.Bold; bnum.color=Hex("1E2050");
-            bnum.alignment=TextAlignmentOptions.Center; bnum.raycastTarget=false; bnum.overflowMode=TextOverflowModes.Overflow;
-            badge.SetActive(false); slotBadges[i] = badge;
         }
 
-        // ── "Presiona para colocar átomo" (abajo-izquierda) ───────────────────
-        var hintPlace = UI(hudT, "PlaceHint", new(0,0), new(0,0), new(0,0), new(24,34), new(230,40));
-        var hpImg2 = hintPlace.AddComponent<Image>(); hpImg2.sprite=rounded; hpImg2.type=Image.Type.Sliced; hpImg2.color=Hex("14183C");
-        Label(hintPlace.transform, fnt, "Presiona para colocar átomo", 15f, FontStyles.Normal, new Color(1,1,1,0.85f));
+        // ── Botón "Presiona para colocar átomo" (abajo-izquierda) ─────────────
+        var btnPlace = MakeButton(hudT, "BtnPlace", new(0,0), new(0,0), new(0,0), new(24,34), new(260,54), rounded, Hex("19A7CE"));
+        Label(btnPlace.transform, fnt, "Presiona para colocar átomo", 16f, FontStyles.Bold, Color.white);
 
         // ── Selector de átomos (abajo-derecha) ────────────────────────────────
         var selector = MakeButton(hudT, "BtnSelector", new(1,0), new(1,0), new(1,0), new(-24,32), new(190,76), rounded, Hex("F1C40F"));
@@ -298,6 +274,14 @@ public static class ZonaJuegoBuilder
         var deleteBar = MakeButton(hudT, "DeleteBar", new(0.5f,0), new(0.5f,0), new(0.5f,0), new(0,150), new(220,56), rounded, Hex("E0484B"));
         Label(deleteBar.transform, fnt, "Eliminar átomo", 22f, FontStyles.Bold, Color.white);
         deleteBar.SetActive(false);
+
+        // ── Retícula de colocación (cursor central, oculto hasta armar) ───────
+        var reticle = UI(hudT, "PlacementReticle", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(44,44));
+        var halo = UI(reticle.transform, "Ring", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(44,44));
+        var haloImg = halo.AddComponent<Image>(); haloImg.sprite=circleSpr; haloImg.color=new Color(1,1,1,0.30f); haloImg.raycastTarget=false;
+        var dot = UI(reticle.transform, "Dot", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(18,18));
+        var dotImg = dot.AddComponent<Image>(); dotImg.sprite=circleSpr; dotImg.color=Color.white; dotImg.raycastTarget=false;
+        reticle.SetActive(false);
 
         // ── Modal selector de átomos ──────────────────────────────────────────
         var refs = BuildAtomSelectorModal(hudT, fnt, rounded, circleSpr);
@@ -509,9 +493,7 @@ public static class ZonaJuegoBuilder
         SetRef(so, "txtUniverse",  FindChild(hud, "UniverseName")?.GetComponent<TextMeshProUGUI>());
         SetRef(so, "txtTimer",     FindChild(hud, "Timer")?.GetComponent<TextMeshProUGUI>());
         SetRef(so, "btnPause",     FindChild(hud, "BtnPause")?.GetComponent<Button>());
-        SetRef(so, "btnMover",     FindChild(hud, "BtnMover")?.GetComponent<Button>());
         SetRef(so, "btnRecentrar", FindChild(hud, "BtnRecentrar")?.GetComponent<Button>());
-        SetRef(so, "moverIndicator", FindChild(hud, "MoverIndicator")?.GetComponent<Image>());
         SetRef(so, "padUp",    FindChild(hud, "PadUp")?.GetComponent<HoldButton>());
         SetRef(so, "padDown",  FindChild(hud, "PadDown")?.GetComponent<HoldButton>());
         SetRef(so, "padLeft",  FindChild(hud, "PadLeft")?.GetComponent<HoldButton>());

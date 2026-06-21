@@ -20,6 +20,10 @@ public class ApiManager : MonoBehaviour
     }
     static ApiManager _instance;
 
+    //MOBILE
+    // const string BASE_URL = "http://192.168.18.26:8000/api"; // Example for mobile
+        
+    //LAPTOP
     const string BASE_URL = "http://127.0.0.1:8000/api";
 
     void Awake()
