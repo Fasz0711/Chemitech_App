@@ -147,6 +147,19 @@ public static class ZonaJuegoBuilder
         // manager → placement
         var mso = new SerializedObject(mgr); SetRef(mso, "place", place); mso.ApplyModifiedProperties();
 
+        // ── 9) Enlaces + detección de moléculas ───────────────────────────────
+        var bondMat = GetOrCreateMat("Assets/Materials/Bond.mat", Hex("C8CCD8"), 0.0f, 0.35f);
+        var molGo = FindChild(canvasGo.transform, "MoleculeSystem") ?? NewChild(canvasGo.transform, "MoleculeSystem");
+        var bondMgr = Ensure<BondManager>(molGo);
+        var bannerGO = FindChild(hud.transform, "StatusBanner");
+        var bso = new SerializedObject(bondMgr);
+        SetRef(bso, "placement",    place);
+        SetRef(bso, "bondMaterial", bondMat);
+        SetRef(bso, "bannerRoot",   bannerGO);
+        SetRef(bso, "bannerBg",     bannerGO ? bannerGO.GetComponent<Image>() : null);
+        SetRef(bso, "bannerText",   bannerGO ? FindChild(bannerGO.transform, "Label")?.GetComponent<TextMeshProUGUI>() : null);
+        bso.ApplyModifiedProperties();
+
         // ── Guardar ───────────────────────────────────────────────────────────
         if (!System.IO.File.Exists(ScenePath))
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -213,6 +226,17 @@ public static class ZonaJuegoBuilder
         // Recentrar (top-right)
         var recenter = MakeButton(hudT, "BtnRecentrar", new(1,1), new(1,1), new(1,1), new(-24,-22), new(186,56), rounded, Hex("B9A7F0"));
         Label(recenter.transform, fnt, "⟳  Recentrar", 24f, FontStyles.Bold, Hex("23204A"));
+
+        // ── Banner de estado de molécula (oculto hasta detectar) ──────────────
+        var banner = UI(hudT, "StatusBanner", new(0.5f,1f), new(0.5f,1f), new(0.5f,1f), new(0,-94), new(440,52));
+        var bannerImg = banner.AddComponent<Image>();
+        bannerImg.sprite=rounded; bannerImg.type=Image.Type.Sliced; bannerImg.color=Hex("19A7CE");
+        var bannerLblGo = UI(banner.transform, "Label", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero); Stretch(bannerLblGo);
+        var bannerLbl = bannerLblGo.AddComponent<TextMeshProUGUI>();
+        bannerLbl.text="Detectando…"; bannerLbl.font=fnt; bannerLbl.fontSize=22f; bannerLbl.fontStyle=FontStyles.Bold;
+        bannerLbl.color=Color.white; bannerLbl.alignment=TextAlignmentOptions.Center; bannerLbl.enableWordWrapping=false;
+        bannerLbl.overflowMode=TextOverflowModes.Overflow; bannerLbl.raycastTarget=false;
+        banner.SetActive(false);
 
         // ── D-pad (izquierda-medio): pan sobre el plano ───────────────────────
         var pad = UI(hudT, "DPad", new(0,0.5f), new(0,0.5f), new(0,0.5f), new(110,-30), new(170,170));

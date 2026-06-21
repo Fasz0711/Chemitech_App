@@ -44,6 +44,9 @@ public class AtomPlacementController : MonoBehaviour
     Atom3D  selected;
     int     nextId;
 
+    /// <summary>Contenedor de los átomos colocados (lo lee BondManager).</summary>
+    public Transform AtomsRoot => atomsRoot;
+
     // input
     Vector2 pointerDown, lastPointer;
     bool    dragging;

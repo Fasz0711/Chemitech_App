@@ -84,6 +84,20 @@ public class ApiManager : MonoBehaviour
             onError: onError));
     }
 
+    public void DetectMolecule(string userPublicId, AtomDTO[] atoms, BondDTO[] bonds,
+                               Action<DetectResponse> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new DetectRequest
+        {
+            userPublicId = userPublicId, atoms = atoms, bonds = bonds
+        });
+        Debug.Log($"[API] POST {BASE_URL}/detection/molecule\n{body}");
+
+        StartCoroutine(PostRaw("/detection/molecule", body,
+            onSuccess: json => { Debug.Log($"[API] respuesta OK:\n{json}"); onSuccess?.Invoke(JsonUtility.FromJson<DetectResponse>(json)); },
+            onError: onError));
+    }
+
     // ── Core HTTP ─────────────────────────────────────────────────────────────
 
     // Variante que entrega el campo "message" ya parseado.
@@ -117,6 +131,7 @@ public class ApiManager : MonoBehaviour
         {
             int code = (int)req.responseCode;
             string detail = TryParseDetail(responseText);
+            Debug.LogWarning($"[API] POST {url} FALLÓ · result={req.result} · code={code} · error='{req.error}' · body='{responseText}'");
             onError?.Invoke(code, detail);
         }
     }
@@ -146,5 +161,35 @@ public class ApiManager : MonoBehaviour
         public string refreshToken;
         public string tokenType;
         public int    expiresIn;
+    }
+
+    // ── Detección de moléculas ──────────────────────────────────────────────
+    [Serializable] public class AtomDTO { public int id; public string element; public float x; public float y; public float z; }
+    [Serializable] public class BondDTO { public int beginAtomId; public int endAtomId; public int order; }
+    [Serializable] class DetectRequest  { public string userPublicId; public AtomDTO[] atoms; public BondDTO[] bonds; }
+
+    [Serializable]
+    public class MoleculeDTO
+    {
+        public string name;
+        public string canonicalSmiles;
+        public string molecularFormula;
+        public string inchikey;
+        public float  molarMass;
+        public string polarity;
+        public float  logP;
+        public string aqueousSolubility;
+        public float  aqueousSolubilityLogS;
+        public bool   isKnown;
+        public bool   isNewDiscovery;
+    }
+
+    [Serializable]
+    public class DetectResponse
+    {
+        public string      message;
+        public bool        isValid;
+        public string      invalidityReason;
+        public MoleculeDTO molecule;
     }
 }
