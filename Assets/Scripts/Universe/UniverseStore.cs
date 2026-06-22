@@ -1,35 +1,25 @@
 using System.IO;
-using System.Security.Cryptography;
-using System.Text;
 using UnityEngine;
 
 /// <summary>
-/// Persistencia local de universos, separada por cuenta.
+/// Persistencia local de universos, separada por cuenta (por userId).
 ///
-///  • Con sesión iniciada: archivo JSON por cuenta en
-///    Application.persistentDataPath/universes_{hash(email)}.json
-///    Al cambiar de cuenta cambia el archivo → cada cuenta ve solo los suyos.
+///  • Con userId: archivo JSON por cuenta en
+///    Application.persistentDataPath/universes_{userId}.json
+///    El userId viene del response de LOGIN (uso normal) o del response de
+///    CREAR CUENTA (al registrarse). Al cambiar de cuenta cambia el archivo.
 ///
-///  • Modo invitado (sin token): colección solo en memoria. Persiste mientras
-///    el juego está abierto y se borra al cerrarlo.
-///
-/// La identidad activa se decide con SessionData.IsLoggedIn.
+///  • Invitado (sin userId): colección solo en memoria; se borra al cerrar.
 /// </summary>
 public static class UniverseStore
 {
     // Caché en memoria para invitado (se pierde al cerrar el juego).
     static UniverseCollection _guestCache;
 
-    static bool IsGuest => !SessionData.IsLoggedIn;
+    static bool IsGuest => string.IsNullOrEmpty(SessionData.UserId);
 
-    static string FilePath
-    {
-        get
-        {
-            string key = Hash(SessionData.Email.Trim().ToLowerInvariant());
-            return Path.Combine(Application.persistentDataPath, $"universes_{key}.json");
-        }
-    }
+    static string FilePath =>
+        Path.Combine(Application.persistentDataPath, $"universes_{SessionData.UserId}.json");
 
     public static UniverseCollection Load()
     {
@@ -74,15 +64,5 @@ public static class UniverseStore
         var col = Load();
         col.universes.Add(universe);
         Save(col);
-    }
-
-    // Hash estable del email para no exponerlo en el nombre del archivo.
-    static string Hash(string s)
-    {
-        using var md5 = MD5.Create();
-        byte[] bytes = md5.ComputeHash(Encoding.UTF8.GetBytes(s));
-        var sb = new StringBuilder(bytes.Length * 2);
-        foreach (byte b in bytes) sb.Append(b.ToString("x2"));
-        return sb.ToString();
     }
 }

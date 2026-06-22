@@ -67,7 +67,9 @@ public class LoginManager : MonoBehaviour
             onSuccess: resp =>
             {
                 SessionData.SetTokens(resp.accessToken, resp.refreshToken, resp.tokenType, resp.expiresIn);
-                SessionData.SetSession("", "", email);
+                string userId = !string.IsNullOrEmpty(resp.userId) ? resp.userId : resp.userPublicId;
+                SessionData.SetSession(userId, "", email);
+                Debug.Log($"[Login] sesión iniciada · userId='{userId}'");
                 SceneManager.LoadScene(escenaDestino);
             },
             onError: (code, detail) =>

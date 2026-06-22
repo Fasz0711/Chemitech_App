@@ -161,6 +161,8 @@ public class ApiManager : MonoBehaviour
         public string refreshToken;
         public string tokenType;
         public int    expiresIn;
+        public string userId;        // incluido por el backend en el login
+        public string userPublicId;  // alias por si el campo se llama así
     }
 
     // ── Detección de moléculas ──────────────────────────────────────────────

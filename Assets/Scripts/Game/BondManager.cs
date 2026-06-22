@@ -35,6 +35,11 @@ public class BondManager : MonoBehaviour
     float  lastChangeTime;
     bool   detecting;
 
+    // Batch de detección (una molécula = un componente conexo)
+    int  pendingRequests;
+    bool anyValid;
+    int  currentBatch;
+
     void Awake() { bondsRoot = new GameObject("Bonds").transform; }
 
     void Start() { if (bannerRoot) bannerRoot.SetActive(false); }
@@ -134,39 +139,97 @@ public class BondManager : MonoBehaviour
 
     void SendDetection()
     {
-        var atomsDTO = new ApiManager.AtomDTO[atomsBuf.Count];
-        for (int i = 0; i < atomsBuf.Count; i++)
-        {
-            var p = atomsBuf[i].transform.position;
-            atomsDTO[i] = new ApiManager.AtomDTO
-            {
-                id = atomsBuf[i].id, element = atomsBuf[i].element, x = p.x, y = p.y, z = p.z
-            };
-        }
-        var bondsDTO = new ApiManager.BondDTO[pairBuf.Count];
-        for (int i = 0; i < pairBuf.Count; i++)
-            bondsDTO[i] = new ApiManager.BondDTO
-            {
-                beginAtomId = pairBuf[i].a.id, endAtomId = pairBuf[i].b.id, order = 1
-            };
+        var comps = ConnectedComponents();
 
+        // Solo los grupos con al menos un enlace son candidatos a molécula.
+        int batches = 0;
+        foreach (var c in comps) if (c.bonds.Count > 0) batches++;
+        if (batches == 0) { detecting = false; HideBanner(); return; }
+
+        currentBatch++;
+        int batch = currentBatch;
+        pendingRequests = batches;
+        anyValid = false;
         detecting = true;
         ShowBanner("Detectando interacción atómica…", C_DETECT);
-        Debug.Log($"[Detect] Enviando {atomsDTO.Length} átomos, {bondsDTO.Length} enlaces · userId='{SessionData.UserId}'");
+        Debug.Log($"[Detect] {batches} molécula(s) separada(s) en la escena · userId='{SessionData.UserId}'");
 
-        ApiManager.Instance.DetectMolecule(SessionData.UserId, atomsDTO, bondsDTO,
-            onSuccess: resp => { detecting = false; OnDetect(resp); },
-            onError:   (code, detail) => { detecting = false; Debug.LogWarning($"[Detect] Error {code}: {detail}"); HideBanner(); });
+        foreach (var c in comps)
+        {
+            if (c.bonds.Count == 0) continue;
+
+            var atomsDTO = new ApiManager.AtomDTO[c.atoms.Count];
+            for (int i = 0; i < c.atoms.Count; i++)
+            {
+                var p = c.atoms[i].transform.position;
+                atomsDTO[i] = new ApiManager.AtomDTO
+                {
+                    id = c.atoms[i].id, element = c.atoms[i].element, x = p.x, y = p.y, z = p.z
+                };
+            }
+            var bondsDTO = new ApiManager.BondDTO[c.bonds.Count];
+            for (int i = 0; i < c.bonds.Count; i++)
+                bondsDTO[i] = new ApiManager.BondDTO
+                {
+                    beginAtomId = c.bonds[i].a.id, endAtomId = c.bonds[i].b.id, order = 1
+                };
+
+            ApiManager.Instance.DetectMolecule(SessionData.UserId, atomsDTO, bondsDTO,
+                onSuccess: resp => OnComponentResult(batch, resp != null && resp.isValid && resp.molecule != null, resp),
+                onError:   (code, detail) => { Debug.LogWarning($"[Detect] Error {code}: {detail}"); OnComponentResult(batch, false, null); });
+        }
     }
 
-    void OnDetect(ApiManager.DetectResponse resp)
+    void OnComponentResult(int batch, bool valid, ApiManager.DetectResponse resp)
     {
-        Debug.Log($"[Detect] message={resp?.message} · isValid={resp?.isValid} · reason={resp?.invalidityReason} · " +
-                  $"molécula={resp?.molecule?.name} ({resp?.molecule?.molecularFormula})");
-        if (resp != null && resp.isValid && resp.molecule != null)
-            ShowBanner("¡Molécula formada!", C_OK);
-        else
-            HideBanner();
+        if (batch != currentBatch) return; // resultado de un batch anterior (estructura ya cambió)
+
+        if (resp != null)
+            Debug.Log($"[Detect] message={resp.message} · isValid={resp.isValid} · " +
+                      $"molécula={resp.molecule?.name} ({resp.molecule?.molecularFormula})");
+
+        if (valid) anyValid = true;
+        pendingRequests--;
+        if (pendingRequests <= 0)
+        {
+            detecting = false;
+            if (anyValid) ShowBanner("¡Molécula formada!", C_OK);
+            else          HideBanner();
+        }
+    }
+
+    // ── Componentes conexos: cada grupo de átomos unidos por enlaces = 1 molécula
+    class Comp
+    {
+        public List<Atom3D> atoms = new List<Atom3D>();
+        public List<(Atom3D a, Atom3D b)> bonds = new List<(Atom3D, Atom3D)>();
+    }
+
+    List<Comp> ConnectedComponents()
+    {
+        var parent = new Dictionary<int, int>();
+        foreach (var a in atomsBuf) parent[a.id] = a.id;
+
+        int Find(int x)
+        {
+            while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+            return x;
+        }
+        void Union(int a, int b) { parent[Find(a)] = Find(b); }
+
+        foreach (var p in pairBuf) Union(p.a.id, p.b.id);
+
+        var byRoot = new Dictionary<int, Comp>();
+        foreach (var a in atomsBuf)
+        {
+            int r = Find(a.id);
+            if (!byRoot.TryGetValue(r, out var c)) { c = new Comp(); byRoot[r] = c; }
+            c.atoms.Add(a);
+        }
+        foreach (var p in pairBuf)
+            byRoot[Find(p.a.id)].bonds.Add(p);
+
+        return new List<Comp>(byRoot.Values);
     }
 
     string StructureHash()
