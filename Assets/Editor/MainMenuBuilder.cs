@@ -50,6 +50,38 @@ public static class MainMenuBuilder
         Debug.Log($"[MainMenuBuilder] {fixed_} átomos → circulares.");
     }
 
+    // Cablea el Label del botón de sesión al MainMenuManager en la escena ACTUAL,
+    // sin reconstruir ni borrar nada (aditivo / idempotente).
+    [MenuItem("ChemiTech/Fix/Wire Session Label")]
+    static void WireSessionLabel()
+    {
+        var mgrGo = GameObject.Find("MainMenuManager");
+        var mgr   = mgrGo != null ? mgrGo.GetComponent<MainMenuManager>() : null;
+        if (mgr == null)
+        {
+            EditorUtility.DisplayDialog("Error", "No se encontró 'MainMenuManager' en la escena.", "OK");
+            return;
+        }
+
+        var btnGo = GameObject.Find("BtnIniciarSesion");
+        var label = btnGo != null ? btnGo.transform.Find("Label")?.GetComponent<TextMeshProUGUI>() : null;
+        if (label == null)
+        {
+            EditorUtility.DisplayDialog("Error", "No se encontró 'BtnIniciarSesion/Label' (TMP).", "OK");
+            return;
+        }
+
+        var so = new SerializedObject(mgr);
+        so.FindProperty("txtSesionLabel").objectReferenceValue = label;
+        so.ApplyModifiedProperties();
+
+        EditorUtility.SetDirty(mgr);
+        EditorSceneManager.MarkSceneDirty(UnityEngine.SceneManagement.SceneManager.GetActiveScene());
+        Debug.Log("[MainMenuBuilder] ✓ txtSesionLabel cableado al MainMenuManager.");
+        EditorUtility.DisplayDialog("¡Listo!",
+            "Label de sesión cableado al MainMenuManager.\nGuarda la escena con Ctrl+S.", "OK");
+    }
+
     [MenuItem("ChemiTech/Build Main Menu Scene")]
     public static void Build()
     {
@@ -181,6 +213,7 @@ public static class MainMenuBuilder
         mSO.FindProperty("btnDiario").objectReferenceValue        = btnDiario.GetComponent<Button>();
         mSO.FindProperty("btnAjustes").objectReferenceValue       = btnAjustes.GetComponent<Button>();
         mSO.FindProperty("btnIniciarSesion").objectReferenceValue = btnLogin.GetComponent<Button>();
+        mSO.FindProperty("txtSesionLabel").objectReferenceValue   = btnLogin.transform.Find("Label")?.GetComponent<TextMeshProUGUI>();
         mSO.FindProperty("menuAnimator").objectReferenceValue     = anim;
         mSO.ApplyModifiedProperties();
 

@@ -70,6 +70,14 @@ public class ApiManager : MonoBehaviour
             onError: onError));
     }
 
+    public void GetProfile(string publicId,
+                           Action<ProfileResponse> onSuccess, Action<int, string> onError)
+    {
+        StartCoroutine(GetRaw($"/users/profile/{publicId}", publicId,
+            onSuccess: json => onSuccess?.Invoke(JsonUtility.FromJson<ProfileResponse>(json)),
+            onError: onError));
+    }
+
     public void Login(string email, string password,
                       Action<LoginResponse> onSuccess, Action<int, string> onError)
     {
@@ -106,6 +114,33 @@ public class ApiManager : MonoBehaviour
         return PostRaw(endpoint, jsonBody,
             json => onSuccess?.Invoke(JsonUtility.FromJson<MessageResponse>(json).message),
             onError);
+    }
+
+    // GET crudo. Envía el public_id como header (según contrato del backend).
+    IEnumerator GetRaw(string endpoint, string publicIdHeader, Action<string> onSuccess, Action<int, string> onError)
+    {
+        string url = BASE_URL + endpoint;
+
+        using var req = UnityWebRequest.Get(url);
+        req.downloadHandler = new DownloadHandlerBuffer();
+        if (!string.IsNullOrEmpty(publicIdHeader))
+            req.SetRequestHeader("public_id", publicIdHeader);
+
+        yield return req.SendWebRequest();
+
+        string responseText = req.downloadHandler.text;
+
+        if (req.result == UnityWebRequest.Result.Success)
+        {
+            onSuccess?.Invoke(responseText);
+        }
+        else
+        {
+            int code = (int)req.responseCode;
+            string detail = TryParseDetail(responseText);
+            Debug.LogWarning($"[API] GET {url} FALLÓ · result={req.result} · code={code} · error='{req.error}' · body='{responseText}'");
+            onError?.Invoke(code, detail);
+        }
     }
 
     // Variante que entrega el cuerpo crudo (JSON) para que el caller lo parsee.
@@ -152,6 +187,18 @@ public class ApiManager : MonoBehaviour
     [Serializable] class LoginRequest    { public string email; public string password; }
     [Serializable] class MessageResponse { public string message; }
     [Serializable] class DetailResponse  { public string detail; }
+
+    [Serializable]
+    public class ProfileResponse
+    {
+        public string message;
+        public string username;
+        public string email;
+        public int    moleculesDiscovered;
+        public int    playTimeSeconds;
+        public int    createdUniverses;
+        public string memberSince;
+    }
 
     [Serializable]
     public class LoginResponse

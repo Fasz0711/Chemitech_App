@@ -18,6 +18,11 @@ public static class SessionData
         Email    = email;
     }
 
+    public static void SetUsername(string username)
+    {
+        Username = username ?? "";
+    }
+
     public static void SetTokens(string accessToken, string refreshToken, string tokenType, int expiresIn)
     {
         AccessToken  = accessToken;
