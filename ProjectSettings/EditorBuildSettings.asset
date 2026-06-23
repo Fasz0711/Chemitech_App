@@ -35,5 +35,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/ZonaJuegoScene.unity
     guid: c9c0ce20eec29f14baca52364c59f7e8
+  - enabled: 1
+    path: Assets/Scenes/PerfilScene.unity
+    guid: 6215debe8bf365240a0e3ba9914604b4
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
