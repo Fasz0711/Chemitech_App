@@ -82,6 +82,77 @@ public static class MainMenuBuilder
             "Label de sesión cableado al MainMenuManager.\nGuarda la escena con Ctrl+S.", "OK");
     }
 
+    // Cablea el avatar del botón de sesión en la escena ACTUAL (aditivo, sin reconstruir).
+    [MenuItem("ChemiTech/Fix/Wire Menu Avatar")]
+    static void WireMenuAvatar()
+    {
+        var mgrGo = GameObject.Find("MainMenuManager");
+        var mgr   = mgrGo != null ? mgrGo.GetComponent<MainMenuManager>() : null;
+        if (mgr == null)
+        {
+            EditorUtility.DisplayDialog("Error", "No se encontró 'MainMenuManager' en la escena.", "OK");
+            return;
+        }
+
+        var btnGo = GameObject.Find("BtnIniciarSesion");
+        var slot  = btnGo != null ? btnGo.transform.Find("Icon")?.GetComponent<Image>() : null;
+        if (slot == null)
+        {
+            EditorUtility.DisplayDialog("Error", "No se encontró 'BtnIniciarSesion/Icon'.", "OK");
+            return;
+        }
+
+        var inner  = EnsureAvatarInner(slot);
+        var circle = Spr("Assets/Sprites/AtomCircle.png");
+        var icons  = LoadAvatarIcons();
+
+        var so = new SerializedObject(mgr);
+        so.FindProperty("avatarIconSlot").objectReferenceValue     = slot;
+        so.FindProperty("avatarInner").objectReferenceValue        = inner;
+        so.FindProperty("avatarCircleSprite").objectReferenceValue = circle;
+        var ap = so.FindProperty("avatarIcons");
+        ap.arraySize = icons.Length;
+        for (int i = 0; i < icons.Length; i++)
+            ap.GetArrayElementAtIndex(i).objectReferenceValue = icons[i];
+        so.ApplyModifiedProperties();
+
+        EditorUtility.SetDirty(mgr);
+        EditorSceneManager.MarkSceneDirty(UnityEngine.SceneManagement.SceneManager.GetActiveScene());
+        Debug.Log("[MainMenuBuilder] ✓ Avatar del menú cableado.");
+        EditorUtility.DisplayDialog("¡Listo!",
+            "Avatar del botón de sesión cableado.\nGuarda la escena con Ctrl+S.", "OK");
+    }
+
+    // Crea/devuelve el ícono interno del avatar dentro del slot (inactivo por defecto).
+    static Image EnsureAvatarInner(Image slot)
+    {
+        var existing = slot.transform.Find("AvatarInner");
+        GameObject go = existing != null
+            ? existing.gameObject
+            : new GameObject("AvatarInner", typeof(RectTransform), typeof(Image));
+        if (existing == null) go.transform.SetParent(slot.transform, false);
+
+        var rt = (RectTransform)go.transform;
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = Vector2.zero;
+        rt.sizeDelta = slot.rectTransform.sizeDelta * 0.58f;
+
+        var img = go.GetComponent<Image>();
+        img.preserveAspect = true;
+        img.raycastTarget  = false;
+        go.SetActive(false);
+        return img;
+    }
+
+    static Sprite[] LoadAvatarIcons()
+    {
+        var names = AvatarCatalog.IconNames;
+        var arr = new Sprite[names.Length];
+        for (int i = 0; i < names.Length; i++)
+            arr[i] = Spr($"Assets/Sprites/Icons/{names[i]}.png");
+        return arr;
+    }
+
     [MenuItem("ChemiTech/Build Main Menu Scene")]
     public static void Build()
     {
@@ -215,6 +286,22 @@ public static class MainMenuBuilder
         mSO.FindProperty("btnIniciarSesion").objectReferenceValue = btnLogin.GetComponent<Button>();
         mSO.FindProperty("txtSesionLabel").objectReferenceValue   = btnLogin.transform.Find("Label")?.GetComponent<TextMeshProUGUI>();
         mSO.FindProperty("menuAnimator").objectReferenceValue     = anim;
+
+        // Avatar en el botón de sesión
+        var iconSlot = btnLogin.transform.Find("Icon")?.GetComponent<Image>();
+        if (iconSlot != null)
+        {
+            var inner = EnsureAvatarInner(iconSlot);
+            mSO.FindProperty("avatarIconSlot").objectReferenceValue     = iconSlot;
+            mSO.FindProperty("avatarInner").objectReferenceValue        = inner;
+            mSO.FindProperty("avatarCircleSprite").objectReferenceValue = circleSpr;
+            var icons = LoadAvatarIcons();
+            var ap = mSO.FindProperty("avatarIcons");
+            ap.arraySize = icons.Length;
+            for (int i = 0; i < icons.Length; i++)
+                ap.GetArrayElementAtIndex(i).objectReferenceValue = icons[i];
+        }
+
         mSO.ApplyModifiedProperties();
 
         // CanvasGroups para animaciones de entrada

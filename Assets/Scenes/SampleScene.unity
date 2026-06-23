@@ -1161,10 +1161,26 @@ MonoBehaviour:
   btnDiario: {fileID: 574739266}
   btnAjustes: {fileID: 129934209}
   btnIniciarSesion: {fileID: 1237582334}
+  txtSesionLabel: {fileID: 0}
+  avatarIconSlot: {fileID: 1552346697}
+  avatarInner: {fileID: 1641094624}
+  avatarCircleSprite: {fileID: 21300000, guid: a0c9a42b287b15e4d943ce28990affe0, type: 3}
+  avatarIcons:
+  - {fileID: 21300000, guid: 7167eda562f35bb4fbf036bb08796742, type: 3}
+  - {fileID: 21300000, guid: 0aef7172f153e1e469ead8b54a500706, type: 3}
+  - {fileID: 21300000, guid: ab197489947b58747ba6e0109299e275, type: 3}
+  - {fileID: 21300000, guid: 6d263afcb81ea7b45beacc2d4452df86, type: 3}
+  - {fileID: 21300000, guid: ce068d3068742074ea8f6afe7862a631, type: 3}
+  - {fileID: 21300000, guid: b41a91fe482a75f45a67d157d2048fd5, type: 3}
+  - {fileID: 21300000, guid: 2119e148f83adf04a92cafbc0e549ce8, type: 3}
+  - {fileID: 21300000, guid: c499434409e49554fb0ee53340b3bf44, type: 3}
+  defaultMenuAvatarIndex: 3
   escenaJugar: GuestPromptScene
+  escenaJugarLogueado: MisUniversosScene
   escenaDiario: DiaryScene
   escenaAjustes: SettingsScene
   escenaLogin: LoginScene
+  escenaPerfil: PerfilScene
   menuAnimator: {fileID: 0}
 --- !u!1 &728937032
 GameObject:
@@ -3236,12 +3252,13 @@ RectTransform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 1641094626}
   m_Father: {fileID: 1237582331}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -118, y: 9}
+  m_AnchoredPosition: {x: -114, y: 5}
   m_SizeDelta: {x: 44, y: 44}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1552346697
@@ -3452,6 +3469,81 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1587010043}
   m_CullTransparentMesh: 1
+--- !u!1 &1641094623
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1641094626}
+  - component: {fileID: 1641094625}
+  - component: {fileID: 1641094624}
+  m_Layer: 0
+  m_Name: AvatarInner
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!114 &1641094624
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1641094623}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
+  m_Material: {fileID: 0}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
+  m_RaycastTarget: 0
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Sprite: {fileID: 0}
+  m_Type: 0
+  m_PreserveAspect: 1
+  m_FillCenter: 1
+  m_FillMethod: 4
+  m_FillAmount: 1
+  m_FillClockwise: 1
+  m_FillOrigin: 0
+  m_UseSpriteMesh: 0
+  m_PixelsPerUnitMultiplier: 1
+--- !u!222 &1641094625
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1641094623}
+  m_CullTransparentMesh: 1
+--- !u!224 &1641094626
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1641094623}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1552346696}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 25.519999, y: 25.519999}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!1 &1679071846
 GameObject:
   m_ObjectHideFlags: 0

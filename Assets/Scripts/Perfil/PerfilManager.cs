@@ -65,7 +65,11 @@ public class PerfilManager : MonoBehaviour
             }
         }
 
-        _appliedIndex = defaultAvatarIndex;
+        // Avatar guardado en la cuenta (o el default si no hay ninguno aún).
+        int saved = AvatarStore.Load(defaultAvatarIndex);
+        _appliedIndex = (avatarOptions != null && avatarOptions.Length > 0)
+            ? Mathf.Clamp(saved, 0, avatarOptions.Length - 1)
+            : saved;
         ApplyAvatarVisual(_appliedIndex);
         SelectAvatar(_appliedIndex);
         ShowProfile();
@@ -160,6 +164,7 @@ public class PerfilManager : MonoBehaviour
     private void SaveAvatar()
     {
         _appliedIndex = _selectedIndex;
+        AvatarStore.Save(_appliedIndex);   // persiste el avatar en la cuenta
         ApplyAvatarVisual(_appliedIndex);
         ShowProfile();
     }

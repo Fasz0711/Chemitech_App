@@ -20,6 +20,13 @@ public class MainMenuManager : MonoBehaviour
     [SerializeField] private Button btnIniciarSesion;
     [SerializeField] private TextMeshProUGUI txtSesionLabel; // texto del botón (fallback: hijo del botón)
 
+    [Header("Avatar en el botón (al iniciar sesión)")]
+    [SerializeField] private Image    avatarIconSlot;     // el "Icon" del botón, usado como círculo de fondo
+    [SerializeField] private Image    avatarInner;        // ícono interno del avatar (hijo del slot)
+    [SerializeField] private Sprite   avatarCircleSprite; // sprite del círculo (AtomCircle)
+    [SerializeField] private Sprite[] avatarIcons;        // íconos internos, orden = AvatarCatalog.IconNames
+    [SerializeField] private int      defaultMenuAvatarIndex = 3;
+
     // ─── Nombres de Escenas ─────────────────────────────────────────────────
     [Header("Nombres de Escenas")]
     [SerializeField] private string escenaJugar = "GuestPromptScene";          // sin sesión
@@ -52,30 +59,33 @@ public class MainMenuManager : MonoBehaviour
         menuAnimator?.PlayEntrance();
     }
 
-    // ─── Etiqueta del botón de sesión ───────────────────────────────────────
+    // ─── Etiqueta + avatar del botón de sesión ──────────────────────────────
     private void RefreshSessionLabel()
     {
         // Fallback: si no se cableó, tomamos el Label del propio botón.
         if (txtSesionLabel == null && btnIniciarSesion != null)
             txtSesionLabel = btnIniciarSesion.GetComponentInChildren<TextMeshProUGUI>(true);
 
-        if (txtSesionLabel == null) return;
-
-        // Sin sesión → texto por defecto.
+        // Sin sesión → texto por defecto, ícono por defecto (no se toca).
         if (!SessionData.IsLoggedIn)
         {
-            txtSesionLabel.text = TEXTO_INICIAR_SESION;
+            if (txtSesionLabel) txtSesionLabel.text = TEXTO_INICIAR_SESION;
             return;
         }
 
-        // Con sesión y nombre ya cacheado → usarlo directo.
+        // Con sesión → mostrar el avatar guardado de la cuenta.
+        ShowMenuAvatar();
+
+        if (txtSesionLabel == null) return;
+
+        // Nombre ya cacheado → usarlo directo.
         if (!string.IsNullOrEmpty(SessionData.Username))
         {
             txtSesionLabel.text = SessionData.Username;
             return;
         }
 
-        // Con sesión pero sin nombre → pedirlo al backend con el userId del login.
+        // Sin nombre → pedirlo al backend con el userId del login.
         if (string.IsNullOrEmpty(SessionData.UserId)) return;
 
         ApiManager.Instance.GetProfile(SessionData.UserId,
@@ -90,6 +100,29 @@ public class MainMenuManager : MonoBehaviour
             {
                 Debug.LogWarning($"[MainMenu] No se pudo obtener el perfil · code={code} · {detail}");
             });
+    }
+
+    // Pinta el avatar guardado (color + ícono) en el botón. Si faltan los sprites
+    // (no se corrió 'Wire Menu Avatar'), deja el ícono por defecto sin fallar.
+    private void ShowMenuAvatar()
+    {
+        if (avatarIconSlot == null && btnIniciarSesion != null)
+        {
+            var t = btnIniciarSesion.transform.Find("Icon");
+            if (t) avatarIconSlot = t.GetComponent<Image>();
+        }
+        if (avatarIconSlot == null || avatarInner == null) return;
+        if (avatarCircleSprite == null || avatarIcons == null || avatarIcons.Length == 0) return;
+
+        int idx = AvatarStore.Load(defaultMenuAvatarIndex);
+
+        avatarIconSlot.sprite        = avatarCircleSprite;
+        avatarIconSlot.color         = AvatarCatalog.ColorAt(idx);
+        avatarIconSlot.preserveAspect = true;
+
+        avatarInner.sprite = avatarIcons[AvatarCatalog.IconIndexAt(idx)];
+        avatarInner.color  = Color.white;
+        avatarInner.gameObject.SetActive(true);
     }
 
     // ─── Handlers ───────────────────────────────────────────────────────────
