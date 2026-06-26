@@ -131,6 +131,15 @@ public class CrearUniversoManager : MonoBehaviour
 
         UniverseStore.Add(UniverseData.New(name, selIcon, selColor));
         Debug.Log($"[CrearUniverso] Universo guardado: nombre={name} icono={selIcon} color={selColor}");
+
+        // Incrementa el contador de universos en el journal (solo con sesión real).
+        if (!string.IsNullOrEmpty(SessionData.UserId))
+        {
+            ApiManager.Instance.AddCreatedUniverse(SessionData.UserId,
+                onSuccess: stats => Debug.Log($"[CrearUniverso] Journal actualizado · totalCreatedUniverses={stats.totalCreatedUniverses}"),
+                onError: (code, detail) => Debug.LogWarning($"[CrearUniverso] No se pudo actualizar el journal · code={code} · {detail}"));
+        }
+
         SceneManager.LoadScene(escenaAtras); // vuelve a MisUniversosScene
     }
 }

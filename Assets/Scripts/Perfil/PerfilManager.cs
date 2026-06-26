@@ -46,6 +46,7 @@ public class PerfilManager : MonoBehaviour
 
     private int _selectedIndex;
     private int _appliedIndex;
+    private bool _loggingOut;
 
     private void Start()
     {
@@ -141,8 +142,37 @@ public class PerfilManager : MonoBehaviour
 
     private void OnCerrarSesion()
     {
-        // TODO: conectar endpoint de logout. Por ahora solo interfaz.
-        Debug.Log("[Perfil] Cerrar Sesión (placeholder, sin lógica todavía).");
+        if (_loggingOut) return;
+        _loggingOut = true;
+        if (btnCerrarSesion) btnCerrarSesion.interactable = false;
+
+        string refreshToken = SessionData.RefreshToken;
+
+        // Sin refreshToken (p. ej. invitado): cerrar localmente directo.
+        if (string.IsNullOrEmpty(refreshToken))
+        {
+            FinishLogout();
+            return;
+        }
+
+        ApiManager.Instance.Logout(refreshToken,
+            onSuccess: msg =>
+            {
+                Debug.Log($"[Perfil] Logout: {msg}");
+                FinishLogout();
+            },
+            onError: (code, detail) =>
+            {
+                Debug.LogWarning($"[Perfil] Logout falló (code={code}, {detail}); se cierra sesión localmente igual.");
+                FinishLogout();
+            });
+    }
+
+    // Limpia la sesión local y vuelve al menú (siempre, haya respondido o no el back).
+    private void FinishLogout()
+    {
+        SessionData.Clear();
+        SceneManager.LoadScene(escenaMenu);
     }
 
     // ── Toggle de vistas ───────────────────────────────────────────────────────

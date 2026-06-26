@@ -92,6 +92,23 @@ public class ApiManager : MonoBehaviour
             onError: onError));
     }
 
+    public void Logout(string refreshToken, Action<string> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new LogoutRequest { refreshToken = refreshToken });
+        Debug.Log($"[API] POST {BASE_URL}/session/logout\n{body}");
+        StartCoroutine(Post("/session/logout", body, onSuccess, onError));
+    }
+
+    public void AddCreatedUniverse(string userPublicId,
+                                   Action<JournalStatsResponse> onSuccess, Action<int, string> onError)
+    {
+        string endpoint = $"/journal/{userPublicId}/created-universes";
+        Debug.Log($"[API] PATCH {BASE_URL}{endpoint}");
+        StartCoroutine(PatchRaw(endpoint, userPublicId, null,
+            json => onSuccess?.Invoke(JsonUtility.FromJson<JournalStatsResponse>(json)),
+            onError));
+    }
+
     public void DetectMolecule(string userPublicId, AtomDTO[] atoms, BondDTO[] bonds,
                                Action<DetectResponse> onSuccess, Action<int, string> onError)
     {
@@ -123,6 +140,7 @@ public class ApiManager : MonoBehaviour
 
         using var req = UnityWebRequest.Get(url);
         req.downloadHandler = new DownloadHandlerBuffer();
+        req.SetRequestHeader("Accept", "application/json");
         if (!string.IsNullOrEmpty(publicIdHeader))
             req.SetRequestHeader("public_id", publicIdHeader);
 
@@ -143,6 +161,40 @@ public class ApiManager : MonoBehaviour
         }
     }
 
+    // PATCH crudo. Envía el user_public_id como header; el body es opcional.
+    IEnumerator PatchRaw(string endpoint, string userPublicIdHeader, string jsonBody,
+                         Action<string> onSuccess, Action<int, string> onError)
+    {
+        string url = BASE_URL + endpoint;
+
+        using var req = new UnityWebRequest(url, "PATCH");
+        if (!string.IsNullOrEmpty(jsonBody))
+        {
+            req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(jsonBody));
+            req.SetRequestHeader("Content-Type", "application/json");
+        }
+        req.downloadHandler = new DownloadHandlerBuffer();
+        req.SetRequestHeader("Accept", "application/json");
+        if (!string.IsNullOrEmpty(userPublicIdHeader))
+            req.SetRequestHeader("user_public_id", userPublicIdHeader);
+
+        yield return req.SendWebRequest();
+
+        string responseText = req.downloadHandler.text;
+
+        if (req.result == UnityWebRequest.Result.Success)
+        {
+            onSuccess?.Invoke(responseText);
+        }
+        else
+        {
+            int code = (int)req.responseCode;
+            string detail = TryParseDetail(responseText);
+            Debug.LogWarning($"[API] PATCH {url} FALLÓ · result={req.result} · code={code} · error='{req.error}' · body='{responseText}'");
+            onError?.Invoke(code, detail);
+        }
+    }
+
     // Variante que entrega el cuerpo crudo (JSON) para que el caller lo parsee.
     IEnumerator PostRaw(string endpoint, string jsonBody, Action<string> onSuccess, Action<int, string> onError)
     {
@@ -153,6 +205,7 @@ public class ApiManager : MonoBehaviour
         req.uploadHandler   = new UploadHandlerRaw(raw);
         req.downloadHandler = new DownloadHandlerBuffer();
         req.SetRequestHeader("Content-Type", "application/json");
+        req.SetRequestHeader("Accept", "application/json");
 
         yield return req.SendWebRequest();
 
@@ -185,8 +238,23 @@ public class ApiManager : MonoBehaviour
     [Serializable] class AccountRequest  { public string email; public string password; public string username; }
     [Serializable] class AccountResponse { public string userId; }
     [Serializable] class LoginRequest    { public string email; public string password; }
+    [Serializable] class LogoutRequest   { public string refreshToken; }
     [Serializable] class MessageResponse { public string message; }
     [Serializable] class DetailResponse  { public string detail; }
+
+    [Serializable]
+    public class JournalStatsResponse
+    {
+        public string message;
+        public int    totalDiscoveries;
+        public int    totalAtomsPlaced;
+        public int    totalAtomsRemoved;
+        public int    totalPlayTimeSeconds;
+        public int    totalNanometersWalked;
+        public int    totalCreatedUniverses;
+        public string firstSessionAt;
+        public string lastActiveAt;
+    }
 
     [Serializable]
     public class ProfileResponse
