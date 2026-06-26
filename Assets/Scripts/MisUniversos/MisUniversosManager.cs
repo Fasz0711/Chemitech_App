@@ -103,7 +103,10 @@ public class MisUniversosManager : MonoBehaviour
         {
             var captured = u;
             btnEditar.onClick.AddListener(() =>
-                Debug.Log($"[MisUniversos] Editar '{captured.name}' (id={captured.id}) — pendiente."));
+            {
+                UniverseEditContext.Current = captured;
+                SceneManager.LoadScene("EditarUniversoScene");
+            });
         }
     }
 }

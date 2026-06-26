@@ -119,6 +119,24 @@ public class CrearUniversoManager : MonoBehaviour
         if (previewNameLabel) previewNameLabel.text = string.IsNullOrEmpty(name) ? "Universo 1" : name;
     }
 
+    // Resuelve el índice canónico del ícono (según UniverseTheme.IconNames) a partir
+    // del sprite del botón seleccionado, sin depender del orden del array iconButtons.
+    int ResolveCanonicalIconIndex()
+    {
+        if (iconButtons != null && selIcon >= 0 && selIcon < iconButtons.Length && iconButtons[selIcon] != null)
+        {
+            var t = iconButtons[selIcon].transform;
+            var child = t.childCount > 0 ? t.GetChild(0).GetComponent<Image>() : null;
+            if (child != null && child.sprite != null)
+            {
+                int canonical = System.Array.IndexOf(UniverseTheme.IconNames, child.sprite.name);
+                if (canonical >= 0) return canonical;
+                Debug.LogWarning($"[CrearUniverso] Sprite '{child.sprite.name}' no está en UniverseTheme.IconNames; uso selIcon={selIcon}.");
+            }
+        }
+        return selIcon; // fallback
+    }
+
     void OnCrear()
     {
         string name = inputName ? inputName.text.Trim() : "";
@@ -129,8 +147,9 @@ public class CrearUniversoManager : MonoBehaviour
             return;
         }
 
-        UniverseStore.Add(UniverseData.New(name, selIcon, selColor));
-        Debug.Log($"[CrearUniverso] Universo guardado: nombre={name} icono={selIcon} color={selColor}");
+        int iconIndex = ResolveCanonicalIconIndex();
+        UniverseStore.Add(UniverseData.New(name, iconIndex, selColor));
+        Debug.Log($"[CrearUniverso] Universo guardado: nombre={name} icono={iconIndex} (sel={selIcon}) color={selColor}");
 
         // Incrementa el contador de universos en el journal (solo con sesión real).
         if (!string.IsNullOrEmpty(SessionData.UserId))

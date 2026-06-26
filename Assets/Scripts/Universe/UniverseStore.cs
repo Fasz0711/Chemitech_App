@@ -65,4 +65,22 @@ public static class UniverseStore
         col.universes.Add(universe);
         Save(col);
     }
+
+    public static void Update(UniverseData universe)
+    {
+        if (universe == null) return;
+        var col = Load();
+        int idx = col.universes.FindIndex(u => u.id == universe.id);
+        if (idx >= 0) col.universes[idx] = universe;
+        else          col.universes.Add(universe);
+        Save(col);
+    }
+
+    public static void Remove(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return;
+        var col = Load();
+        col.universes.RemoveAll(u => u.id == id);
+        Save(col);
+    }
 }
