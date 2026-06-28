@@ -109,6 +109,16 @@ public class ApiManager : MonoBehaviour
             onError));
     }
 
+    public void DecrementCreatedUniverse(string userPublicId,
+                                         Action<JournalStatsResponse> onSuccess, Action<int, string> onError)
+    {
+        string endpoint = $"/journal/{userPublicId}/created-universes/decrement";
+        Debug.Log($"[API] PATCH {BASE_URL}{endpoint}");
+        StartCoroutine(PatchRaw(endpoint, userPublicId, null,
+            json => onSuccess?.Invoke(JsonUtility.FromJson<JournalStatsResponse>(json)),
+            onError));
+    }
+
     public void DetectMolecule(string userPublicId, AtomDTO[] atoms, BondDTO[] bonds,
                                Action<DetectResponse> onSuccess, Action<int, string> onError)
     {

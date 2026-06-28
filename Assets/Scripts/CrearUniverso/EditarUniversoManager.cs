@@ -180,6 +180,15 @@ public class EditarUniversoManager : MonoBehaviour
     {
         UniverseStore.Remove(_editing.id);
         Debug.Log($"[EditarUniverso] Eliminado: id={_editing.id} nombre={_editing.name}");
+
+        // Decrementa el contador de universos en el journal (solo con sesión real).
+        if (!string.IsNullOrEmpty(SessionData.UserId))
+        {
+            ApiManager.Instance.DecrementCreatedUniverse(SessionData.UserId,
+                onSuccess: stats => Debug.Log($"[EditarUniverso] Journal actualizado · totalCreatedUniverses={stats.totalCreatedUniverses}"),
+                onError: (code, detail) => Debug.LogWarning($"[EditarUniverso] No se pudo decrementar el journal · code={code} · {detail}"));
+        }
+
         GoBack();
     }
 
