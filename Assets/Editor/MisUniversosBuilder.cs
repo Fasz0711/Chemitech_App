@@ -14,6 +14,65 @@ public static class MisUniversosBuilder
 {
     const string ScenePath = "Assets/Scenes/MisUniversosScene.unity";
 
+    // Aplica el estilo nuevo al BtnEditar de la plantilla en la ESCENA ACTUAL,
+    // sin tocar nada más (aditivo / idempotente).
+    [MenuItem("ChemiTech/Fix/MisUniversos Editar Button")]
+    static void FixEditarButton()
+    {
+        var mgr = Object.FindObjectOfType<MisUniversosManager>();
+        GameObject template = null;
+        if (mgr != null)
+        {
+            var mso = new SerializedObject(mgr);
+            template = mso.FindProperty("cardTemplate").objectReferenceValue as GameObject;
+        }
+        if (template == null)
+        {
+            EditorUtility.DisplayDialog("Error", "No se encontró el CardTemplate.\n¿Abriste MisUniversosScene?", "OK");
+            return;
+        }
+
+        var editGo = FindChildRecursive(template.transform, "BtnEditar");
+        if (editGo == null)
+        {
+            EditorUtility.DisplayDialog("Error", "No se encontró 'BtnEditar' en el CardTemplate.", "OK");
+            return;
+        }
+
+        var rounded = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/Login/rounded-panel.png");
+        var iconSpr = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/edit.png");
+
+        // Botón: cuadrado redondeado, color #5A5FA5
+        var img = editGo.GetComponent<Image>();
+        if (img) { if (rounded) img.sprite = rounded; img.type = Image.Type.Sliced; img.color = Hex("5A5FA5"); }
+        var le = editGo.GetComponent<LayoutElement>() ?? editGo.AddComponent<LayoutElement>();
+        le.minWidth = le.preferredWidth = 56f; le.minHeight = le.preferredHeight = 56f;
+
+        // Quitar el "✎" (Label de texto)
+        var label = editGo.transform.Find("Label");
+        if (label != null) Object.DestroyImmediate(label.gameObject);
+
+        // Ícono placeholder (cambiar luego: BtnEditar → Icon → Sprite)
+        var iconT = editGo.transform.Find("Icon");
+        var iconGo = iconT != null ? iconT.gameObject
+                                   : new GameObject("Icon", typeof(RectTransform), typeof(Image));
+        if (iconT == null) iconGo.transform.SetParent(editGo.transform, false);
+        var irt = iconGo.GetComponent<RectTransform>();
+        irt.anchorMin = irt.anchorMax = irt.pivot = new Vector2(0.5f, 0.5f);
+        irt.anchoredPosition = Vector2.zero;
+        irt.sizeDelta = new Vector2(30f, 30f);
+        var iimg = iconGo.GetComponent<Image>();
+        iimg.sprite = iconSpr; iimg.color = Color.white; iimg.preserveAspect = true; iimg.raycastTarget = false;
+
+        EditorUtility.SetDirty(template);
+        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+        Debug.Log("[MisUniversosBuilder] ✓ BtnEditar: #5A5FA5, cuadrado redondeado, ícono placeholder.");
+        EditorUtility.DisplayDialog("¡Listo!",
+            "BtnEditar actualizado (color #5A5FA5, cuadrado redondeado, ícono placeholder).\n\n" +
+            "Para cambiar el ícono luego: CardTemplate → BtnEditar → Icon → cambia el Sprite.\n" +
+            "Guarda con Ctrl+S.", "OK");
+    }
+
     [MenuItem("ChemiTech/Build Mis Universos Scene")]
     public static void Build()
     {
@@ -265,17 +324,18 @@ public static class MisUniversosBuilder
         jTmp.text = "Jugar"; jTmp.font = fnt; jTmp.fontSize = 24f; jTmp.fontStyle = FontStyles.Bold;
         jTmp.color = Color.white; jTmp.alignment = TextAlignmentOptions.Center; jTmp.overflowMode = TextOverflowModes.Overflow;
 
-        // BtnEditar
+        // BtnEditar (cuadrado redondeado + ícono placeholder)
         var editGo = MakeEmpty(card.transform, "BtnEditar");
         var editImg = editGo.AddComponent<Image>();
-        editImg.sprite = rounded; editImg.type = Image.Type.Sliced; editImg.color = Hex("2A2D5A");
+        editImg.sprite = rounded; editImg.type = Image.Type.Sliced; editImg.color = Hex("5A5FA5");
         var editLe = editGo.AddComponent<LayoutElement>();
         editLe.minWidth = 56f; editLe.preferredWidth = 56f; editLe.minHeight = 56f; editLe.preferredHeight = 56f;
         editGo.AddComponent<Button>().targetGraphic = editImg;
-        var eLbl = MakeEmpty(editGo.transform, "Label"); Stretch(eLbl);
-        var eTmp = eLbl.AddComponent<TextMeshProUGUI>();
-        eTmp.text = "✎"; eTmp.font = fnt; eTmp.fontSize = 26f; eTmp.color = Color.white;
-        eTmp.alignment = TextAlignmentOptions.Center; eTmp.overflowMode = TextOverflowModes.Overflow;
+        var eIcon = MakeEmpty(editGo.transform, "Icon");
+        eIcon.GetComponent<RectTransform>().sizeDelta = new Vector2(30f, 30f);
+        var eIconImg = eIcon.AddComponent<Image>();
+        eIconImg.sprite = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/edit.png");
+        eIconImg.color = Color.white; eIconImg.preserveAspect = true; eIconImg.raycastTarget = false;
 
         return card;
     }
