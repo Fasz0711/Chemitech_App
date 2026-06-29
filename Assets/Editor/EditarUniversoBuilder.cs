@@ -20,7 +20,7 @@ public static class EditarUniversoBuilder
     const int    ICON_COUNT = 8, COLOR_COUNT = 6;
 
     static TMP_FontAsset fnt;
-    static Sprite rounded, circle, ring, uiSpr;
+    static Sprite rounded, circle, ring, uiSpr, person;
     static Sprite[] universeIcons; // orden UniverseTheme.IconNames
     static Sprite[] avatarIcons;   // orden AvatarCatalog.IconNames
 
@@ -38,6 +38,35 @@ public static class EditarUniversoBuilder
             "Esto DESTRUYE la UI de Editar Universo actual y la regenera por código.\n¿Continuar?",
             "Sí, regenerar", "Cancelar")) return;
         Build(true);
+    }
+
+    // Pone el genérico (person-icon) como default del header en la ESCENA ACTUAL,
+    // para que en invitado se muestre el genérico (con sesión, HeaderAvatar lo reemplaza).
+    [MenuItem("ChemiTech/Fix/Editar Universo Header Avatar")]
+    static void FixHeaderAvatarGeneric()
+    {
+        var ha = Object.FindObjectOfType<HeaderAvatar>();
+        if (ha == null)
+        {
+            EditorUtility.DisplayDialog("Error", "No se encontró HeaderAvatar (¿abriste EditarUniversoScene?).", "OK");
+            return;
+        }
+
+        var personSpr = Spr("Assets/Sprites/person-icon.png");
+        var so = new SerializedObject(ha);
+        var inner = so.FindProperty("inner").objectReferenceValue as Image;
+        if (inner != null && personSpr != null)
+        {
+            inner.sprite = personSpr;
+            inner.color  = Color.white;
+            inner.preserveAspect = true;
+            EditorUtility.SetDirty(inner);
+        }
+
+        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+        Debug.Log("[EditarUniversoBuilder] ✓ Header genérico (invitado) = person-icon.");
+        EditorUtility.DisplayDialog("¡Listo!",
+            "En invitado el header mostrará el genérico (persona); con sesión, el avatar.\nGuarda con Ctrl+S.", "OK");
     }
 
     static void Build(bool force)
@@ -77,6 +106,7 @@ public static class EditarUniversoBuilder
         circle  = Spr("Assets/Sprites/AtomCircle.png");
         ring    = Spr("Assets/Sprites/orbit-ring.png");
         uiSpr   = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        person  = Spr("Assets/Sprites/person-icon.png");
         universeIcons = LoadIcons(UniverseTheme.IconNames);
         avatarIcons   = LoadIcons(AvatarCatalog.IconNames);
 
@@ -328,7 +358,8 @@ public static class EditarUniversoBuilder
     {
         var ringGo = MakeImg(header, "AvatarRing", new Vector2(78f, 78f), pos, CYAN, circle);
         var bg = MakeImg(ringGo.transform, "AvatarCircle", new Vector2(66f, 66f), Vector2.zero, Color.white, circle).GetComponent<Image>();
-        var inner = MakeImg(bg.transform, "Inner", new Vector2(40f, 40f), Vector2.zero, Color.white, avatarIcons[3]).GetComponent<Image>();
+        // Default = genérico (lo que se ve en invitado). Con sesión, HeaderAvatar lo reemplaza.
+        var inner = MakeImg(bg.transform, "Inner", new Vector2(40f, 40f), Vector2.zero, Color.white, person).GetComponent<Image>();
         inner.preserveAspect = true;
 
         var ha = ringGo.AddComponent<HeaderAvatar>();

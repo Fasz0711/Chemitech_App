@@ -18,12 +18,16 @@ public class HeaderAvatar : MonoBehaviour
 
     public void Refresh()
     {
+        // Invitado (sin sesión): se deja el ícono genérico que ya trae la escena.
+        if (!SessionData.IsLoggedIn) return;
+
         if (!bg || !inner || circleSprite == null || icons == null || icons.Length == 0) return;
 
         int idx = AvatarStore.Load(defaultIndex);
 
-        bg.sprite        = circleSprite;
-        bg.color         = AvatarCatalog.ColorAt(idx);
+        bg.sprite         = circleSprite;
+        bg.type           = Image.Type.Simple;
+        bg.color          = AvatarCatalog.ColorAt(idx);
         bg.preserveAspect = true;
 
         inner.sprite = icons[AvatarCatalog.IconIndexAt(idx)];
