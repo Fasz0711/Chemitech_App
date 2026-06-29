@@ -159,16 +159,13 @@ public class EditarUniversoManager : MonoBehaviour
             return;
         }
 
-        var updated = new UniverseData
-        {
-            id             = _editing.id,
-            name           = name,
-            iconIndex      = ResolveCanonicalIconIndex(),
-            colorIndex     = selColor,
-            createdAtTicks = _editing.createdAtTicks,
-        };
-        UniverseStore.Update(updated);
-        Debug.Log($"[EditarUniverso] Guardado: nombre={name} icono={updated.iconIndex} color={selColor} id={updated.id}");
+        // Muta el universo existente: cambia solo nombre/ícono/color y CONSERVA
+        // el resto (playSeconds, atoms, createdAtTicks, id…).
+        _editing.name       = name;
+        _editing.iconIndex  = ResolveCanonicalIconIndex();
+        _editing.colorIndex = selColor;
+        UniverseStore.Update(_editing);
+        Debug.Log($"[EditarUniverso] Guardado: nombre={name} icono={_editing.iconIndex} color={selColor} id={_editing.id} · átomos conservados={_editing.atoms.Count}");
         GoBack();
     }
 
