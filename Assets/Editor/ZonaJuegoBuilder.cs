@@ -328,6 +328,10 @@ public static class ZonaJuegoBuilder
         // ── Modal de colisión (alerta central, encima de todo) ────────────────
         BuildCollisionModal(hudT, fnt, rounded);
 
+        // ── Modal de pausa + confirmación de salida ───────────────────────────
+        BuildPauseModal(hudT, fnt, rounded);
+        BuildExitModal(hudT, fnt, rounded);
+
         // ── Controller del selector + hotbar ──────────────────────────────────
         var ctrlGo = NewChild(hudT, "AtomSelector");
         var ctrl = ctrlGo.AddComponent<AtomSelectorController>();
@@ -491,6 +495,77 @@ public static class ZonaJuegoBuilder
         modal.SetActive(false);
     }
 
+    static void BuildPauseModal(Transform parent, TMP_FontAsset fnt, Sprite rounded)
+    {
+        var modal = UI(parent, "PauseModal", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero); Stretch(modal);
+        var dim = UI(modal.transform, "Dim", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero); Stretch(dim);
+        var dimImg = dim.AddComponent<Image>(); dimImg.color = new Color(0,0,0,0.6f); dimImg.raycastTarget = true;
+
+        const float PW = 470f, PH = 420f;
+        var border = UI(modal.transform, "Border", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(PW+10f, PH+10f));
+        var bImg = border.AddComponent<Image>(); bImg.sprite=rounded; bImg.type=Image.Type.Sliced; bImg.color=Color.white;
+        var panel = UI(modal.transform, "Panel", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(PW, PH));
+        var pImg = panel.AddComponent<Image>(); pImg.sprite=rounded; pImg.type=Image.Type.Sliced; pImg.color=Hex("1B1F46");
+
+        PanelLabel(panel.transform, fnt, "Title", "Juego en pausa", new(0,-26), new(PW-40f,46f), 32f, FontStyles.Bold, Color.white);
+        PanelLabel(panel.transform, fnt, "PauseSubtitle", "Universo · 0:00:00", new(0,-80), new(PW-40f,30f), 18f, FontStyles.Normal, new Color(1,1,1,0.7f));
+
+        var rean = MakeButton(panel.transform, "BtnReanudar", new(0.5f,1f), new(0.5f,1f), new(0.5f,1f), new(0,-132), new(PW-50f,60f), rounded, Hex("19A7CE"));
+        Label(rean.transform, fnt, "Reanudar universo", 26f, FontStyles.Bold, Color.white);
+
+        float halfW = (PW - 50f - 12f) / 2f;
+        var guardar = MakeButton(panel.transform, "BtnGuardar", new(0.5f,1f), new(0.5f,1f), new(0.5f,1f), new(-(halfW/2f+6f),-202), new(halfW,56f), rounded, Hex("2ECC71"));
+        Label(guardar.transform, fnt, "Guardar", 24f, FontStyles.Bold, Color.white);
+        var ajustes = MakeButton(panel.transform, "BtnAjustes", new(0.5f,1f), new(0.5f,1f), new(0.5f,1f), new(halfW/2f+6f,-202), new(halfW,56f), rounded, Hex("B9A7F0"));
+        Label(ajustes.transform, fnt, "Ajustes", 24f, FontStyles.Bold, Hex("23204A"));
+
+        var tut = MakeButton(panel.transform, "BtnTutorial", new(0.5f,1f), new(0.5f,1f), new(0.5f,1f), new(0,-268), new(PW-50f,52f), rounded, Hex("F1C40F"));
+        Label(tut.transform, fnt, "Ver tutorial", 24f, FontStyles.Bold, Hex("23204A"));
+
+        var salir = MakeButton(panel.transform, "BtnSalir", new(0.5f,1f), new(0.5f,1f), new(0.5f,1f), new(0,-330), new(PW-50f,52f), rounded, Hex("3A3B6B"));
+        Label(salir.transform, fnt, "Salir al menú de universos", 22f, FontStyles.Bold, Color.white);
+
+        var toast = UI(panel.transform, "SavedToast", new(0.5f,1f), new(0.5f,1f), new(0.5f,0f), new(0,10), new(170f,36f));
+        var tImg = toast.AddComponent<Image>(); tImg.sprite=rounded; tImg.type=Image.Type.Sliced; tImg.color=Hex("2ECC71");
+        Label(toast.transform, fnt, "Guardado ✓", 18f, FontStyles.Bold, Color.white);
+        toast.SetActive(false);
+
+        modal.SetActive(false);
+    }
+
+    static void BuildExitModal(Transform parent, TMP_FontAsset fnt, Sprite rounded)
+    {
+        var modal = UI(parent, "ExitModal", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero); Stretch(modal);
+        var dim = UI(modal.transform, "Dim", new(0,0), new(1,1), new(0.5f,0.5f), Vector2.zero, Vector2.zero); Stretch(dim);
+        var dimImg = dim.AddComponent<Image>(); dimImg.color = new Color(0,0,0,0.6f); dimImg.raycastTarget = true;
+
+        const float PW = 470f, PH = 250f;
+        var border = UI(modal.transform, "Border", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(PW+10f, PH+10f));
+        var bImg = border.AddComponent<Image>(); bImg.sprite=rounded; bImg.type=Image.Type.Sliced; bImg.color=Hex("E5B435");
+        var panel = UI(modal.transform, "Panel", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(PW, PH));
+        var pImg = panel.AddComponent<Image>(); pImg.sprite=rounded; pImg.type=Image.Type.Sliced; pImg.color=Hex("242659");
+
+        PanelLabel(panel.transform, fnt, "Title", "¿Salir sin guardar?", new(0,-28), new(PW-40f,40f), 28f, FontStyles.Bold, Color.white);
+        PanelLabel(panel.transform, fnt, "Message", "Tus últimos cambios no se guardarán.", new(0,-86), new(PW-60f,50f), 19f, FontStyles.Normal, new Color(1,1,1,0.8f));
+
+        float halfW = (PW - 50f - 12f) / 2f;
+        var cancel = MakeButton(panel.transform, "BtnExitCancel", new(0.5f,0f), new(0.5f,0f), new(0.5f,0f), new(-(halfW/2f+6f),28), new(halfW,56f), rounded, Hex("3A3B6B"));
+        Label(cancel.transform, fnt, "Cancelar", 24f, FontStyles.Bold, Color.white);
+        var confirm = MakeButton(panel.transform, "BtnExitConfirm", new(0.5f,0f), new(0.5f,0f), new(0.5f,0f), new(halfW/2f+6f,28), new(halfW,56f), rounded, Hex("E0484B"));
+        Label(confirm.transform, fnt, "Salir", 24f, FontStyles.Bold, Color.white);
+
+        modal.SetActive(false);
+    }
+
+    static void PanelLabel(Transform parent, TMP_FontAsset fnt, string name, string text, Vector2 pos, Vector2 size, float fs, FontStyles style, Color color)
+    {
+        var go = UI(parent, name, new(0.5f,1f), new(0.5f,1f), new(0.5f,1f), pos, size);
+        var tmp = go.AddComponent<TextMeshProUGUI>();
+        tmp.text=text; tmp.font=fnt; tmp.fontSize=fs; tmp.fontStyle=style; tmp.color=color;
+        tmp.alignment=TextAlignmentOptions.Center; tmp.enableWordWrapping=true; tmp.richText=true;
+        tmp.overflowMode=TextOverflowModes.Overflow; tmp.raycastTarget=false;
+    }
+
     static GameObject BuildAtomCell(Transform parent, TMP_FontAsset fnt, Sprite rounded, Sprite circleSpr)
     {
         var cell = UI(parent, "AtomTemplate", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(96,96));
@@ -572,6 +647,19 @@ public static class ZonaJuegoBuilder
         SetRef(so, "padRight", FindChild(hud, "PadRight")?.GetComponent<HoldButton>());
         SetRef(so, "vertUp",   FindChild(hud, "VertUp")?.GetComponent<HoldButton>());
         SetRef(so, "vertDown", FindChild(hud, "VertDown")?.GetComponent<HoldButton>());
+
+        // Modal de pausa
+        SetRef(so, "pauseModal",     FindChild(hud, "PauseModal"));
+        SetRef(so, "pauseSubtitle",  FindChild(hud, "PauseSubtitle")?.GetComponent<TextMeshProUGUI>());
+        SetRef(so, "btnReanudar",    FindChild(hud, "BtnReanudar")?.GetComponent<Button>());
+        SetRef(so, "btnGuardar",     FindChild(hud, "BtnGuardar")?.GetComponent<Button>());
+        SetRef(so, "btnAjustes",     FindChild(hud, "BtnAjustes")?.GetComponent<Button>());
+        SetRef(so, "btnTutorial",    FindChild(hud, "BtnTutorial")?.GetComponent<Button>());
+        SetRef(so, "btnSalir",       FindChild(hud, "BtnSalir")?.GetComponent<Button>());
+        SetRef(so, "savedToast",     FindChild(hud, "SavedToast"));
+        SetRef(so, "exitModal",      FindChild(hud, "ExitModal"));
+        SetRef(so, "btnExitConfirm", FindChild(hud, "BtnExitConfirm")?.GetComponent<Button>());
+        SetRef(so, "btnExitCancel",  FindChild(hud, "BtnExitCancel")?.GetComponent<Button>());
 
         so.ApplyModifiedProperties();
     }

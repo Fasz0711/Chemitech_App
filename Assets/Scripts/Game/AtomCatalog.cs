@@ -74,6 +74,14 @@ public static class AtomCatalog
         A("Mn", "Manganeso",    25, true,  false, false, false, false, "9E7BA8"),
     };
 
+    /// <summary>Índice del átomo por su símbolo (-1 si no existe).</summary>
+    public static int IndexOf(string symbol)
+    {
+        for (int i = 0; i < All.Count; i++)
+            if (All[i].symbol == symbol) return i;
+        return -1;
+    }
+
     static AtomInfo A(string sym, string name, int z, bool metal, bool nonmetal,
         bool gas, bool metalloid, bool diatomic, string hex)
     {

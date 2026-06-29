@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -57,6 +58,10 @@ public class AtomPlacementController : MonoBehaviour
 
     /// <summary>Contenedor de los átomos colocados (lo lee BondManager).</summary>
     public Transform AtomsRoot => atomsRoot;
+
+    /// <summary>Hay cambios sin guardar (átomos colocados/movidos/borrados).</summary>
+    public bool Dirty { get; private set; }
+    public void ClearDirty() => Dirty = false;
 
     // input
     Vector2 pointerDown, lastPointer;
@@ -158,6 +163,7 @@ public class AtomPlacementController : MonoBehaviour
         Vector3 pos = previewGhost.transform.position;
         if (Overlaps(pos)) { ShowCollision(); return; }
         PlaceAtom(armedAtom, pos);
+        Dirty = true;
     }
 
     // ── Retícula: cursor central, visible solo cuando NO hay previsualización ──
@@ -274,6 +280,38 @@ public class AtomPlacementController : MonoBehaviour
         return best;
     }
 
+    // ── Guardar / restaurar estado (lo usa el modal de pausa) ─────────────────
+    public List<AtomSave> ExportAtoms()
+    {
+        var list = new List<AtomSave>();
+        if (!atomsRoot) return list;
+        foreach (Transform c in atomsRoot)
+        {
+            var a = c.GetComponent<Atom3D>();
+            if (!a) continue;
+            var p = a.transform.position;
+            list.Add(new AtomSave { element = a.element, x = p.x, y = p.y, z = p.z });
+        }
+        return list;
+    }
+
+    public void ImportAtoms(List<AtomSave> saved)
+    {
+        if (atomsRoot)
+            for (int i = atomsRoot.childCount - 1; i >= 0; i--)
+            {
+                var a = atomsRoot.GetChild(i).GetComponent<Atom3D>();
+                if (a) Destroy(a.gameObject);
+            }
+        if (saved != null)
+            foreach (var s in saved)
+            {
+                int idx = AtomCatalog.IndexOf(s.element);
+                if (idx >= 0) PlaceAtom(idx, new Vector3(s.x, s.y, s.z));
+            }
+        Dirty = false; // estado recién cargado = sin cambios
+    }
+
     // ── Colocar / mover / borrar ──────────────────────────────────────────────
     void PlaceAtom(int index, Vector3 worldPos)
     {
@@ -324,6 +362,7 @@ public class AtomPlacementController : MonoBehaviour
             p.x = Mathf.Clamp(p.x, -platformHalf, platformHalf);
             p.z = Mathf.Clamp(p.z, -platformHalf, platformHalf);
             target.position = p;
+            if (!previewGhost && selected) Dirty = true; // mover un átomo colocado es un cambio
         }
         else if (orbit) orbit.PanScreen(dir);
     }
@@ -337,6 +376,7 @@ public class AtomPlacementController : MonoBehaviour
             var p = target.position;
             p.y = Mathf.Clamp(p.y + sign * moveSpeed * Time.deltaTime, atomScale * 0.5f, maxHeight);
             target.position = p;
+            if (!previewGhost && selected) Dirty = true;
         }
         else if (orbit) orbit.MoveVertical(sign);
     }
@@ -362,6 +402,7 @@ public class AtomPlacementController : MonoBehaviour
         Destroy(selected.gameObject);
         selected = null;
         ShowDelete(false);
+        Dirty = true;
     }
 
     void ShowDelete(bool show) { if (btnDeleteRoot) btnDeleteRoot.SetActive(show); }
