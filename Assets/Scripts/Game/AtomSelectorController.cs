@@ -239,6 +239,9 @@ public class AtomSelectorController : MonoBehaviour
         }
     }
 
+    /// <summary>Quita el resaltado de slot armado (lo llama el placement al cancelar la preview).</summary>
+    public void ClearHighlight() => HighlightSlot(-1);
+
     // ── Estado de slots ───────────────────────────────────────────────────────
     void SetSlot(int slot, int atomIndex)
     {

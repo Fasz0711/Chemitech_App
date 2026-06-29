@@ -123,16 +123,20 @@ public static class ZonaJuegoBuilder
         WireManager(mgr, orbit, hud.transform);
 
         // ── 8) Colocación de átomos en 3D ─────────────────────────────────────
-        var atomMat = GetOrCreateMat("Assets/Materials/Atom_Base.mat", Color.white, 0.1f, 0.45f);
+        var atomMat  = GetOrCreateMat("Assets/Materials/Atom_Base.mat", Color.white, 0.1f, 0.45f);
+        var ghostMat = GetOrCreateGhostMat("Assets/Materials/Atom_Ghost.mat");
         var placeGo = FindChild(canvasGo.transform, "AtomPlacement") ?? NewChild(canvasGo.transform, "AtomPlacement");
         var place = Ensure<AtomPlacementController>(placeGo);
         var pso = new SerializedObject(place);
         SetRef(pso, "cam",              cam);
         SetRef(pso, "orbit",            orbit);
         SetRef(pso, "atomBaseMaterial", atomMat);
+        SetRef(pso, "previewMaterial",  ghostMat);
         SetRef(pso, "reticleRoot",      FindChild(hud.transform, "PlacementReticle"));
         SetRef(pso, "reticleDot",       FindChild(hud.transform, "Dot")?.GetComponent<Image>());
         SetRef(pso, "btnPlace",         FindChild(hud.transform, "BtnPlace")?.GetComponent<Button>());
+        SetRef(pso, "cancelRoot",       FindChild(hud.transform, "CancelBar"));
+        SetRef(pso, "btnCancel",        FindChild(hud.transform, "CancelBar")?.GetComponent<Button>());
         SetRef(pso, "btnDeleteRoot",    FindChild(hud.transform, "DeleteBar"));
         SetRef(pso, "btnDelete",        FindChild(hud.transform, "DeleteBar")?.GetComponent<Button>());
         SetRef(pso, "collisionModal",   FindChild(hud.transform, "CollisionModal"));
@@ -300,6 +304,12 @@ public static class ZonaJuegoBuilder
         var deleteBar = MakeButton(hudT, "DeleteBar", new(0.5f,0), new(0.5f,0), new(0.5f,0), new(0,150), new(220,56), rounded, Hex("E0484B"));
         Label(deleteBar.transform, fnt, "Eliminar átomo", 22f, FontStyles.Bold, Color.white);
         deleteBar.SetActive(false);
+
+        // ── Botón "Cancelar" (aparece durante la previsualización) ────────────
+        // Mismo estilo que "Eliminar átomo" (rojo, mismo tamaño y posición).
+        var cancelBar = MakeButton(hudT, "CancelBar", new(0.5f,0), new(0.5f,0), new(0.5f,0), new(0,150), new(220,56), rounded, Hex("E0484B"));
+        Label(cancelBar.transform, fnt, "Cancelar", 22f, FontStyles.Bold, Color.white);
+        cancelBar.SetActive(false);
 
         // ── Retícula de colocación (cursor central, oculto hasta armar) ───────
         var reticle = UI(hudT, "PlacementReticle", new(0.5f,0.5f), new(0.5f,0.5f), new(0.5f,0.5f), Vector2.zero, new(44,44));
@@ -652,6 +662,31 @@ public static class ZonaJuegoBuilder
             m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
             m.SetColor("_EmissionColor", emission);
         }
+        EditorUtility.SetDirty(m);
+        return m;
+    }
+
+    // Material translúcido (URP Lit transparente) para la previsualización.
+    static Material GetOrCreateGhostMat(string path)
+    {
+        var m = AssetDatabase.LoadAssetAtPath<Material>(path);
+        if (m == null)
+        {
+            m = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            System.IO.Directory.CreateDirectory("Assets/Materials");
+            AssetDatabase.CreateAsset(m, path);
+        }
+        m.SetFloat("_Surface", 1f);   // Transparent
+        m.SetFloat("_Blend", 0f);     // Alpha
+        m.SetFloat("_ZWrite", 0f);
+        m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        m.SetOverrideTag("RenderType", "Transparent");
+        m.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+        m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+        m.SetColor("_BaseColor", new Color(0.4f, 0.8f, 1f, 0.45f));
+        m.SetFloat("_Smoothness", 0.3f);
         EditorUtility.SetDirty(m);
         return m;
     }

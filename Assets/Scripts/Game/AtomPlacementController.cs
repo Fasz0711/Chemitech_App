@@ -7,11 +7,13 @@ using TMPro;
 /// Colocación, selección, movimiento y borrado de átomos en la zona 3D.
 ///
 ///  • Arrastrar sobre espacio vacío → rota la cámara.
-///  • Tocar un slot del hotbar → marca ese átomo como activo (no coloca).
-///  • Botón "Presiona para colocar átomo" → coloca el átomo activo en la retícula
-///    (centro de pantalla), uno por pulsación.
-///  • Tocar el mundo (sin arrastrar) → selecciona/deselecciona un átomo colocado.
-///  • Con un átomo seleccionado: d-pad/flechas lo mueven y aparece el botón Eliminar.
+///  • Tocar un slot del hotbar → aparece una PREVISUALIZACIÓN (fantasma) del átomo
+///    en el centro de la vista, se oculta el cursor y sale el botón "Cancelar".
+///  • Las flechas mueven la previsualización (modo exclusivo).
+///  • "Presiona para colocar átomo" → coloca un átomo real en la posición de la
+///    previsualización; la previsualización se queda (colocar varios).
+///  • "Cancelar" → quita la previsualización y vuelve el cursor.
+///  • Sin previsualización: tocar un átomo colocado lo selecciona (mover/borrar).
 /// </summary>
 public class AtomPlacementController : MonoBehaviour
 {
@@ -19,9 +21,12 @@ public class AtomPlacementController : MonoBehaviour
     [SerializeField] private Camera               cam;
     [SerializeField] private OrbitCameraController orbit;
     [SerializeField] private Material             atomBaseMaterial;
-    [SerializeField] private GameObject           reticleRoot;   // cursor central (siempre visible)
-    [SerializeField] private Image                reticleDot;    // se tiñe con el átomo activo
-    [SerializeField] private Button               btnPlace;      // "Presiona para colocar átomo"
+    [SerializeField] private Material             previewMaterial;  // translúcido (preview)
+    [SerializeField] private GameObject           reticleRoot;      // cursor central (guía)
+    [SerializeField] private Image                reticleDot;
+    [SerializeField] private Button               btnPlace;         // "Presiona para colocar átomo"
+    [SerializeField] private GameObject           cancelRoot;       // botón "Cancelar" (preview)
+    [SerializeField] private Button               btnCancel;
     [SerializeField] private GameObject           btnDeleteRoot;
     [SerializeField] private Button               btnDelete;
     [SerializeField] private TMP_FontAsset        labelFont;
@@ -44,6 +49,12 @@ public class AtomPlacementController : MonoBehaviour
     Atom3D  selected;
     int     nextId;
 
+    // previsualización
+    GameObject previewGhost;
+    Material   previewMat;
+    AtomSelectorController selector;
+    static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+
     /// <summary>Contenedor de los átomos colocados (lo lee BondManager).</summary>
     public Transform AtomsRoot => atomsRoot;
 
@@ -60,18 +71,23 @@ public class AtomPlacementController : MonoBehaviour
 
     void Start()
     {
-        if (btnDelete)       btnDelete.onClick.AddListener(DeleteSelected);
-        if (btnPlace)        btnPlace.onClick.AddListener(PlaceActiveAtom);
-        if (btnCollisionOk)  btnCollisionOk.onClick.AddListener(HideCollision);
+        selector = FindObjectOfType<AtomSelectorController>();
+        if (btnDelete)      btnDelete.onClick.AddListener(DeleteSelected);
+        if (btnPlace)       btnPlace.onClick.AddListener(PlaceActiveAtom);
+        if (btnCancel)      btnCancel.onClick.AddListener(CancelPreview);
+        if (btnCollisionOk) btnCollisionOk.onClick.AddListener(HideCollision);
         ShowDelete(false);
-        if (reticleRoot)     reticleRoot.SetActive(true);  // siempre visible
-        if (collisionModal)  collisionModal.SetActive(false);
+        ShowCancel(false);
+        if (reticleRoot)    reticleRoot.SetActive(true);
+        if (collisionModal) collisionModal.SetActive(false);
     }
 
-    /// <summary>Marca el átomo activo del hotbar (lo coloca el botón "Presiona para colocar átomo").</summary>
+    /// <summary>Tocar un slot del hotbar: arma el átomo y muestra su previsualización.</summary>
     public void ArmForPlacement(int atomIndex)
     {
         armedAtom = atomIndex;
+        Deselect();      // modo exclusivo: salir de edición de átomos colocados
+        ShowPreview();
     }
 
     void Update()
@@ -80,35 +96,77 @@ public class AtomPlacementController : MonoBehaviour
         UpdateReticle();
     }
 
-    // ── Retícula: cursor central siempre visible; se tiñe con el átomo activo ──
-    void UpdateReticle()
+    // ── Previsualización ──────────────────────────────────────────────────────
+    void ShowPreview()
     {
-        if (!reticleRoot) return;
-        if (!reticleRoot.activeSelf) reticleRoot.SetActive(true);
-        if (reticleDot)
-            reticleDot.color = (armedAtom >= 0) ? AtomCatalog.All[armedAtom].color : Color.white;
+        if (armedAtom < 0) return;
+
+        if (previewGhost == null)
+        {
+            previewGhost = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            previewGhost.name = "PlacementPreview";
+            var col = previewGhost.GetComponent<Collider>(); if (col) Destroy(col);
+            previewGhost.transform.SetParent(atomsRoot, false); // sin Atom3D → BondManager lo ignora
+            previewGhost.transform.localScale = Vector3.one * atomScale;
+            if (previewMaterial)
+            {
+                previewMat = new Material(previewMaterial);
+                previewGhost.GetComponent<Renderer>().sharedMaterial = previewMat;
+            }
+            previewGhost.transform.position = CenterGroundPos();
+        }
+
+        if (previewMat)
+        {
+            Color c = AtomCatalog.All[armedAtom].color;
+            previewMat.SetColor(BaseColorId, new Color(c.r, c.g, c.b, 0.45f));
+        }
+        previewGhost.SetActive(true);
+        ShowCancel(true);
     }
 
-    /// <summary>
-    /// Coloca el átomo activo en la retícula (centro), a la ALTURA de enfoque de
-    /// la cámara: subes/bajas la vista con las flechas verticales y el átomo va ahí.
-    /// </summary>
-    public void PlaceActiveAtom()
+    public void CancelPreview()
     {
-        if (armedAtom < 0 || !cam) return;
+        if (previewGhost) Destroy(previewGhost);
+        previewGhost = null;
+        armedAtom = -1;
+        ShowCancel(false);
+        if (selector) selector.ClearHighlight();  // quita el resaltado cyan del slot
+    }
+
+    Vector3 CenterGroundPos()
+    {
+        if (!cam) return new Vector3(0f, atomScale * 0.5f, 0f);
         Ray cray = cam.ScreenPointToRay(new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f));
         float planeY = orbit ? Mathf.Max(0f, orbit.FocusHeight) : 0f;
         var plane = new Plane(Vector3.up, new Vector3(0f, planeY, 0f));
-        if (!plane.Raycast(cray, out float e)) return;
+        if (plane.Raycast(cray, out float e))
+        {
+            Vector3 raw = cray.GetPoint(e);
+            return new Vector3(
+                Mathf.Clamp(raw.x, -platformHalf, platformHalf),
+                Mathf.Clamp(raw.y, atomScale * 0.5f, maxHeight),
+                Mathf.Clamp(raw.z, -platformHalf, platformHalf));
+        }
+        return new Vector3(0f, atomScale * 0.5f, 0f);
+    }
 
-        Vector3 raw = cray.GetPoint(e);
-        Vector3 pos = new Vector3(
-            Mathf.Clamp(raw.x, -platformHalf, platformHalf),
-            Mathf.Clamp(raw.y, atomScale * 0.5f, maxHeight),
-            Mathf.Clamp(raw.z, -platformHalf, platformHalf));
-
+    /// <summary>Coloca un átomo real en la posición de la previsualización (esta se queda).</summary>
+    public void PlaceActiveAtom()
+    {
+        if (armedAtom < 0 || previewGhost == null) return;
+        Vector3 pos = previewGhost.transform.position;
         if (Overlaps(pos)) { ShowCollision(); return; }
         PlaceAtom(armedAtom, pos);
+    }
+
+    // ── Retícula: cursor central, visible solo cuando NO hay previsualización ──
+    void UpdateReticle()
+    {
+        if (!reticleRoot) return;
+        bool show = (previewGhost == null);
+        if (reticleRoot.activeSelf != show) reticleRoot.SetActive(show);
+        if (show && reticleDot) reticleDot.color = Color.white;
     }
 
     /// <summary>¿La posición se solaparía con un átomo ya colocado?</summary>
@@ -168,8 +226,6 @@ public class AtomPlacementController : MonoBehaviour
         dragging = false;
     }
 
-    // El dedo tiembla al tocar: el umbral para distinguir tap de arrastre debe
-    // escalar con la densidad/tamaño de pantalla (en desktop queda pequeño).
     float DragThreshold()
     {
         float dpiBased  = (Screen.dpi > 1f) ? Screen.dpi * 0.12f : 0f;
@@ -184,9 +240,8 @@ public class AtomPlacementController : MonoBehaviour
 
     void HandleTap(Vector3 screenPos)
     {
-        if (!cam) return;
+        if (!cam || previewGhost != null) return; // en modo preview no se seleccionan átomos
 
-        // 1) Rayo directo: ¿acierta el collider de un átomo?
         Ray ray = cam.ScreenPointToRay(screenPos);
         if (Physics.Raycast(ray, out RaycastHit hit, 500f))
         {
@@ -194,7 +249,6 @@ public class AtomPlacementController : MonoBehaviour
             if (atom) { Select(atom); return; }
         }
 
-        // 2) Tolerancia (touch): el átomo más cercano al toque en pantalla.
         var near = NearestAtomOnScreen(screenPos, TapTolerancePx());
         if (near) { Select(near); return; }
 
@@ -213,7 +267,7 @@ public class AtomPlacementController : MonoBehaviour
             var a = child.GetComponent<Atom3D>();
             if (!a) continue;
             Vector3 sp = cam.WorldToScreenPoint(a.transform.position);
-            if (sp.z <= 0f) continue; // detrás de la cámara
+            if (sp.z <= 0f) continue;
             float d = Vector2.Distance(screenPos, new Vector2(sp.x, sp.y));
             if (d < bestD) { bestD = d; best = a; }
         }
@@ -257,30 +311,32 @@ public class AtomPlacementController : MonoBehaviour
         lblGo.AddComponent<Billboard>();
     }
 
-    /// <summary>d-pad: mueve el átomo seleccionado sobre el plano, o hace pan de cámara.</summary>
+    /// <summary>d-pad: mueve la previsualización; si no, el átomo seleccionado; si no, pan de cámara.</summary>
     public void MoveOrPan(Vector2 dir)
     {
-        if (selected)
+        Transform target = previewGhost ? previewGhost.transform : (selected ? selected.transform : null);
+        if (target)
         {
             Vector3 right = cam.transform.right;
             Vector3 fwd   = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up).normalized;
             Vector3 mv    = (right * dir.x + fwd * dir.y) * moveSpeed * Time.deltaTime;
-            var p = selected.transform.position + mv;
+            var p = target.position + mv;
             p.x = Mathf.Clamp(p.x, -platformHalf, platformHalf);
             p.z = Mathf.Clamp(p.z, -platformHalf, platformHalf);
-            selected.transform.position = p;
+            target.position = p;
         }
         else if (orbit) orbit.PanScreen(dir);
     }
 
-    /// <summary>Flechas verticales: sube/baja el átomo seleccionado, o la cámara.</summary>
+    /// <summary>Flechas verticales: sube/baja la previsualización o el átomo seleccionado, o la cámara.</summary>
     public void VerticalOrCam(float sign)
     {
-        if (selected)
+        Transform target = previewGhost ? previewGhost.transform : (selected ? selected.transform : null);
+        if (target)
         {
-            var p = selected.transform.position;
+            var p = target.position;
             p.y = Mathf.Clamp(p.y + sign * moveSpeed * Time.deltaTime, atomScale * 0.5f, maxHeight);
-            selected.transform.position = p;
+            target.position = p;
         }
         else if (orbit) orbit.MoveVertical(sign);
     }
@@ -308,8 +364,6 @@ public class AtomPlacementController : MonoBehaviour
         ShowDelete(false);
     }
 
-    void ShowDelete(bool show)
-    {
-        if (btnDeleteRoot) btnDeleteRoot.SetActive(show);
-    }
+    void ShowDelete(bool show) { if (btnDeleteRoot) btnDeleteRoot.SetActive(show); }
+    void ShowCancel(bool show) { if (cancelRoot)    cancelRoot.SetActive(show); }
 }
