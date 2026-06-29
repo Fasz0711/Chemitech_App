@@ -21,8 +21,12 @@ public static class UniverseStore
     static string FilePath =>
         Path.Combine(Application.persistentDataPath, $"universes_{SessionData.UserId}.json");
 
-    public static UniverseCollection Load()
+    public static UniverseCollection Load() => Load(out _);
+
+    /// <summary>corrupt = true si el archivo existe pero no se pudo leer/parsear.</summary>
+    public static UniverseCollection Load(out bool corrupt)
     {
+        corrupt = false;
         if (IsGuest)
             return _guestCache ??= new UniverseCollection();
 
@@ -31,39 +35,49 @@ public static class UniverseStore
             if (!File.Exists(FilePath)) return new UniverseCollection();
             string json = File.ReadAllText(FilePath);
             var col = JsonUtility.FromJson<UniverseCollection>(json);
-            return col ?? new UniverseCollection();
+            if (col == null) { corrupt = true; return new UniverseCollection(); }
+            return col;
         }
         catch (System.Exception e)
         {
+            corrupt = true;
             Debug.LogWarning($"[UniverseStore] No se pudo cargar: {e.Message}");
             return new UniverseCollection();
         }
     }
 
-    public static void Save(UniverseCollection col)
+    /// <summary>Devuelve false si no se pudo guardar (p. ej. disco lleno).</summary>
+    public static bool Save(UniverseCollection col)
     {
         if (IsGuest)
         {
             _guestCache = col;
-            return;
+            return true;
         }
 
         try
         {
             string json = JsonUtility.ToJson(col, true);
-            File.WriteAllText(FilePath, json);
+            // Escritura atómica: si el disco está lleno, falla en el .tmp y el
+            // archivo original queda intacto (el listado no se daña).
+            string tmp = FilePath + ".tmp";
+            File.WriteAllText(tmp, json);
+            if (File.Exists(FilePath)) File.Delete(FilePath);
+            File.Move(tmp, FilePath);
+            return true;
         }
         catch (System.Exception e)
         {
             Debug.LogError($"[UniverseStore] No se pudo guardar: {e.Message}");
+            return false;
         }
     }
 
-    public static void Add(UniverseData universe)
+    public static bool Add(UniverseData universe)
     {
         var col = Load();
         col.universes.Add(universe);
-        Save(col);
+        return Save(col);
     }
 
     public static void Update(UniverseData universe)

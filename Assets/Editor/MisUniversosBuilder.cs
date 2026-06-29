@@ -172,6 +172,9 @@ public static class MisUniversosBuilder
         WireSprites(so, "iconSprites", iconSprites);
         so.ApplyModifiedProperties();
 
+        // Modales de error (sin espacio / universo dañado)
+        BuildErrorModals();
+
         // ── Guardar ───────────────────────────────────────────────────────────
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene, ScenePath);
@@ -433,4 +436,175 @@ public static class MisUniversosBuilder
     }
 
     static Color Hex(string h) { ColorUtility.TryParseHtmlString("#" + h, out Color c); return c; }
+
+    // ══ Modales de error ═══════════════════════════════════════════════════════
+    static Sprite s_rounded, s_ui, s_circle;
+    static TMP_FontAsset s_fnt;
+
+    static readonly Color MODAL_BG  = Hex("242659");
+    static readonly Color TEXT_GRAY = new Color(1f, 1f, 1f, 0.78f);
+
+    // Agrega/actualiza los modales en la escena ACTUAL (aditivo, idempotente).
+    [MenuItem("ChemiTech/Fix/MisUniversos Error Modals")]
+    static void FixErrorModals()
+    {
+        if (!BuildErrorModals()) return;
+        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+        EditorUtility.DisplayDialog("¡Listo!",
+            "Modales de error agregados/actualizados (sin espacio / universo dañado).\nGuarda con Ctrl+S.", "OK");
+    }
+
+    static bool BuildErrorModals()
+    {
+        s_fnt     = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/Fredoka-Medium SDF.asset");
+        s_rounded = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/Login/rounded-panel.png");
+        s_ui      = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        s_circle  = AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/AtomCircle.png");
+
+        var canvas = GameObject.Find("Canvas");
+        var mgr    = Object.FindObjectOfType<MisUniversosManager>();
+        if (canvas == null || mgr == null)
+        {
+            EditorUtility.DisplayDialog("Error", "No se encontró 'Canvas' o 'MisUniversosManager' (¿abriste MisUniversosScene?).", "OK");
+            return false;
+        }
+
+        // Regenerar (idempotente): destruir los previos y rehacer
+        var oldS = canvas.transform.Find("StorageModal"); if (oldS) Object.DestroyImmediate(oldS.gameObject);
+        var oldC = canvas.transform.Find("CorruptModal"); if (oldC) Object.DestroyImmediate(oldC.gameObject);
+
+        var sModal = BuildStorageModal(canvas.transform, out var sBtn, out var sFill, out var sVal);
+        var cModal = BuildCorruptModal(canvas.transform, out var cBtn);
+        sModal.SetActive(false);
+        cModal.SetActive(false);
+
+        var so = new SerializedObject(mgr);
+        so.FindProperty("storageModal").objectReferenceValue      = sModal;
+        so.FindProperty("btnStorageVolver").objectReferenceValue  = sBtn;
+        so.FindProperty("storageBarFill").objectReferenceValue    = sFill;
+        so.FindProperty("storageValueLabel").objectReferenceValue = sVal;
+        so.FindProperty("corruptModal").objectReferenceValue      = cModal;
+        so.FindProperty("btnCorruptVolver").objectReferenceValue  = cBtn;
+        so.ApplyModifiedProperties();
+        EditorUtility.SetDirty(mgr);
+        return true;
+    }
+
+    static GameObject BuildStorageModal(Transform canvas, out Button btnVolver, out Image barFill, out TextMeshProUGUI valueLabel)
+    {
+        var modal = MakeFill(canvas, "StorageModal");
+        var dim = modal.AddComponent<Image>(); dim.color = new Color(0f, 0f, 0f, 0.62f);
+
+        var panel = MakePanel(modal.transform, "Panel", Vector2.zero, new Vector2(700f, 520f), MODAL_BG);
+        AddBorder(panel, Color.white, 1f);
+
+        MakeText(panel.transform, "Title", "No se pudo crear el universo", new Vector2(0f, 195f),
+            new Vector2(640f, 70f), 36f, Color.white, TextAlignmentOptions.Center, FontStyles.Bold, true);
+        MakeText(panel.transform, "Body",
+            "Tu dispositivo no tiene espacio suficiente para guardar este universo. El listado quedó intacto, sin entradas dañadas.",
+            new Vector2(0f, 105f), new Vector2(600f, 90f), 22f, TEXT_GRAY, TextAlignmentOptions.Center, FontStyles.Normal, true);
+
+        // Barra de almacenamiento
+        MakeText(panel.transform, "BarLabel", "Almacenamiento del dispositivo", new Vector2(-115f, 32f),
+            new Vector2(360f, 28f), 20f, TEXT_GRAY, TextAlignmentOptions.Left, FontStyles.Normal);
+        valueLabel = MakeText(panel.transform, "StorageValue", "—", new Vector2(235f, 32f),
+            new Vector2(180f, 28f), 20f, Color.white, TextAlignmentOptions.Right, FontStyles.Bold);
+
+        MakePanel(panel.transform, "BarTrack", new Vector2(0f, -2f), new Vector2(600f, 22f), Hex("141738"));
+        var fillGo = MakeImg(panel.transform, "BarFill", new Vector2(0f, -2f), new Vector2(600f, 22f), Hex("F5A623"), s_rounded);
+        barFill = fillGo.GetComponent<Image>();
+        barFill.type       = Image.Type.Filled;
+        barFill.fillMethod = Image.FillMethod.Horizontal;
+        barFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+        barFill.fillAmount = 0.95f;
+
+        // Tip
+        var tip = MakePanel(panel.transform, "TipBox", new Vector2(0f, -88f), new Vector2(600f, 70f), Hex("33356B"));
+        MakeImg(tip.transform, "Bulb", new Vector2(-272f, 0f), new Vector2(24f, 24f), Hex("F5C543"), s_circle);
+        MakeText(tip.transform, "Tip", "Libera espacio o elimina algún universo que ya no uses para crear uno nuevo.",
+            new Vector2(18f, 0f), new Vector2(520f, 56f), 18f, TEXT_GRAY, TextAlignmentOptions.Left, FontStyles.Normal, true);
+
+        btnVolver = MakeButton(panel.transform, "BtnVolver", "Volver al listado", new Vector2(0f, -190f),
+            new Vector2(440f, 86f), Hex("3A3D70"), Color.white);
+
+        return modal;
+    }
+
+    static GameObject BuildCorruptModal(Transform canvas, out Button btnVolver)
+    {
+        var modal = MakeFill(canvas, "CorruptModal");
+        var dim = modal.AddComponent<Image>(); dim.color = new Color(0f, 0f, 0f, 0.62f);
+
+        var panel = MakePanel(modal.transform, "Panel", Vector2.zero, new Vector2(700f, 430f), MODAL_BG);
+        AddBorder(panel, Color.white, 1f);
+
+        MakeText(panel.transform, "Title", "No se pudo abrir este universo", new Vector2(0f, 140f),
+            new Vector2(640f, 70f), 36f, Color.white, TextAlignmentOptions.Center, FontStyles.Bold, true);
+        MakeText(panel.transform, "Body",
+            "El archivo de este universo está dañado o no se puede leer. Los demás universos siguen intactos.",
+            new Vector2(0f, 45f), new Vector2(580f, 90f), 22f, TEXT_GRAY, TextAlignmentOptions.Center, FontStyles.Normal, true);
+
+        var tip = MakePanel(panel.transform, "TipBox", new Vector2(0f, -55f), new Vector2(600f, 76f), Hex("253266"));
+        MakeImg(tip.transform, "Bulb", new Vector2(-272f, 0f), new Vector2(24f, 24f), Hex("4A90E2"), s_circle);
+        MakeText(tip.transform, "Tip", "Si el problema persiste, puedes eliminarlo y crear uno nuevo. Los descubrimientos de tu diario no se perderán.",
+            new Vector2(18f, 0f), new Vector2(520f, 60f), 18f, TEXT_GRAY, TextAlignmentOptions.Left, FontStyles.Normal, true);
+
+        btnVolver = MakeButton(panel.transform, "BtnVolver", "Volver al listado", new Vector2(0f, -160f),
+            new Vector2(440f, 86f), Hex("3A3D70"), Color.white);
+
+        return modal;
+    }
+
+    // ── Helpers de UI para los modales ─────────────────────────────────────────
+    static void SetRT2(GameObject go, Vector2 pos, Vector2 size)
+    {
+        var rt = go.GetComponent<RectTransform>(); rt.anchoredPosition = pos; rt.sizeDelta = size;
+    }
+
+    static Image MakePanel(Transform p, string name, Vector2 pos, Vector2 size, Color color)
+    {
+        var go = MakeEmpty(p, name); SetRT2(go, pos, size);
+        var img = go.AddComponent<Image>(); img.sprite = s_rounded; img.type = Image.Type.Sliced; img.color = color;
+        return img;
+    }
+
+    static GameObject MakeImg(Transform p, string name, Vector2 pos, Vector2 size, Color color, Sprite spr)
+    {
+        var go = MakeEmpty(p, name); SetRT2(go, pos, size);
+        var img = go.AddComponent<Image>(); img.color = color; if (spr != null) img.sprite = spr;
+        img.preserveAspect = true;
+        return go;
+    }
+
+    static TextMeshProUGUI MakeText(Transform p, string name, string text, Vector2 pos, Vector2 size,
+        float fs, Color c, TextAlignmentOptions a, FontStyles st, bool wrap = false)
+    {
+        var go = MakeEmpty(p, name); SetRT2(go, pos, size);
+        var t = go.AddComponent<TextMeshProUGUI>();
+        t.text = text; t.font = s_fnt; t.fontSize = fs; t.color = c; t.alignment = a; t.fontStyle = st;
+        t.enableWordWrapping = wrap; t.overflowMode = TextOverflowModes.Overflow;
+        return t;
+    }
+
+    static Button MakeButton(Transform p, string name, string label, Vector2 pos, Vector2 size, Color bg, Color tc)
+    {
+        var img = MakePanel(p, name, pos, size, bg);
+        var b = img.gameObject.AddComponent<Button>(); b.targetGraphic = img;
+        var cb = b.colors; cb.highlightedColor = new Color(1f, 1f, 1f, 0.92f); cb.pressedColor = new Color(0.85f, 0.85f, 0.85f, 1f); b.colors = cb;
+        MakeText(img.transform, "Label", label, Vector2.zero, size, 30f, tc, TextAlignmentOptions.Center, FontStyles.Bold);
+        return b;
+    }
+
+    static void AddBorder(Image panel, Color color, float alpha)
+    {
+        var parent = panel.transform.parent;
+        var rt = panel.rectTransform;
+        var b = MakeImg(parent, panel.name + "_Border", rt.anchoredPosition, rt.sizeDelta + new Vector2(8f, 8f),
+            new Color(color.r, color.g, color.b, alpha), s_rounded);
+        var brt = (RectTransform)b.transform;
+        brt.anchorMin = rt.anchorMin; brt.anchorMax = rt.anchorMax; brt.pivot = rt.pivot;
+        brt.anchoredPosition = rt.anchoredPosition;
+        var bimg = b.GetComponent<Image>(); bimg.type = Image.Type.Sliced; bimg.preserveAspect = false;
+        b.transform.SetSiblingIndex(panel.transform.GetSiblingIndex());
+    }
 }

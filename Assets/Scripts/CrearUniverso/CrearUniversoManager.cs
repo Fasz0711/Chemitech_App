@@ -148,7 +148,18 @@ public class CrearUniversoManager : MonoBehaviour
         }
 
         int iconIndex = ResolveCanonicalIconIndex();
-        UniverseStore.Add(UniverseData.New(name, iconIndex, selColor));
+        bool saved = UniverseStore.Add(UniverseData.New(name, iconIndex, selColor));
+
+        // No se pudo guardar (p. ej. sin espacio): avisar en MisUniversos. El
+        // listado quedó intacto (escritura atómica). No se incrementa el journal.
+        if (!saved)
+        {
+            Debug.LogWarning("[CrearUniverso] No se pudo guardar el universo (¿sin espacio?).");
+            UniverseNotice.PendingStorageFull = true;
+            SceneManager.LoadScene(escenaAtras);
+            return;
+        }
+
         Debug.Log($"[CrearUniverso] Universo guardado: nombre={name} icono={iconIndex} (sel={selIcon}) color={selColor}");
 
         // Incrementa el contador de universos en el journal (solo con sesión real).

@@ -27,16 +27,60 @@ public class MisUniversosManager : MonoBehaviour
     [SerializeField] private string escenaAtras = "SampleScene";
     [SerializeField] private string escenaCrear = "CrearUniversoScene";
 
+    [Header("Modal: sin espacio (crear)")]
+    [SerializeField] private GameObject      storageModal;
+    [SerializeField] private Button          btnStorageVolver;
+    [SerializeField] private Image           storageBarFill;     // Image type Filled (horizontal)
+    [SerializeField] private TextMeshProUGUI storageValueLabel;  // "14.8 GB / 15 GB"
+
+    [Header("Modal: universo dañado (abrir)")]
+    [SerializeField] private GameObject corruptModal;
+    [SerializeField] private Button     btnCorruptVolver;
+
     private void Start()
     {
         if (btnAtras)      btnAtras.onClick.AddListener(() => SceneManager.LoadScene(escenaAtras));
         if (btnCrearEmpty) btnCrearEmpty.onClick.AddListener(() => SceneManager.LoadScene(escenaCrear));
         if (btnCrearList)  btnCrearList.onClick.AddListener(() => SceneManager.LoadScene(escenaCrear));
 
+        if (btnStorageVolver) btnStorageVolver.onClick.AddListener(HideStorageModal);
+        if (btnCorruptVolver) btnCorruptVolver.onClick.AddListener(HideCorruptModal);
+        HideStorageModal();
+        HideCorruptModal();
+
         if (cardTemplate) cardTemplate.SetActive(false);
 
         Refresh();
+
+        // Aviso pendiente desde CrearUniverso (no se pudo guardar por espacio).
+        if (UniverseNotice.PendingStorageFull)
+        {
+            UniverseNotice.PendingStorageFull = false;
+            ShowStorageModal();
+        }
     }
+
+    // ── Modales de error ──────────────────────────────────────────────────────
+    private void ShowStorageModal()
+    {
+        if (storageModal) storageModal.SetActive(true);
+
+        var (used, total) = DeviceStorage.Get();
+        if (total > 0)
+        {
+            if (storageBarFill)    storageBarFill.fillAmount = Mathf.Clamp01((float)((double)used / total));
+            if (storageValueLabel) storageValueLabel.text = $"{DeviceStorage.ToGB(used):0.0} GB / {DeviceStorage.ToGB(total):0} GB";
+        }
+        else
+        {
+            if (storageBarFill)    storageBarFill.fillAmount = 0.95f;
+            if (storageValueLabel) storageValueLabel.text = "";
+        }
+    }
+
+    private void ShowCorruptModal() { if (corruptModal) corruptModal.SetActive(true); }
+    private void HideStorageModal() { if (storageModal) storageModal.SetActive(false); }
+    private void HideCorruptModal() { if (corruptModal) corruptModal.SetActive(false); }
 
     private void Refresh()
     {
