@@ -49,11 +49,13 @@ public class ZonaJuegoManager : MonoBehaviour
 
     float elapsed;
     bool  paused;
+    long  lastReportedElapsed; // segundos ya enviados al backend (evita doble conteo)
 
     void Start()
     {
         // Carga el tiempo acumulado y los átomos guardados del universo.
         if (PlayContext.Current != null) elapsed = PlayContext.Current.playSeconds;
+        lastReportedElapsed = (long)elapsed; // el tiempo cargado ya fue reportado en sesiones previas
         if (txtUniverse) txtUniverse.text = PlayContext.UniverseName;
         if (place != null && PlayContext.Current != null) place.ImportAtoms(PlayContext.Current.atoms);
 
@@ -111,7 +113,25 @@ public class ZonaJuegoManager : MonoBehaviour
         UniverseStore.Update(PlayContext.Current);
         if (place) place.ClearDirty();
         Debug.Log($"[ZonaJuego] Guardado: {PlayContext.Current.atoms.Count} átomos · {PlayContext.Current.playSeconds}s");
+        ReportTimeDelta();
         if (savedToast) StartCoroutine(ShowSavedToast());
+    }
+
+    // Suma al backend el tiempo jugado desde el último reporte (cuenta con sesión).
+    void ReportTimeDelta()
+    {
+        if (string.IsNullOrEmpty(SessionData.UserId)) return; // invitado: no se contabiliza
+        long delta = (long)elapsed - lastReportedElapsed;
+        if (delta <= 0) return;
+        long snapshot = (long)elapsed;
+        ApiManager.Instance.AddTimePlayed(SessionData.UserId, (int)delta,
+            onSuccess: stats =>
+            {
+                lastReportedElapsed = snapshot;
+                Debug.Log($"[TimePlayed] +{delta}s enviados · total cuenta={stats.totalPlayTimeSeconds}s");
+            },
+            onError: (code, detail) =>
+                Debug.LogWarning($"[TimePlayed] No se pudo enviar +{delta}s · code={code} · {detail}"));
     }
 
     IEnumerator ShowSavedToast()

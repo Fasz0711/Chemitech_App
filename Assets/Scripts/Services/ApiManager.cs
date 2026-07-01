@@ -119,6 +119,18 @@ public class ApiManager : MonoBehaviour
             onError));
     }
 
+    /// <summary>Suma 'seconds' al tiempo total jugado de la cuenta (endpoint incremental).</summary>
+    public void AddTimePlayed(string userPublicId, int seconds,
+                              Action<JournalStatsResponse> onSuccess, Action<int, string> onError)
+    {
+        string endpoint = $"/journal/{userPublicId}/time-played";
+        string body = JsonUtility.ToJson(new TimePlayedRequest { seconds = seconds });
+        Debug.Log($"[API] PATCH {BASE_URL}{endpoint}\n{body}");
+        StartCoroutine(PatchRaw(endpoint, userPublicId, body,
+            json => onSuccess?.Invoke(JsonUtility.FromJson<JournalStatsResponse>(json)),
+            onError));
+    }
+
     public void DetectMolecule(string userPublicId, AtomDTO[] atoms, BondDTO[] bonds,
                                Action<DetectResponse> onSuccess, Action<int, string> onError)
     {
@@ -248,9 +260,10 @@ public class ApiManager : MonoBehaviour
     [Serializable] class AccountRequest  { public string email; public string password; public string username; }
     [Serializable] class AccountResponse { public string userId; }
     [Serializable] class LoginRequest    { public string email; public string password; }
-    [Serializable] class LogoutRequest   { public string refreshToken; }
-    [Serializable] class MessageResponse { public string message; }
-    [Serializable] class DetailResponse  { public string detail; }
+    [Serializable] class LogoutRequest     { public string refreshToken; }
+    [Serializable] class TimePlayedRequest { public int seconds; }
+    [Serializable] class MessageResponse   { public string message; }
+    [Serializable] class DetailResponse    { public string detail; }
 
     [Serializable]
     public class JournalStatsResponse
