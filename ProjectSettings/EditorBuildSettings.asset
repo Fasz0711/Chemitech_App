@@ -41,5 +41,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/EditarUniversoScene.unity
     guid: 9266fbba4df3eb84985a022873cba53a
+  - enabled: 1
+    path: Assets/Scenes/DiaryScene.unity
+    guid: d07507eedc6383646b60e592a454517f
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
