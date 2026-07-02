@@ -246,15 +246,19 @@ public class BondManager : MonoBehaviour
             perp = perp.normalized;
 
             int n = bv.cyls.Length;
+            // Enlaces múltiples: líneas un poco más finas y con separación proporcional
+            // al grosor, para que doble/triple siempre se vean como líneas distintas.
+            float t = (n == 1) ? bondThickness : bondThickness * 0.72f;
+            float spacing = Mathf.Max(bondSpacing, t * 2.6f);
             for (int i = 0; i < n; i++)
             {
                 var c = bv.cyls[i]; if (!c) continue;
                 c.SetActive(true);
-                float off = (n == 1) ? 0f : (i - (n - 1) * 0.5f) * bondSpacing;
+                float off = (n == 1) ? 0f : (i - (n - 1) * 0.5f) * spacing;
                 Vector3 a2 = pa + perp * off, b2 = pb + perp * off;
                 c.transform.position = (a2 + b2) * 0.5f;
                 c.transform.up = dirN;
-                c.transform.localScale = new Vector3(bondThickness, len * 0.5f, bondThickness);
+                c.transform.localScale = new Vector3(t, len * 0.5f, t);
             }
         }
     }
