@@ -134,10 +134,10 @@ public class ApiManager : MonoBehaviour
     public void DetectMolecule(string userPublicId, AtomDTO[] atoms, BondDTO[] bonds,
                                Action<DetectResponse> onSuccess, Action<int, string> onError)
     {
-        string body = JsonUtility.ToJson(new DetectRequest
-        {
-            userPublicId = userPublicId, atoms = atoms, bonds = bonds
-        });
+        // Invitado (sin userId): se omite userPublicId del JSON para no mandarlo vacío.
+        string body = string.IsNullOrEmpty(userPublicId)
+            ? JsonUtility.ToJson(new DetectRequestGuest { atoms = atoms, bonds = bonds })
+            : JsonUtility.ToJson(new DetectRequest { userPublicId = userPublicId, atoms = atoms, bonds = bonds });
         Debug.Log($"[API] POST {BASE_URL}/detection/molecule\n{body}");
 
         StartCoroutine(PostRaw("/detection/molecule", body,
@@ -306,7 +306,8 @@ public class ApiManager : MonoBehaviour
     // ── Detección de moléculas ──────────────────────────────────────────────
     [Serializable] public class AtomDTO { public int id; public string element; public float x; public float y; public float z; }
     [Serializable] public class BondDTO { public int beginAtomId; public int endAtomId; public int order; }
-    [Serializable] class DetectRequest  { public string userPublicId; public AtomDTO[] atoms; public BondDTO[] bonds; }
+    [Serializable] class DetectRequest      { public string userPublicId; public AtomDTO[] atoms; public BondDTO[] bonds; }
+    [Serializable] class DetectRequestGuest { public AtomDTO[] atoms; public BondDTO[] bonds; } // sin userPublicId (invitado)
 
     [Serializable]
     public class MoleculeDTO
@@ -322,6 +323,7 @@ public class ApiManager : MonoBehaviour
         public float  aqueousSolubilityLogS;
         public bool   isKnown;
         public bool   isNewDiscovery;
+        public BondDTO[] bonds;   // enlaces reales inferidos/validados por el backend
     }
 
     [Serializable]

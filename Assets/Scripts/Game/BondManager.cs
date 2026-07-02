@@ -5,9 +5,11 @@ using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
-/// Enlaces por proximidad (líneas simples) entre átomos cercanos, y detección
-/// automática de moléculas vía API cuando la estructura se estabiliza.
-/// Banner de estado: azul "Detectando…" → verde "¡Molécula formada!".
+/// Detección de moléculas: cuando la estructura de átomos se estabiliza, agrupa
+/// los átomos por CERCANÍA (solo para separar candidatos; NO decide enlaces),
+/// envía cada grupo al backend con bonds vacío, y DIBUJA los enlaces reales que
+/// devuelve el backend (con su orden: simple/doble/triple).
+/// Banner: azul "Detectando…" → verde "¡Molécula formada!".
 /// </summary>
 public class BondManager : MonoBehaviour
 {
@@ -18,177 +20,141 @@ public class BondManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI bannerText;
 
     [Header("Ajustes")]
-    [SerializeField] private float bondDistance  = 1.8f;   // proximidad para enlazar
-    [SerializeField] private float bondThickness = 0.12f;
-    [SerializeField] private float detectDelay   = 0.45f;  // debounce antes de llamar a la API
+    [SerializeField] private float clusterDistance = 2.0f;  // agrupa candidatos (no decide enlaces)
+    [SerializeField] private float bondThickness   = 0.09f;
+    [SerializeField] private float bondSpacing     = 0.20f; // separación entre líneas paralelas (orden 2/3)
+    [SerializeField] private float detectDelay     = 0.45f; // debounce tras el último cambio
 
     static readonly Color C_DETECT = new Color(0.10f, 0.65f, 0.81f, 1f);
     static readonly Color C_OK     = new Color(0.18f, 0.80f, 0.44f, 1f);
 
     Transform bondsRoot;
-    readonly Dictionary<long, GameObject> bonds = new Dictionary<long, GameObject>();
-    readonly List<Atom3D> atomsBuf = new List<Atom3D>();
-    readonly List<(Atom3D a, Atom3D b)> pairBuf = new List<(Atom3D, Atom3D)>();
+    Camera    cam;
 
-    string lastHash = "";
-    string sentHash = "";
+    readonly List<Atom3D>            atomsBuf = new List<Atom3D>();
+    readonly Dictionary<int, Atom3D> byId     = new Dictionary<int, Atom3D>();
+
+    // Enlaces actualmente dibujados (los devueltos por el backend).
+    class BondView { public int a, b, order; public GameObject[] cyls; }
+    readonly List<BondView> bondViews = new List<BondView>();
+
+    // Estado de detección
+    string lastHash = "", sentHash = "";
     float  lastChangeTime;
     bool   detecting;
+    int    pendingRequests, currentBatch;
+    bool   anyValid;
+    readonly List<(int a, int b, int order)> batchBonds = new List<(int, int, int)>();
 
-    // Batch de detección (una molécula = un componente conexo)
-    int  pendingRequests;
-    bool anyValid;
-    int  currentBatch;
-
-    void Awake() { bondsRoot = new GameObject("Bonds").transform; }
+    void Awake()
+    {
+        bondsRoot = new GameObject("Bonds").transform;
+        cam = Camera.main;
+    }
 
     void Start() { if (bannerRoot) bannerRoot.SetActive(false); }
 
     void Update()
     {
         GatherAtoms(placement ? placement.AtomsRoot : null);
-        RecomputeBonds();
-        UpdateBondVisuals();
         DetectionStep();
+        UpdateBondVisuals();
     }
 
-    // ── Átomos / enlaces ──────────────────────────────────────────────────────
     void GatherAtoms(Transform root)
     {
         atomsBuf.Clear();
+        byId.Clear();
         if (!root) return;
         foreach (Transform c in root)
         {
             var a = c.GetComponent<Atom3D>();
-            if (a) atomsBuf.Add(a);
+            if (a) { atomsBuf.Add(a); byId[a.id] = a; }
         }
     }
 
-    void RecomputeBonds()
-    {
-        pairBuf.Clear();
-        float d2 = bondDistance * bondDistance;
-        for (int i = 0; i < atomsBuf.Count; i++)
-            for (int j = i + 1; j < atomsBuf.Count; j++)
-                if ((atomsBuf[i].transform.position - atomsBuf[j].transform.position).sqrMagnitude <= d2)
-                    pairBuf.Add((atomsBuf[i], atomsBuf[j]));
-
-        var desired = new HashSet<long>();
-        foreach (var p in pairBuf) desired.Add(Key(p.a.id, p.b.id));
-
-        // Quita enlaces que ya no aplican (átomos lejos o borrados)
-        var toRemove = new List<long>();
-        foreach (var kv in bonds)
-            if (!desired.Contains(kv.Key) || !kv.Value) toRemove.Add(kv.Key);
-        foreach (var k in toRemove)
-        {
-            if (bonds[k]) Destroy(bonds[k]);
-            bonds.Remove(k);
-        }
-
-        // Crea los nuevos
-        foreach (var p in pairBuf)
-        {
-            long k = Key(p.a.id, p.b.id);
-            if (!bonds.ContainsKey(k)) bonds[k] = CreateBond();
-        }
-    }
-
-    GameObject CreateBond()
-    {
-        var cyl = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        cyl.name = "Bond";
-        var col = cyl.GetComponent<Collider>(); if (col) Destroy(col); // no debe interferir al tocar átomos
-        cyl.transform.SetParent(bondsRoot, false);
-        if (bondMaterial) cyl.GetComponent<Renderer>().sharedMaterial = bondMaterial;
-        return cyl;
-    }
-
-    void UpdateBondVisuals()
-    {
-        foreach (var p in pairBuf)
-        {
-            if (!bonds.TryGetValue(Key(p.a.id, p.b.id), out var cyl) || !cyl) continue;
-            Vector3 pa = p.a.transform.position, pb = p.b.transform.position;
-            Vector3 dir = pb - pa; float len = dir.magnitude;
-            cyl.transform.position = (pa + pb) * 0.5f;
-            if (len > 0.0001f) cyl.transform.up = dir / len;
-            cyl.transform.localScale = new Vector3(bondThickness, len * 0.5f, bondThickness);
-        }
-    }
-
-    // ── Detección (API) ───────────────────────────────────────────────────────
+    // ── Detección ─────────────────────────────────────────────────────────────
     void DetectionStep()
     {
-        string hash = StructureHash();
-        if (hash != lastHash) { lastHash = hash; lastChangeTime = Time.time; }
-
-        if (pairBuf.Count == 0)               // sin enlaces no hay molécula que detectar
+        if (atomsBuf.Count == 0)
         {
-            sentHash = "";
+            sentHash = ""; lastHash = "";
+            ClearBondViews(); batchBonds.Clear();
             if (!detecting) HideBanner();
             return;
         }
 
+        string hash = StructureHash();
+        if (hash != lastHash) { lastHash = hash; lastChangeTime = Time.time; }
+
         if (hash != sentHash && Time.time - lastChangeTime >= detectDelay)
         {
             sentHash = hash;
-            SendDetection();
+            StartDetection();
         }
     }
 
-    void SendDetection()
+    void StartDetection()
     {
-        var comps = ConnectedComponents();
-
-        // Solo los grupos con al menos un enlace son candidatos a molécula.
-        int batches = 0;
-        foreach (var c in comps) if (c.bonds.Count > 0) batches++;
-        if (batches == 0) { detecting = false; HideBanner(); return; }
+        var clusters = ClusterAtoms();
+        // Solo grupos con ≥2 átomos son candidatos a molécula.
+        var candidates = clusters.FindAll(c => c.Count >= 2);
+        if (candidates.Count == 0)
+        {
+            ClearBondViews(); batchBonds.Clear();
+            HideBanner();
+            return;
+        }
 
         currentBatch++;
         int batch = currentBatch;
-        pendingRequests = batches;
+        pendingRequests = candidates.Count;
         anyValid = false;
         detecting = true;
+        batchBonds.Clear();
         ShowBanner("Detectando interacción atómica…", C_DETECT);
-        Debug.Log($"[Detect] {batches} molécula(s) separada(s) en la escena · userId='{SessionData.UserId}'");
+        Debug.Log($"[Detect] {candidates.Count} candidato(s) · userId='{SessionData.UserId}'");
 
-        foreach (var c in comps)
+        foreach (var cluster in candidates)
         {
-            if (c.bonds.Count == 0) continue;
-
-            var atomsDTO = new ApiManager.AtomDTO[c.atoms.Count];
-            for (int i = 0; i < c.atoms.Count; i++)
+            // Ids locales 0..n-1 (el backend los referencia así) + mapa a los Atom3D reales.
+            var map = new Atom3D[cluster.Count];
+            var atomsDTO = new ApiManager.AtomDTO[cluster.Count];
+            for (int i = 0; i < cluster.Count; i++)
             {
-                var p = c.atoms[i].transform.position;
-                atomsDTO[i] = new ApiManager.AtomDTO
-                {
-                    id = c.atoms[i].id, element = c.atoms[i].element, x = p.x, y = p.y, z = p.z
-                };
+                map[i] = cluster[i];
+                var p = cluster[i].transform.position;
+                atomsDTO[i] = new ApiManager.AtomDTO { id = i, element = cluster[i].element, x = p.x, y = p.y, z = p.z };
             }
-            var bondsDTO = new ApiManager.BondDTO[c.bonds.Count];
-            for (int i = 0; i < c.bonds.Count; i++)
-                bondsDTO[i] = new ApiManager.BondDTO
-                {
-                    beginAtomId = c.bonds[i].a.id, endAtomId = c.bonds[i].b.id, order = 1
-                };
 
-            ApiManager.Instance.DetectMolecule(SessionData.UserId, atomsDTO, bondsDTO,
-                onSuccess: resp => OnComponentResult(batch, resp != null && resp.isValid && resp.molecule != null, resp),
-                onError:   (code, detail) => { Debug.LogWarning($"[Detect] Error {code}: {detail}"); OnComponentResult(batch, false, null); });
+            var capturedMap = map;
+            ApiManager.Instance.DetectMolecule(SessionData.UserId, atomsDTO, new ApiManager.BondDTO[0],
+                onSuccess: resp => OnClusterResult(batch, resp, capturedMap),
+                onError:   (code, detail) => { Debug.LogWarning($"[Detect] Error {code}: {detail}"); OnClusterResult(batch, null, capturedMap); });
         }
     }
 
-    void OnComponentResult(int batch, bool valid, ApiManager.DetectResponse resp)
+    void OnClusterResult(int batch, ApiManager.DetectResponse resp, Atom3D[] map)
     {
-        if (batch != currentBatch) return; // resultado de un batch anterior (estructura ya cambió)
+        if (batch != currentBatch) return; // batch viejo (la estructura ya cambió)
 
-        if (resp != null)
-            Debug.Log($"[Detect] message={resp.message} · isValid={resp.isValid} · " +
-                      $"molécula={resp.molecule?.name} ({resp.molecule?.molecularFormula})");
+        bool valid = resp != null && resp.isValid && resp.molecule != null;
+        if (valid)
+        {
+            anyValid = true;
+            var m = resp.molecule;
+            Debug.Log($"[Detect] {m.name} ({m.molecularFormula}) · enlaces={m.bonds?.Length ?? 0}");
+            if (m.bonds != null)
+                foreach (var bd in m.bonds)
+                {
+                    // bd.begin/endAtomId son índices locales del request → Atom3D real.
+                    if (bd.beginAtomId >= 0 && bd.beginAtomId < map.Length &&
+                        bd.endAtomId   >= 0 && bd.endAtomId   < map.Length)
+                        batchBonds.Add((map[bd.beginAtomId].id, map[bd.endAtomId].id, bd.order));
+                }
+            RebuildBondViews();
+        }
 
-        if (valid) anyValid = true;
         pendingRequests--;
         if (pendingRequests <= 0)
         {
@@ -198,40 +164,102 @@ public class BondManager : MonoBehaviour
         }
     }
 
-    // ── Componentes conexos: cada grupo de átomos unidos por enlaces = 1 molécula
-    class Comp
-    {
-        public List<Atom3D> atoms = new List<Atom3D>();
-        public List<(Atom3D a, Atom3D b)> bonds = new List<(Atom3D, Atom3D)>();
-    }
-
-    List<Comp> ConnectedComponents()
+    // ── Agrupamiento por cercanía (componentes por distancia; NO decide enlaces) ─
+    List<List<Atom3D>> ClusterAtoms()
     {
         var parent = new Dictionary<int, int>();
         foreach (var a in atomsBuf) parent[a.id] = a.id;
 
-        int Find(int x)
-        {
-            while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; }
-            return x;
-        }
-        void Union(int a, int b) { parent[Find(a)] = Find(b); }
+        int Find(int x) { while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+        void Union(int x, int y) { parent[Find(x)] = Find(y); }
 
-        foreach (var p in pairBuf) Union(p.a.id, p.b.id);
+        float d2 = clusterDistance * clusterDistance;
+        for (int i = 0; i < atomsBuf.Count; i++)
+            for (int j = i + 1; j < atomsBuf.Count; j++)
+                if ((atomsBuf[i].transform.position - atomsBuf[j].transform.position).sqrMagnitude <= d2)
+                    Union(atomsBuf[i].id, atomsBuf[j].id);
 
-        var byRoot = new Dictionary<int, Comp>();
+        var groups = new Dictionary<int, List<Atom3D>>();
         foreach (var a in atomsBuf)
         {
             int r = Find(a.id);
-            if (!byRoot.TryGetValue(r, out var c)) { c = new Comp(); byRoot[r] = c; }
-            c.atoms.Add(a);
+            if (!groups.TryGetValue(r, out var g)) { g = new List<Atom3D>(); groups[r] = g; }
+            g.Add(a);
         }
-        foreach (var p in pairBuf)
-            byRoot[Find(p.a.id)].bonds.Add(p);
-
-        return new List<Comp>(byRoot.Values);
+        return new List<List<Atom3D>>(groups.Values);
     }
 
+    // ── Dibujo de enlaces (según orden, orientados a la cámara) ────────────────
+    void RebuildBondViews()
+    {
+        ClearBondViews();
+        foreach (var (a, b, order) in batchBonds)
+        {
+            int n = Mathf.Clamp(order, 1, 3);
+            var bv = new BondView { a = a, b = b, order = n, cyls = new GameObject[n] };
+            for (int i = 0; i < n; i++) bv.cyls[i] = CreateCyl();
+            bondViews.Add(bv);
+        }
+    }
+
+    void ClearBondViews()
+    {
+        foreach (var bv in bondViews)
+            if (bv.cyls != null)
+                foreach (var c in bv.cyls) if (c) Destroy(c);
+        bondViews.Clear();
+    }
+
+    static void HideBond(BondView bv)
+    {
+        if (bv.cyls == null) return;
+        foreach (var c in bv.cyls) if (c) c.SetActive(false);
+    }
+
+    GameObject CreateCyl()
+    {
+        var cyl = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        cyl.name = "Bond";
+        var col = cyl.GetComponent<Collider>(); if (col) Destroy(col);
+        cyl.transform.SetParent(bondsRoot, false);
+        if (bondMaterial) cyl.GetComponent<Renderer>().sharedMaterial = bondMaterial;
+        return cyl;
+    }
+
+    void UpdateBondVisuals()
+    {
+        if (!cam) cam = Camera.main;
+        foreach (var bv in bondViews)
+        {
+            if (!byId.TryGetValue(bv.a, out var A)) { HideBond(bv); continue; }
+            if (!byId.TryGetValue(bv.b, out var B)) { HideBond(bv); continue; }
+
+            Vector3 pa = A.transform.position, pb = B.transform.position;
+            Vector3 dir = pb - pa; float len = dir.magnitude;
+            if (len < 1e-4f) continue;
+            Vector3 dirN = dir / len;
+
+            // Perpendicular al enlace, en el plano de la cámara (para ver las líneas paralelas).
+            Vector3 view = cam ? ((pa + pb) * 0.5f - cam.transform.position).normalized : Vector3.forward;
+            Vector3 perp = Vector3.Cross(dirN, view);
+            if (perp.sqrMagnitude < 1e-4f) perp = Vector3.Cross(dirN, Vector3.up);
+            perp = perp.normalized;
+
+            int n = bv.cyls.Length;
+            for (int i = 0; i < n; i++)
+            {
+                var c = bv.cyls[i]; if (!c) continue;
+                c.SetActive(true);
+                float off = (n == 1) ? 0f : (i - (n - 1) * 0.5f) * bondSpacing;
+                Vector3 a2 = pa + perp * off, b2 = pb + perp * off;
+                c.transform.position = (a2 + b2) * 0.5f;
+                c.transform.up = dirN;
+                c.transform.localScale = new Vector3(bondThickness, len * 0.5f, bondThickness);
+            }
+        }
+    }
+
+    // ── Hash de estructura (solo átomos: los enlaces los da el backend) ────────
     string StructureHash()
     {
         atomsBuf.Sort((x, y) => x.id.CompareTo(y.id));
@@ -244,11 +272,6 @@ public class BondManager : MonoBehaviour
               .Append(Mathf.RoundToInt(p.y * 10f)).Append(',')
               .Append(Mathf.RoundToInt(p.z * 10f)).Append(';');
         }
-        sb.Append('|');
-        var keys = new List<long>();
-        foreach (var p in pairBuf) keys.Add(Key(p.a.id, p.b.id));
-        keys.Sort();
-        foreach (var k in keys) sb.Append(k).Append(';');
         return sb.ToString();
     }
 
@@ -261,10 +284,4 @@ public class BondManager : MonoBehaviour
     }
 
     void HideBanner() { if (bannerRoot) bannerRoot.SetActive(false); }
-
-    static long Key(int a, int b)
-    {
-        int lo = Mathf.Min(a, b), hi = Mathf.Max(a, b);
-        return (long)lo * 100000L + hi;
-    }
 }
