@@ -216,6 +216,29 @@ public class BondManager : MonoBehaviour
         foreach (var c in bv.cyls) if (c) c.SetActive(false);
     }
 
+    // ── Guardar / restaurar enlaces (para no re-descubrir al recargar) ─────────
+    public List<(int a, int b, int order)> ExportBonds()
+    {
+        var list = new List<(int, int, int)>();
+        foreach (var bv in bondViews) list.Add((bv.a, bv.b, bv.order));
+        return list;
+    }
+
+    /// <summary>
+    /// Dibuja enlaces cargados SIN llamar al backend, y marca la estructura actual
+    /// como "ya detectada" para que no se re-descubra la misma molécula al entrar.
+    /// </summary>
+    public void ImportBonds(List<(int a, int b, int order)> bonds)
+    {
+        GatherAtoms(placement ? placement.AtomsRoot : null);
+        batchBonds.Clear();
+        if (bonds != null) batchBonds.AddRange(bonds);
+        RebuildBondViews();
+        string h = StructureHash();
+        lastHash = h;
+        sentHash = h;   // hash == sentHash → DetectionStep no vuelve a detectar
+    }
+
     GameObject CreateCyl()
     {
         var cyl = GameObject.CreatePrimitive(PrimitiveType.Cylinder);

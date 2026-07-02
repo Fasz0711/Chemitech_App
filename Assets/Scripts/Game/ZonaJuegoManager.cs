@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -50,14 +51,22 @@ public class ZonaJuegoManager : MonoBehaviour
     float elapsed;
     bool  paused;
     long  lastReportedElapsed; // segundos ya enviados al backend (evita doble conteo)
+    BondManager bondManager;
 
     void Start()
     {
+        bondManager = FindObjectOfType<BondManager>();
+
         // Carga el tiempo acumulado y los átomos guardados del universo.
         if (PlayContext.Current != null) elapsed = PlayContext.Current.playSeconds;
         lastReportedElapsed = (long)elapsed; // el tiempo cargado ya fue reportado en sesiones previas
         if (txtUniverse) txtUniverse.text = PlayContext.UniverseName;
-        if (place != null && PlayContext.Current != null) place.ImportAtoms(PlayContext.Current.atoms);
+
+        if (place != null && PlayContext.Current != null)
+        {
+            place.ImportAtoms(PlayContext.Current.atoms);
+            RestoreBonds();   // dibuja los enlaces guardados sin re-detectar (no re-descubre)
+        }
 
         if (btnRecentrar && cam) btnRecentrar.onClick.AddListener(cam.Recenter);
 
@@ -108,13 +117,49 @@ public class ZonaJuegoManager : MonoBehaviour
     void Guardar()
     {
         if (PlayContext.Current == null || place == null) return;
+
         PlayContext.Current.atoms       = place.ExportAtoms();
+        PlayContext.Current.bonds       = ExportBondSaves();  // enlaces detectados → índices
         PlayContext.Current.playSeconds = (long)elapsed;
         UniverseStore.Update(PlayContext.Current);
-        if (place) place.ClearDirty();
-        Debug.Log($"[ZonaJuego] Guardado: {PlayContext.Current.atoms.Count} átomos · {PlayContext.Current.playSeconds}s");
+        place.ClearDirty();
+        Debug.Log($"[ZonaJuego] Guardado: {PlayContext.Current.atoms.Count} átomos · {PlayContext.Current.bonds.Count} enlaces · {PlayContext.Current.playSeconds}s");
         ReportTimeDelta();
         if (savedToast) StartCoroutine(ShowSavedToast());
+    }
+
+    // Enlaces actuales (del BondManager) mapeados a índices de la lista de átomos.
+    List<BondSave> ExportBondSaves()
+    {
+        var result = new List<BondSave>();
+        if (bondManager == null) return result;
+
+        var ordered = place.GetOrderedAtoms();
+        var idToIndex = new Dictionary<int, int>();
+        for (int i = 0; i < ordered.Count; i++) idToIndex[ordered[i].id] = i;
+
+        foreach (var (a, b, order) in bondManager.ExportBonds())
+            if (idToIndex.TryGetValue(a, out int ia) && idToIndex.TryGetValue(b, out int ib))
+                result.Add(new BondSave { a = ia, b = ib, order = order });
+        return result;
+    }
+
+    // Restaura los enlaces guardados (índices → ids de los átomos recién creados)
+    // y los dibuja sin llamar al backend (no re-descubre la molécula).
+    void RestoreBonds()
+    {
+        if (bondManager == null) return;
+        var saved = PlayContext.Current?.bonds;
+        // Sin enlaces guardados (save viejo o sin molécula): dejar que detecte normal.
+        if (saved == null || saved.Count == 0) return;
+
+        var ordered = place.GetOrderedAtoms();
+        var bonds = new List<(int a, int b, int order)>();
+        foreach (var bs in saved)
+            if (bs.a >= 0 && bs.a < ordered.Count && bs.b >= 0 && bs.b < ordered.Count)
+                bonds.Add((ordered[bs.a].id, ordered[bs.b].id, bs.order));
+
+        bondManager.ImportBonds(bonds);
     }
 
     // Suma al backend el tiempo jugado desde el último reporte (cuenta con sesión).

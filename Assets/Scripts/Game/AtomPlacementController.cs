@@ -281,14 +281,24 @@ public class AtomPlacementController : MonoBehaviour
     }
 
     // ── Guardar / restaurar estado (lo usa el modal de pausa) ─────────────────
-    public List<AtomSave> ExportAtoms()
+    /// <summary>Átomos colocados en orden de atomsRoot (para mapear índices ↔ ids).</summary>
+    public List<Atom3D> GetOrderedAtoms()
     {
-        var list = new List<AtomSave>();
+        var list = new List<Atom3D>();
         if (!atomsRoot) return list;
         foreach (Transform c in atomsRoot)
         {
             var a = c.GetComponent<Atom3D>();
-            if (!a) continue;
+            if (a) list.Add(a);
+        }
+        return list;
+    }
+
+    public List<AtomSave> ExportAtoms()
+    {
+        var list = new List<AtomSave>();
+        foreach (var a in GetOrderedAtoms())
+        {
             var p = a.transform.position;
             list.Add(new AtomSave { element = a.element, x = p.x, y = p.y, z = p.z });
         }
