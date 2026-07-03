@@ -119,11 +119,14 @@ public static class DiaryBuilder
 
         MakeText(header.transform, "Title", "Diario de Moléculas", new Vector2(-120f, 0f), new Vector2(760f, 60f), 44f, Color.white, TextAlignmentOptions.Left, FontStyles.Bold);
 
-        // Badges (top-right, alternables)
-        var guestBadge = MakePanel(header.transform, "GuestBadge", new Vector2(595f, 0f), new Vector2(240f, 54f), new Color(0.18f, 0.20f, 0.42f, 0.9f));
-        AddBorder(guestBadge, new Color(1f, 1f, 1f, 0.25f), 1f);
-        MakeImg(guestBadge.transform, "Icon", new Vector2(28f, 28f), new Vector2(-86f, 0f), GRAY, person).GetComponent<Image>().preserveAspect = true;
-        MakeText(guestBadge.transform, "Label", "Modo invitado", new Vector2(18f, 0f), new Vector2(180f, 36f), 20f, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
+        // Badges (top-right, alternables). GuestBadge es un contenedor para que el
+        // borde se muestre/oculte JUNTO con el badge (no como hermano huérfano).
+        var guestBadge = MakeEmpty(header.transform, "GuestBadge");
+        SetRT(guestBadge, new Vector2(595f, 0f), new Vector2(240f, 54f));
+        var guestPill = MakePanel(guestBadge.transform, "Pill", Vector2.zero, new Vector2(240f, 54f), new Color(0.18f, 0.20f, 0.42f, 0.9f));
+        AddBorder(guestPill, new Color(1f, 1f, 1f, 0.25f), 1f);
+        MakeImg(guestPill.transform, "Icon", new Vector2(28f, 28f), new Vector2(-86f, 0f), GRAY, person).GetComponent<Image>().preserveAspect = true;
+        MakeText(guestPill.transform, "Label", "Modo invitado", new Vector2(18f, 0f), new Vector2(180f, 36f), 20f, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
 
         var molBadge = MakePanel(header.transform, "MolBadge", new Vector2(545f, 0f), new Vector2(340f, 54f), Hex("F1C40F"));
         var molLabel = MakeText(molBadge.transform, "Label", "0 Moléculas Descubiertas", Vector2.zero, new Vector2(320f, 36f), 20f, Hex("2A2208"), TextAlignmentOptions.Center, FontStyles.Bold);
@@ -161,7 +164,7 @@ public static class DiaryBuilder
         var mgr = Ensure<DiaryManager>(mgrGo);
         var so = new SerializedObject(mgr);
         so.FindProperty("btnBack").objectReferenceValue          = btnBack;
-        so.FindProperty("guestBadge").objectReferenceValue       = guestBadge.gameObject;
+        so.FindProperty("guestBadge").objectReferenceValue       = guestBadge;
         so.FindProperty("molCountBadge").objectReferenceValue    = molBadge.gameObject;
         so.FindProperty("molCountLabel").objectReferenceValue    = molLabel;
         so.FindProperty("guestView").objectReferenceValue        = guestView;
