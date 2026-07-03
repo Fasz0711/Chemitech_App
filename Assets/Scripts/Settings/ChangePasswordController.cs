@@ -84,7 +84,7 @@ public class ChangePasswordController : MonoBehaviour
         if (btnSubmit) btnSubmit.interactable = true;
         HideBanner();
         UpdateReqs("");
-        if (reqPanel) reqPanel.SetActive(false);
+        if (reqPanel) reqPanel.SetActive(true); // siempre visible (como Strength)
 
         if (successModal) successModal.SetActive(false);
         if (formModal)    formModal.SetActive(true);
@@ -104,7 +104,7 @@ public class ChangePasswordController : MonoBehaviour
         UpdateReqs(pwd);
 
         int unmet = CountUnmet(pwd);
-        if (reqPanel) reqPanel.SetActive(pwd.Length > 0 && unmet > 0);
+        // ReqPanel permanece visible; solo se actualizan los ítems (met/unmet).
         if (pwd.Length > 0 && unmet > 0)
             ShowBanner($"Tu nueva contraseña no cumple {unmet} requisito{(unmet == 1 ? "" : "s")}. Corrígelos para continuar.", BANNER_WARN);
     }
