@@ -119,6 +119,27 @@ public class ApiManager : MonoBehaviour
             onError));
     }
 
+    public void DeleteAccount(string accessToken, Action<string> onSuccess, Action<int, string> onError)
+    {
+        Debug.Log($"[API] DELETE {BASE_URL}/users/me");
+        StartCoroutine(DeleteRaw("/users/me", accessToken,
+            json => onSuccess?.Invoke(JsonUtility.FromJson<MessageResponse>(json).message),
+            onError));
+    }
+
+    public void ChangePassword(string accessToken, string currentPassword, string newPassword,
+                               Action<string> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new ChangePasswordRequest
+        {
+            currentPassword = currentPassword, newPassword = newPassword
+        });
+        Debug.Log($"[API] PATCH {BASE_URL}/authentication/password");
+        StartCoroutine(PatchAuthRaw("/authentication/password", accessToken, body,
+            json => onSuccess?.Invoke(JsonUtility.FromJson<MessageResponse>(json).message),
+            onError));
+    }
+
     /// <summary>Suma 'seconds' al tiempo total jugado de la cuenta (endpoint incremental).</summary>
     public void AddTimePlayed(string userPublicId, int seconds,
                               Action<JournalStatsResponse> onSuccess, Action<int, string> onError)
@@ -217,6 +238,68 @@ public class ApiManager : MonoBehaviour
         }
     }
 
+    // PATCH crudo con Authorization: Bearer y body JSON.
+    IEnumerator PatchAuthRaw(string endpoint, string accessToken, string jsonBody,
+                             Action<string> onSuccess, Action<int, string> onError)
+    {
+        string url = BASE_URL + endpoint;
+
+        using var req = new UnityWebRequest(url, "PATCH");
+        if (!string.IsNullOrEmpty(jsonBody))
+        {
+            req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(jsonBody));
+            req.SetRequestHeader("Content-Type", "application/json");
+        }
+        req.downloadHandler = new DownloadHandlerBuffer();
+        req.SetRequestHeader("Accept", "application/json");
+        if (!string.IsNullOrEmpty(accessToken))
+            req.SetRequestHeader("Authorization", "Bearer " + accessToken);
+
+        yield return req.SendWebRequest();
+
+        string responseText = req.downloadHandler.text;
+
+        if (req.result == UnityWebRequest.Result.Success)
+        {
+            onSuccess?.Invoke(responseText);
+        }
+        else
+        {
+            int code = (int)req.responseCode;
+            string detail = TryParseDetail(responseText);
+            Debug.LogWarning($"[API] PATCH {url} FALLÓ · result={req.result} · code={code} · error='{req.error}' · body='{responseText}'");
+            onError?.Invoke(code, detail);
+        }
+    }
+
+    // DELETE crudo con Authorization: Bearer. Sin body.
+    IEnumerator DeleteRaw(string endpoint, string accessToken, Action<string> onSuccess, Action<int, string> onError)
+    {
+        string url = BASE_URL + endpoint;
+
+        using var req = new UnityWebRequest(url, "DELETE");
+        req.downloadHandler = new DownloadHandlerBuffer();
+        req.SetRequestHeader("Accept", "application/json");
+        if (!string.IsNullOrEmpty(accessToken))
+            req.SetRequestHeader("Authorization", "Bearer " + accessToken);
+
+        yield return req.SendWebRequest();
+
+        string responseText = req.downloadHandler.text;
+
+        if (req.result == UnityWebRequest.Result.Success)
+        {
+            onSuccess?.Invoke(responseText);
+        }
+        else
+        {
+            int code = (int)req.responseCode;
+            string detail = TryParseDetail(responseText);
+            Debug.LogWarning($"[API] DELETE {url} FALLÓ · result={req.result} · code={code} · error='{req.error}' · body='{responseText}'");
+            onError?.Invoke(code, detail);
+        }
+    }
+
     // Variante que entrega el cuerpo crudo (JSON) para que el caller lo parsee.
     IEnumerator PostRaw(string endpoint, string jsonBody, Action<string> onSuccess, Action<int, string> onError)
     {
@@ -261,6 +344,7 @@ public class ApiManager : MonoBehaviour
     [Serializable] class AccountResponse { public string userId; }
     [Serializable] class LoginRequest    { public string email; public string password; }
     [Serializable] class LogoutRequest     { public string refreshToken; }
+    [Serializable] class ChangePasswordRequest { public string currentPassword; public string newPassword; }
     [Serializable] class TimePlayedRequest { public int seconds; }
     [Serializable] class MessageResponse   { public string message; }
     [Serializable] class DetailResponse    { public string detail; }
