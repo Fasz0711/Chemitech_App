@@ -40,11 +40,35 @@ public class CuentaCreadaManager : MonoBehaviour
             RegistrationData.Username,
             onSuccess: userId =>
             {
-                SessionData.SetSession(userId, RegistrationData.Username, RegistrationData.Email);
-                RegistrationData.Clear();
+                // La cuenta se creó, pero /authentication/account NO devuelve tokens.
+                // Iniciamos sesión automáticamente con las mismas credenciales para
+                // obtener accessToken/refreshToken (sin token, IsLoggedIn=false = invitado).
+                string email    = RegistrationData.Email;
+                string password = RegistrationData.Password;
+                string username = RegistrationData.Username;
 
-                ShowStatus("¡Tu cuenta está lista!", COLOR_OK);
-                SetBotonExplorar(true);
+                ApiManager.Instance.Login(email, password,
+                    onSuccess: resp =>
+                    {
+                        SessionData.SetTokens(resp.accessToken, resp.refreshToken, resp.tokenType, resp.expiresIn);
+                        string uid = !string.IsNullOrEmpty(resp.userId) ? resp.userId
+                                   : !string.IsNullOrEmpty(resp.userPublicId) ? resp.userPublicId : userId;
+                        SessionData.SetSession(uid, username, email);
+                        RegistrationData.Clear();
+                        Debug.Log($"[CuentaCreada] Cuenta creada y sesión iniciada · userId='{uid}'");
+                        ShowStatus("¡Tu cuenta está lista!", COLOR_OK);
+                        SetBotonExplorar(true);
+                    },
+                    onError: (code, detail) =>
+                    {
+                        // La cuenta existe pero el auto-login falló (raro). Guardamos lo
+                        // básico; el usuario podrá iniciar sesión manualmente.
+                        SessionData.SetSession(userId, username, email);
+                        RegistrationData.Clear();
+                        Debug.LogWarning($"[CuentaCreada] Auto-login falló ({code}, {detail}).");
+                        ShowStatus("¡Tu cuenta está lista!", COLOR_OK);
+                        SetBotonExplorar(true);
+                    });
             },
             onError: (code, detail) =>
             {
