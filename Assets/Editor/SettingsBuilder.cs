@@ -651,10 +651,11 @@ public static class SettingsBuilder
         var rootT = FindChildRecursive(canvas.transform, "SettingsRoot");
         Transform parent = rootT != null ? rootT : canvas.transform;
 
+        // Regenerar SIEMPRE el contenedor para garantizar el cableado interno
+        // (destruye solo la UI de Cambiar Contraseña; todo lo demás queda intacto).
         var existing = FindChildRecursive(parent, "ChangePassword");
-        ChangePasswordController ctrl = existing != null
-            ? existing.GetComponent<ChangePasswordController>()
-            : BuildChangePassword(parent);
+        if (existing != null) Object.DestroyImmediate(existing.gameObject);
+        ChangePasswordController ctrl = BuildChangePassword(parent);
 
         var so = new SerializedObject(mgr);
         so.FindProperty("changePassword").objectReferenceValue = ctrl;
@@ -662,9 +663,9 @@ public static class SettingsBuilder
 
         EditorUtility.SetDirty(mgr);
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-        Debug.Log("[SettingsBuilder] ✓ Cambiar Contraseña agregado/cableado.");
+        Debug.Log("[SettingsBuilder] ✓ Cambiar Contraseña regenerado y cableado.");
         EditorUtility.DisplayDialog("¡Listo!",
-            "Modales de Cambiar Contraseña agregados y cableados.\nGuarda con Ctrl+S.", "OK");
+            "Modales de Cambiar Contraseña regenerados y cableados.\nGuarda con Ctrl+S.", "OK");
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
