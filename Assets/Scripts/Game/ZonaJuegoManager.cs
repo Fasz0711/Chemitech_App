@@ -45,8 +45,16 @@ public class ZonaJuegoManager : MonoBehaviour
     [SerializeField] private Button btnExitConfirm;
     [SerializeField] private Button btnExitCancel;
 
+    [Header("Modal descubrimiento")]
+    [SerializeField] private GameObject      discoveryModal;
+    [SerializeField] private TextMeshProUGUI discoveryFormula;
+    [SerializeField] private TextMeshProUGUI discoveryName;
+    [SerializeField] private Button          btnVerDiario;
+    [SerializeField] private Button          btnContinuar;
+
     [Header("Escenas")]
-    [SerializeField] private string escenaSalir = "MisUniversosScene";
+    [SerializeField] private string escenaSalir  = "MisUniversosScene";
+    [SerializeField] private string escenaDiario = "DiaryScene";
 
     float elapsed;
     bool  paused;
@@ -87,9 +95,47 @@ public class ZonaJuegoManager : MonoBehaviour
         if (btnExitConfirm) btnExitConfirm.onClick.AddListener(() => SceneManager.LoadScene(escenaSalir));
         if (btnExitCancel)  btnExitCancel.onClick.AddListener(CloseExitConfirm);
 
-        if (pauseModal) pauseModal.SetActive(false);
-        if (exitModal)  exitModal.SetActive(false);
-        if (savedToast) savedToast.SetActive(false);
+        // Modal de descubrimiento (nueva molécula)
+        if (bondManager != null) bondManager.OnNewDiscovery += ShowDiscovery;
+        if (btnContinuar) btnContinuar.onClick.AddListener(CloseDiscovery);
+        if (btnVerDiario) btnVerDiario.onClick.AddListener(VerDiario);
+
+        if (pauseModal)     pauseModal.SetActive(false);
+        if (exitModal)      exitModal.SetActive(false);
+        if (discoveryModal) discoveryModal.SetActive(false);
+        if (savedToast)     savedToast.SetActive(false);
+    }
+
+    void OnDestroy()
+    {
+        if (bondManager != null) bondManager.OnNewDiscovery -= ShowDiscovery;
+    }
+
+    // ── Modal de descubrimiento ────────────────────────────────────────────────
+    void ShowDiscovery(string formula, string name)
+    {
+        paused = true;   // congela el cronómetro mientras se celebra
+        if (discoveryFormula) discoveryFormula.text = FormatFormula(formula);
+        if (discoveryName)    discoveryName.text    = string.IsNullOrEmpty(name) ? "" : name;
+        if (discoveryModal)   discoveryModal.SetActive(true);
+    }
+
+    void CloseDiscovery()
+    {
+        if (discoveryModal) discoveryModal.SetActive(false);
+        paused = false;
+    }
+
+    void VerDiario()
+    {
+        Guardar();   // no perder progreso al salir al diario
+        SceneManager.LoadScene(escenaDiario);
+    }
+
+    static string FormatFormula(string f)
+    {
+        if (string.IsNullOrEmpty(f)) return "";
+        return System.Text.RegularExpressions.Regex.Replace(f, "([0-9]+)", "<sub>$1</sub>");
     }
 
     void Update()

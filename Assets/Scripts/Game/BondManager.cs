@@ -28,6 +28,11 @@ public class BondManager : MonoBehaviour
     static readonly Color C_DETECT = new Color(0.10f, 0.65f, 0.81f, 1f);
     static readonly Color C_OK     = new Color(0.18f, 0.80f, 0.44f, 1f);
 
+    /// <summary>Se dispara al detectar una molécula por PRIMERA vez para el usuario
+    /// (isNewDiscovery del backend). Args: (fórmula, nombre). Lo usa el modal de
+    /// "¡Nuevo descubrimiento!" en ZonaJuegoManager.</summary>
+    public event System.Action<string, string> OnNewDiscovery;
+
     Transform bondsRoot;
     Camera    cam;
 
@@ -153,6 +158,9 @@ public class BondManager : MonoBehaviour
                         batchBonds.Add((map[bd.beginAtomId].id, map[bd.endAtomId].id, bd.order));
                 }
             RebuildBondViews();
+
+            // Primera vez que se descubre esta molécula → avisar para el modal.
+            if (m.isNewDiscovery) OnNewDiscovery?.Invoke(m.molecularFormula, m.name);
         }
 
         pendingRequests--;
