@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
@@ -26,6 +27,7 @@ public class BondManager : MonoBehaviour
     [SerializeField] private float bondSpacing     = 0.20f; // separación entre líneas paralelas (orden 2/3)
     [SerializeField] private float detectDelay     = 0.45f; // debounce tras el último cambio
     [SerializeField] private float offlineRetryInterval = 5f; // reintento de detección mientras el servicio está caído
+    [SerializeField] private float formedBannerSeconds  = 2f; // el banner "¡Molécula formada!" se auto-oculta tras esto
 
     static readonly Color C_DETECT = new Color(0.10f, 0.65f, 0.81f, 1f);
     static readonly Color C_OK     = new Color(0.18f, 0.80f, 0.44f, 1f);
@@ -51,6 +53,11 @@ public class BondManager : MonoBehaviour
     bool   detecting;
     int    pendingRequests, currentBatch;
     bool   anyValid;
+
+    // Firma de los enlaces ya dibujados al iniciar un batch: sirve para saber si la
+    // detección REALMENTE formó/cambió una molécula o solo reconfirmó una existente.
+    string    prevBondsSig = "";
+    Coroutine bannerHideCo;
 
     // Estado de conexión con el servicio de IA
     bool  online = true;
@@ -117,6 +124,7 @@ public class BondManager : MonoBehaviour
     void StartDetection()
     {
         lastAttemptTime = Time.time;   // marca el intento (aunque no haya candidatos)
+        prevBondsSig = BondsSignature(ExportBonds()); // enlaces dibujados ANTES de este batch
 
         var clusters = ClusterAtoms();
         // Solo grupos con ≥2 átomos son candidatos a molécula.
@@ -193,8 +201,11 @@ public class BondManager : MonoBehaviour
         if (pendingRequests <= 0)
         {
             detecting = false;
-            if (anyValid) ShowBanner("¡Molécula formada!", C_OK);
-            else          HideBanner();
+            // Solo celebramos si los enlaces CAMBIARON respecto a lo ya dibujado. Reconfirmar
+            // una molécula que ya existía (p. ej. al colocar un átomo suelto aparte, o tras
+            // recargar el universo) no vuelve a mostrar el banner.
+            if (anyValid && BondsSignature(batchBonds) != prevBondsSig) ShowMoleculeFormed();
+            else                                                        HideBanner();
         }
     }
 
@@ -339,12 +350,51 @@ public class BondManager : MonoBehaviour
     // ── Banner ────────────────────────────────────────────────────────────────
     void ShowBanner(string msg, Color col)
     {
+        CancelBannerHide();
         if (bannerRoot) bannerRoot.SetActive(true);
         if (bannerBg)   bannerBg.color = col;
         if (bannerText) bannerText.text = msg;
     }
 
-    void HideBanner() { if (bannerRoot) bannerRoot.SetActive(false); }
+    // Banner verde de éxito: se muestra y se auto-oculta tras formedBannerSeconds.
+    void ShowMoleculeFormed()
+    {
+        ShowBanner("¡Molécula formada!", C_OK);
+        bannerHideCo = StartCoroutine(HideBannerAfter(formedBannerSeconds));
+    }
+
+    IEnumerator HideBannerAfter(float secs)
+    {
+        yield return new WaitForSeconds(secs);
+        bannerHideCo = null;
+        if (bannerRoot) bannerRoot.SetActive(false);
+    }
+
+    void HideBanner()
+    {
+        CancelBannerHide();
+        if (bannerRoot) bannerRoot.SetActive(false);
+    }
+
+    void CancelBannerHide()
+    {
+        if (bannerHideCo != null) { StopCoroutine(bannerHideCo); bannerHideCo = null; }
+    }
+
+    // Firma normalizada de un conjunto de enlaces (independiente del orden de la lista
+    // y de la dirección a↔b): permite comparar si la molécula dibujada cambió.
+    static string BondsSignature(List<(int a, int b, int order)> bonds)
+    {
+        if (bonds == null || bonds.Count == 0) return "";
+        var parts = new List<string>(bonds.Count);
+        foreach (var (a, b, order) in bonds)
+        {
+            int lo = Mathf.Min(a, b), hi = Mathf.Max(a, b);
+            parts.Add($"{lo}-{hi}:{order}");
+        }
+        parts.Sort();
+        return string.Join(",", parts);
+    }
 
     // ── Conexión con el servicio de detección ──────────────────────────────────
     void SetOnline(bool value)

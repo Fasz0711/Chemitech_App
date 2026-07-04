@@ -20,6 +20,7 @@ public class LoginManager : MonoBehaviour
     [SerializeField] private string escenaMenu     = "SampleScene";
     [SerializeField] private string escenaRegistro = "RegisterEmailScene";
     [SerializeField] private string escenaDestino  = "MisUniversosScene";
+    [SerializeField] private string escenaOlvidaste = "ForgotPasswordEmailScene";
 
     [Header("Feedback")]
     [SerializeField] private TextMeshProUGUI txtError;
@@ -99,7 +100,10 @@ public class LoginManager : MonoBehaviour
 
     private void OnOlvidaste()
     {
-        Debug.Log("[LoginManager] ¿Olvidaste tu contraseña?");
+        PasswordResetData.Clear();
+        // Precarga el correo ya escrito en el login (si hay), para no re-tipearlo.
+        if (inputEmail) PasswordResetData.Email = inputEmail.text.Trim();
+        SceneManager.LoadScene(escenaOlvidaste);
     }
 
     private void OnRegistrate()

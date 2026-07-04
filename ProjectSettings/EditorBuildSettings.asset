@@ -50,5 +50,17 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/MoleculeDetailScene.unity
     guid: 68fb8cd00cc6869479104d094f87e42f
+  - enabled: 1
+    path: Assets/Scenes/ForgotPasswordEmailScene.unity
+    guid: a4a57eb1997160c4b87c94acc8fd8f07
+  - enabled: 1
+    path: Assets/Scenes/ForgotPasswordCodeScene.unity
+    guid: 9b6fb0597aabeac4a923063b21af4626
+  - enabled: 1
+    path: Assets/Scenes/ForgotPasswordResetScene.unity
+    guid: 61b9d1377bd53db4d8837dd69162ce1f
+  - enabled: 1
+    path: Assets/Scenes/ForgotPasswordSuccessScene.unity
+    guid: e5f26dc57a3ddb949890662f935abaf7
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}

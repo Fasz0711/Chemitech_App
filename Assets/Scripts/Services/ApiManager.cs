@@ -167,6 +167,37 @@ public class ApiManager : MonoBehaviour
             onError));
     }
 
+    // ── Recuperación de contraseña (olvidé mi contraseña) ───────────────────────
+
+    /// <summary>Paso 1/3: pide que se envíe un código de 6 caracteres al correo.
+    /// El backend SIEMPRE responde 200 con el mismo mensaje, exista o no la cuenta.</summary>
+    public void RequestPasswordReset(string email, Action<string> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new EmailRequest { email = email });
+        StartCoroutine(Post("/authentication/password/reset/request", body, onSuccess, onError));
+    }
+
+    /// <summary>Paso 2/3: verifica el código sin consumirlo (se puede validar antes
+    /// de mostrar la pantalla de nueva contraseña).</summary>
+    public void VerifyPasswordResetCode(string email, string code,
+                                        Action<string> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new ResetVerifyRequest { email = email, code = code });
+        StartCoroutine(Post("/authentication/password/reset/verify", body, onSuccess, onError));
+    }
+
+    /// <summary>Paso 3/3: cambia la contraseña. Al completarse, el código queda
+    /// consumido y se cierran TODAS las sesiones activas del usuario.</summary>
+    public void ResetPassword(string email, string code, string newPassword,
+                              Action<string> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new ResetPasswordRequest
+        {
+            email = email, code = code, newPassword = newPassword
+        });
+        StartCoroutine(Post("/authentication/password/reset", body, onSuccess, onError));
+    }
+
     /// <summary>Suma 'seconds' al tiempo total jugado de la cuenta (endpoint incremental).</summary>
     public void AddTimePlayed(string userPublicId, int seconds,
                               Action<JournalStatsResponse> onSuccess, Action<int, string> onError)
@@ -374,6 +405,8 @@ public class ApiManager : MonoBehaviour
     [Serializable] class LoginRequest    { public string email; public string password; }
     [Serializable] class LogoutRequest     { public string refreshToken; }
     [Serializable] class ChangePasswordRequest { public string currentPassword; public string newPassword; }
+    [Serializable] class ResetVerifyRequest     { public string email; public string code; }
+    [Serializable] class ResetPasswordRequest   { public string email; public string code; public string newPassword; }
     [Serializable] class TimePlayedRequest { public int seconds; }
     [Serializable] class MessageResponse   { public string message; }
     [Serializable] class DetailResponse    { public string detail; }
