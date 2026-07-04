@@ -18,12 +18,14 @@ public class BondManager : MonoBehaviour
     [SerializeField] private GameObject      bannerRoot;
     [SerializeField] private Image           bannerBg;
     [SerializeField] private TextMeshProUGUI bannerText;
+    [SerializeField] private GameObject      detectionOfflineIndicator; // aviso discreto "detección no disponible"
 
     [Header("Ajustes")]
     [SerializeField] private float clusterDistance = 2.0f;  // agrupa candidatos (no decide enlaces)
     [SerializeField] private float bondThickness   = 0.09f;
     [SerializeField] private float bondSpacing     = 0.20f; // separación entre líneas paralelas (orden 2/3)
     [SerializeField] private float detectDelay     = 0.45f; // debounce tras el último cambio
+    [SerializeField] private float offlineRetryInterval = 5f; // reintento de detección mientras el servicio está caído
 
     static readonly Color C_DETECT = new Color(0.10f, 0.65f, 0.81f, 1f);
     static readonly Color C_OK     = new Color(0.18f, 0.80f, 0.44f, 1f);
@@ -49,6 +51,10 @@ public class BondManager : MonoBehaviour
     bool   detecting;
     int    pendingRequests, currentBatch;
     bool   anyValid;
+
+    // Estado de conexión con el servicio de IA
+    bool  online = true;
+    float lastAttemptTime;
     readonly List<(int a, int b, int order)> batchBonds = new List<(int, int, int)>();
 
     void Awake()
@@ -57,7 +63,11 @@ public class BondManager : MonoBehaviour
         cam = Camera.main;
     }
 
-    void Start() { if (bannerRoot) bannerRoot.SetActive(false); }
+    void Start()
+    {
+        if (bannerRoot) bannerRoot.SetActive(false);
+        if (detectionOfflineIndicator) detectionOfflineIndicator.SetActive(false);
+    }
 
     void Update()
     {
@@ -92,6 +102,11 @@ public class BondManager : MonoBehaviour
         string hash = StructureHash();
         if (hash != lastHash) { lastHash = hash; lastChangeTime = Time.time; }
 
+        // Offline: reintenta el estado ACTUAL cada offlineRetryInterval para
+        // auto-recuperarse cuando el servicio de IA vuelva (sin requerir interacción).
+        if (!online && !detecting && Time.time - lastAttemptTime >= offlineRetryInterval)
+            sentHash = "";
+
         if (hash != sentHash && Time.time - lastChangeTime >= detectDelay)
         {
             sentHash = hash;
@@ -101,6 +116,8 @@ public class BondManager : MonoBehaviour
 
     void StartDetection()
     {
+        lastAttemptTime = Time.time;   // marca el intento (aunque no haya candidatos)
+
         var clusters = ClusterAtoms();
         // Solo grupos con ≥2 átomos son candidatos a molécula.
         var candidates = clusters.FindAll(c => c.Count >= 2);
@@ -134,14 +151,23 @@ public class BondManager : MonoBehaviour
 
             var capturedMap = map;
             ApiManager.Instance.DetectMolecule(SessionData.UserId, atomsDTO, new ApiManager.BondDTO[0],
-                onSuccess: resp => OnClusterResult(batch, resp, capturedMap),
-                onError:   (code, detail) => { Debug.LogWarning($"[Detect] Error {code}: {detail}"); OnClusterResult(batch, null, capturedMap); });
+                onSuccess: resp => OnClusterResult(batch, resp, capturedMap, false),
+                onError:   (code, detail) =>
+                {
+                    Debug.LogWarning($"[Detect] Error {code}: {detail}");
+                    bool connErr = (code == 0 || code >= 500);  // sin respuesta / timeout / servicio caído
+                    OnClusterResult(batch, null, capturedMap, connErr);
+                });
         }
     }
 
-    void OnClusterResult(int batch, ApiManager.DetectResponse resp, Atom3D[] map)
+    void OnClusterResult(int batch, ApiManager.DetectResponse resp, Atom3D[] map, bool connectionError)
     {
         if (batch != currentBatch) return; // batch viejo (la estructura ya cambió)
+
+        // Conexión con el servicio de IA: error de red/timeout/5xx → offline; cualquier
+        // respuesta del servidor (válida o no) → online.
+        SetOnline(!connectionError);
 
         bool valid = resp != null && resp.isValid && resp.molecule != null;
         if (valid)
@@ -319,4 +345,13 @@ public class BondManager : MonoBehaviour
     }
 
     void HideBanner() { if (bannerRoot) bannerRoot.SetActive(false); }
+
+    // ── Conexión con el servicio de detección ──────────────────────────────────
+    void SetOnline(bool value)
+    {
+        if (online == value) return;
+        online = value;
+        if (detectionOfflineIndicator) detectionOfflineIndicator.SetActive(!online);
+        Debug.Log($"[Detect] Servicio de detección: {(online ? "DISPONIBLE" : "NO DISPONIBLE")}");
+    }
 }

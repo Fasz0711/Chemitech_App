@@ -26,6 +26,10 @@ public class ApiManager : MonoBehaviour
     //LAPTOP
     const string BASE_URL = "http://127.0.0.1:8000/api";
 
+    // Tiempo de espera (s) para la detección de moléculas. Si el servicio de IA no
+    // responde dentro de este margen, el request falla con code 0 (pérdida de conexión).
+    const int DETECT_TIMEOUT_SECONDS = 8;
+
     void Awake()
     {
         if (_instance != null && _instance != this) { Destroy(gameObject); return; }
@@ -186,7 +190,8 @@ public class ApiManager : MonoBehaviour
 
         StartCoroutine(PostRaw("/detection/molecule", body,
             onSuccess: json => { Debug.Log($"[API] respuesta OK:\n{json}"); onSuccess?.Invoke(JsonUtility.FromJson<DetectResponse>(json)); },
-            onError: onError));
+            onError: onError,
+            timeoutSeconds: DETECT_TIMEOUT_SECONDS));
     }
 
     // ── Core HTTP ─────────────────────────────────────────────────────────────
@@ -324,7 +329,7 @@ public class ApiManager : MonoBehaviour
     }
 
     // Variante que entrega el cuerpo crudo (JSON) para que el caller lo parsee.
-    IEnumerator PostRaw(string endpoint, string jsonBody, Action<string> onSuccess, Action<int, string> onError)
+    IEnumerator PostRaw(string endpoint, string jsonBody, Action<string> onSuccess, Action<int, string> onError, int timeoutSeconds = 0)
     {
         string url = BASE_URL + endpoint;
         byte[] raw = Encoding.UTF8.GetBytes(jsonBody);
@@ -334,6 +339,7 @@ public class ApiManager : MonoBehaviour
         req.downloadHandler = new DownloadHandlerBuffer();
         req.SetRequestHeader("Content-Type", "application/json");
         req.SetRequestHeader("Accept", "application/json");
+        if (timeoutSeconds > 0) req.timeout = timeoutSeconds;
 
         yield return req.SendWebRequest();
 
