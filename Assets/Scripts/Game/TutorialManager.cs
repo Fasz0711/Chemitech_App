@@ -49,7 +49,9 @@ public class TutorialManager : MonoBehaviour
     [Header("Contenido")]
     [SerializeField] private Step[] steps;
 
-    const string SEEN_KEY = "chemitech_tutorial_seen";
+    // Se recuerda por CUENTA (una key por userId). Los invitados no tienen userId,
+    // así que nunca se marca y el tutorial sale cada vez que entran como invitado.
+    const string SEEN_KEY_PREFIX = "chemitech_tutorial_seen_";
 
     static readonly Color DOT_DONE    = new Color(0.25f, 0.88f, 0.82f, 1f);  // cian (pasos vistos)
     static readonly Color DOT_ACTIVE  = new Color(0.95f, 0.77f, 0.13f, 1f);  // ámbar (paso actual)
@@ -73,13 +75,28 @@ public class TutorialManager : MonoBehaviour
         BuildProgress();
         HideAll();
 
-        // Primera vez en este dispositivo → mostrar y marcar como visto.
-        if (PlayerPrefs.GetInt(SEEN_KEY, 0) == 0)
+        // Auto-arranque: una sola vez por CUENTA (logeado) o SIEMPRE para invitados.
+        if (ShouldAutoPlay())
         {
-            PlayerPrefs.SetInt(SEEN_KEY, 1);
-            PlayerPrefs.Save();
+            MarkSeen();
             OpenWelcome();
         }
+    }
+
+    static bool   IsGuest => string.IsNullOrEmpty(SessionData.UserId);
+    static string SeenKey => SEEN_KEY_PREFIX + SessionData.UserId;
+
+    static bool ShouldAutoPlay()
+    {
+        if (IsGuest) return true;                    // invitado: cada vez que entra
+        return PlayerPrefs.GetInt(SeenKey, 0) == 0;  // cuenta: solo la primera vez
+    }
+
+    static void MarkSeen()
+    {
+        if (IsGuest) return;                         // invitado: no se recuerda
+        PlayerPrefs.SetInt(SeenKey, 1);
+        PlayerPrefs.Save();
     }
 
     /// <summary>Reabre el tutorial desde el inicio (botón "Ver tutorial" de la pausa).</summary>

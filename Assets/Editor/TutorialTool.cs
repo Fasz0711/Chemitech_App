@@ -178,9 +178,10 @@ public static class TutorialTool
         Debug.Log("[TutorialTool] ✓ Tutorial agregado y cableado.");
         EditorUtility.DisplayDialog("¡Listo!",
             $"Tutorial agregado al Canvas ({STEPS.Length} pasos) y cableado a ZonaJuegoManager.\n\n" +
-            "• Se reproduce solo la 1ª vez que se entra a un universo (PlayerPrefs).\n" +
+            "• Logeado: se reproduce solo la 1ª vez por cuenta.\n" +
+            "• Invitado: se reproduce cada vez que entra.\n" +
             "• Reejecutar desde el menú de pausa → \"Ver tutorial\".\n" +
-            "• Para volver a probar el auto-arranque: borra la key \"chemitech_tutorial_seen\" (Edit → Clear All PlayerPrefs).", "OK");
+            "• Para reprobar el auto-arranque de una cuenta: Edit → Clear All PlayerPrefs.", "OK");
     }
 
     // ── Modal con borde + panel; devuelve el root (los hijos se añaden encima) ─
