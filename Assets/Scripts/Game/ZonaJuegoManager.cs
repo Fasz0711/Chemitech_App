@@ -52,6 +52,9 @@ public class ZonaJuegoManager : MonoBehaviour
     [SerializeField] private Button          btnVerDiario;
     [SerializeField] private Button          btnContinuar;
 
+    [Header("Tutorial")]
+    [SerializeField] private TutorialManager tutorial;
+
     [Header("Escenas")]
     [SerializeField] private string escenaSalir  = "MisUniversosScene";
     [SerializeField] private string escenaDiario = "DiaryScene";
@@ -90,7 +93,7 @@ public class ZonaJuegoManager : MonoBehaviour
         if (btnReanudar)    btnReanudar.onClick.AddListener(ClosePause);
         if (btnGuardar)     btnGuardar.onClick.AddListener(Guardar);
         if (btnAjustes)     btnAjustes.onClick.AddListener(() => Debug.Log("[ZonaJuego] Ajustes — pendiente."));
-        if (btnTutorial)    btnTutorial.onClick.AddListener(() => Debug.Log("[ZonaJuego] Tutorial — pendiente."));
+        if (btnTutorial)    btnTutorial.onClick.AddListener(OnTutorial);
         if (btnSalir)       btnSalir.onClick.AddListener(OnSalir);
         if (btnExitConfirm) btnExitConfirm.onClick.AddListener(() => SceneManager.LoadScene(escenaSalir));
         if (btnExitCancel)  btnExitCancel.onClick.AddListener(CloseExitConfirm);
@@ -140,8 +143,16 @@ public class ZonaJuegoManager : MonoBehaviour
 
     void Update()
     {
-        if (!paused) elapsed += Time.deltaTime;
+        bool tutorialOpen = tutorial != null && tutorial.IsOpen;
+        if (!paused && !tutorialOpen) elapsed += Time.deltaTime;
         if (txtTimer) txtTimer.text = FormatTime(elapsed);
+    }
+
+    // Reabre el tutorial desde el menú de pausa ("Ver tutorial").
+    void OnTutorial()
+    {
+        ClosePause();
+        if (tutorial) tutorial.Replay();
     }
 
     // ── Pausa ─────────────────────────────────────────────────────────────────
