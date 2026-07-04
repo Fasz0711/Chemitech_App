@@ -78,6 +78,29 @@ public class ApiManager : MonoBehaviour
             onError: onError));
     }
 
+    public void GetJournal(string userPublicId,
+                           Action<JournalEntry[]> onSuccess, Action<int, string> onError)
+    {
+        StartCoroutine(GetRaw($"/journal/{userPublicId}", userPublicId,
+            onSuccess: json =>
+            {
+                JournalEntry[] items;
+                try
+                {
+                    // JsonUtility no parsea arrays de nivel raíz → se envuelve en un objeto.
+                    var wrapped = JsonUtility.FromJson<JournalListWrapper>("{\"items\":" + json + "}");
+                    items = (wrapped != null && wrapped.items != null) ? wrapped.items : new JournalEntry[0];
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[API] No se pudo parsear el diario: {ex.Message}");
+                    items = new JournalEntry[0];
+                }
+                onSuccess?.Invoke(items);
+            },
+            onError: onError));
+    }
+
     public void Login(string email, string password,
                       Action<LoginResponse> onSuccess, Action<int, string> onError)
     {

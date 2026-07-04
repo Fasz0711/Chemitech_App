@@ -47,5 +47,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/SettingsScene.unity
     guid: a6c89e67b3810b648a13f5854dd02689
+  - enabled: 1
+    path: Assets/Scenes/MoleculeDetailScene.unity
+    guid: 68fb8cd00cc6869479104d094f87e42f
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}

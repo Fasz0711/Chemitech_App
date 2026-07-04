@@ -148,14 +148,23 @@ public static class DiaryBuilder
         MakeText(guestView.transform, "FootNote", "También puedes seguir jugando sin guardar tu progreso",
             new Vector2(0f, -305f), new Vector2(900f, 36f), 18f, new Color(1f, 1f, 1f, 0.45f), TextAlignmentOptions.Center, FontStyles.Normal);
 
-        // ── Vista con sesión (vacío) ──────────────────────────────────────────
+        // ── Vista con sesión ──────────────────────────────────────────────────
         var loggedView = MakeFill(panel.transform, "LoggedInView");
-        MakeImg(loggedView.transform, "Book", new Vector2(130f, 130f), new Vector2(0f, 120f), Color.white, bookSpr).GetComponent<Image>().preserveAspect = true;
-        MakeText(loggedView.transform, "Title", "¡Tu diario está vacío!",
+
+        //  · Estado vacío (aún sin moléculas descubiertas)
+        var emptyState = MakeFill(loggedView.transform, "EmptyState");
+        MakeImg(emptyState.transform, "Book", new Vector2(130f, 130f), new Vector2(0f, 120f), Color.white, bookSpr).GetComponent<Image>().preserveAspect = true;
+        MakeText(emptyState.transform, "Title", "¡Tu diario está vacío!",
             new Vector2(0f, 0f), new Vector2(900f, 60f), 40f, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
-        MakeText(loggedView.transform, "Subtitle", "Combina átomos en tu universo para descubrir tus primeras moléculas",
+        MakeText(emptyState.transform, "Subtitle", "Combina átomos en tu universo para descubrir tus primeras moléculas",
             new Vector2(0f, -68f), new Vector2(780f, 70f), 24f, GRAY, TextAlignmentOptions.Center, FontStyles.Normal, true);
-        var btnJugar = MakeButton(loggedView.transform, "BtnEmpezarJugar", "Empezar a Jugar", new Vector2(0f, -175f), new Vector2(400f, 92f), CYAN, Hex("0A2F44"));
+        var btnJugar = MakeButton(emptyState.transform, "BtnEmpezarJugar", "Empezar a Jugar", new Vector2(0f, -175f), new Vector2(400f, 92f), CYAN, Hex("0A2F44"));
+
+        //  · Grid de moléculas descubiertas (scroll; DiaryManager clona la plantilla)
+        var grid = MakeFill(loggedView.transform, "Grid");
+        var (gridContent, cardTemplate) = BuildMoleculeGrid(grid.transform);
+
+        grid.SetActive(false);
         loggedView.SetActive(false);
         molBadge.gameObject.SetActive(false);
 
@@ -169,6 +178,12 @@ public static class DiaryBuilder
         so.FindProperty("molCountLabel").objectReferenceValue    = molLabel;
         so.FindProperty("guestView").objectReferenceValue        = guestView;
         so.FindProperty("loggedInView").objectReferenceValue     = loggedView;
+        so.FindProperty("emptyState").objectReferenceValue       = emptyState;
+        so.FindProperty("gridGroup").objectReferenceValue        = grid;
+        so.FindProperty("gridContent").objectReferenceValue      = gridContent;
+        so.FindProperty("cardTemplate").objectReferenceValue     = cardTemplate;
+        so.FindProperty("atomCircle").objectReferenceValue       = circle;
+        so.FindProperty("diaryFont").objectReferenceValue        = fnt;
         so.FindProperty("btnIniciarSesion").objectReferenceValue = btnLogin;
         so.FindProperty("btnCrearCuenta").objectReferenceValue   = btnRegister;
         so.FindProperty("btnEmpezarJugar").objectReferenceValue  = btnJugar;
@@ -184,6 +199,78 @@ public static class DiaryBuilder
         EditorUtility.DisplayDialog("¡Listo!",
             "DiaryScene generada y agregada a Build Settings.\n" +
             "Si hay error de Input System: ChemiTech → Fix → Input System.", "OK");
+    }
+
+    // ── Grid de moléculas ────────────────────────────────────────────────────────
+    // Construye el ScrollRect + GridLayout sobre el objeto 'Grid' y una tarjeta
+    // plantilla (inactiva). Devuelve (contenido, plantilla) para cablear el Manager.
+    static (RectTransform content, GameObject card) BuildMoleculeGrid(Transform gridRoot)
+    {
+        var scroll = gridRoot.gameObject.AddComponent<ScrollRect>();
+        scroll.horizontal = false; scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.scrollSensitivity = 32f;
+
+        var viewport = MakeEmpty(gridRoot, "Viewport");
+        var vprt = viewport.GetComponent<RectTransform>();
+        vprt.anchorMin = Vector2.zero; vprt.anchorMax = Vector2.one; vprt.pivot = new Vector2(0.5f, 1f);
+        vprt.offsetMin = new Vector2(40f, 30f); vprt.offsetMax = new Vector2(-40f, -24f);
+        viewport.AddComponent<RectMask2D>();
+
+        var contentGo = MakeEmpty(viewport.transform, "Content");
+        var crt = contentGo.GetComponent<RectTransform>();
+        crt.anchorMin = new Vector2(0f, 1f); crt.anchorMax = new Vector2(1f, 1f);
+        crt.pivot = new Vector2(0.5f, 1f);
+        crt.sizeDelta = new Vector2(0f, 0f);
+        crt.anchoredPosition = Vector2.zero;
+
+        var glg = contentGo.AddComponent<GridLayoutGroup>();
+        glg.cellSize = new Vector2(340f, 340f);
+        glg.spacing  = new Vector2(30f, 30f);
+        glg.padding  = new RectOffset(10, 10, 10, 10);
+        glg.childAlignment = TextAnchor.UpperCenter;
+        glg.constraint = GridLayoutGroup.Constraint.Flexible;
+
+        var fitter = contentGo.AddComponent<ContentSizeFitter>();
+        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        fitter.verticalFit   = ContentSizeFitter.FitMode.PreferredSize;
+
+        scroll.viewport = vprt;
+        scroll.content  = crt;
+
+        var card = BuildMoleculeCard(contentGo.transform);
+        return (crt, card);
+    }
+
+    static GameObject BuildMoleculeCard(Transform content)
+    {
+        // Borde (imagen exterior clara) + cuerpo interior oscuro
+        var card = MakePanel(content, "CardTemplate", Vector2.zero, new Vector2(340f, 340f), Hex("8FE0EC"));
+        var btn = card.gameObject.AddComponent<Button>();
+
+        var body = MakeEmpty(card.transform, "Body");
+        Stretch(body);
+        var brt = body.GetComponent<RectTransform>();
+        brt.offsetMin = new Vector2(3f, 3f); brt.offsetMax = new Vector2(-3f, -3f);
+        var bodyImg = body.AddComponent<Image>();
+        bodyImg.sprite = rounded; bodyImg.type = Image.Type.Sliced; bodyImg.color = Hex("2A2D63");
+
+        btn.targetGraphic = bodyImg;
+        var cb = btn.colors;
+        cb.highlightedColor = Color.white;
+        cb.pressedColor = new Color(0.85f, 0.85f, 0.92f, 1f);
+        cb.fadeDuration = 0.08f;
+        btn.colors = cb;
+
+        // Zona del ícono (los átomos + enlaces se dibujan en runtime)
+        var iconArea = MakeEmpty(body.transform, "IconArea");
+        SetRT(iconArea, new Vector2(0f, 52f), new Vector2(280f, 175f));
+
+        MakeText(body.transform, "Formula", "", new Vector2(0f, -78f),  new Vector2(300f, 48f), 36f, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
+        MakeText(body.transform, "Name",    "", new Vector2(0f, -124f), new Vector2(300f, 34f), 20f, GRAY,        TextAlignmentOptions.Center, FontStyles.Normal);
+
+        card.gameObject.SetActive(false);
+        return card.gameObject;
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
