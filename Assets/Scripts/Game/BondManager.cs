@@ -59,6 +59,10 @@ public class BondManager : MonoBehaviour
     string    prevBondsSig = "";
     Coroutine bannerHideCo;
 
+    // Un descubrimiento nuevo ya suena con su propia fanfarria; sin esta marca el
+    // batch encadenaría también el chime de "molécula formada" encima.
+    bool newDiscoveryThisBatch;
+
     // Estado de conexión con el servicio de IA
     bool  online = true;
     float lastAttemptTime;
@@ -141,6 +145,7 @@ public class BondManager : MonoBehaviour
         pendingRequests = candidates.Count;
         anyValid = false;
         detecting = true;
+        newDiscoveryThisBatch = false;
         batchBonds.Clear();
         ShowBanner("Detectando interacción atómica…", C_DETECT);
         Debug.Log($"[Detect] {candidates.Count} candidato(s) · userId='{SessionData.UserId}'");
@@ -194,7 +199,12 @@ public class BondManager : MonoBehaviour
             RebuildBondViews();
 
             // Primera vez que se descubre esta molécula → avisar para el modal.
-            if (m.isNewDiscovery) OnNewDiscovery?.Invoke(m.molecularFormula, m.name);
+            if (m.isNewDiscovery)
+            {
+                newDiscoveryThisBatch = true;
+                AudioManager.Instance.PlayDiscovery();
+                OnNewDiscovery?.Invoke(m.molecularFormula, m.name);
+            }
         }
 
         pendingRequests--;
@@ -360,6 +370,7 @@ public class BondManager : MonoBehaviour
     void ShowMoleculeFormed()
     {
         ShowBanner("¡Molécula formada!", C_OK);
+        if (!newDiscoveryThisBatch) AudioManager.Instance.PlayMoleculeFormed();
         bannerHideCo = StartCoroutine(HideBannerAfter(formedBannerSeconds));
     }
 

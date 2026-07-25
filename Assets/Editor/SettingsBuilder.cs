@@ -139,7 +139,7 @@ public static class SettingsBuilder
         MakeText(pAudio.transform, "MusicaLabel", "Música de fondo", new Vector2(-600f, 90f), new Vector2(360f, 44f), 26f, CYAN, TextAlignmentOptions.Left, FontStyles.Bold);
         var sMusica = MakeSlider(pAudio.transform, "SliderMusica", new Vector2(150f, 90f), 700f, Hex("4DD9E8"), 75);
         var lMusica = MakeText(pAudio.transform, "ValMusica", "75", new Vector2(640f, 90f), new Vector2(80f, 44f), 28f, Color.white, TextAlignmentOptions.Right, FontStyles.Bold);
-        MakeText(pAudio.transform, "EfectosLabel", "Efectos Visuales", new Vector2(-600f, -40f), new Vector2(360f, 60f), 26f, PINK, TextAlignmentOptions.Left, FontStyles.Bold, true);
+        MakeText(pAudio.transform, "EfectosLabel", "Efectos de sonido", new Vector2(-600f, -40f), new Vector2(360f, 60f), 26f, PINK, TextAlignmentOptions.Left, FontStyles.Bold, true);
         var sEfectos = MakeSlider(pAudio.transform, "SliderEfectos", new Vector2(150f, -40f), 700f, Hex("E575B5"), 60);
         var lEfectos = MakeText(pAudio.transform, "ValEfectos", "60", new Vector2(640f, -40f), new Vector2(80f, 44f), 28f, Color.white, TextAlignmentOptions.Right, FontStyles.Bold);
 

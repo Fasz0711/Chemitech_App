@@ -163,6 +163,7 @@ public class AtomPlacementController : MonoBehaviour
         Vector3 pos = previewGhost.transform.position;
         if (Overlaps(pos)) { ShowCollision(); return; }
         PlaceAtom(armedAtom, pos);
+        AudioManager.Instance.PlayPlaceAtom();  // solo al colocar el jugador, no al restaurar un save
         Dirty = true;
     }
 
@@ -186,7 +187,11 @@ public class AtomPlacementController : MonoBehaviour
         return false;
     }
 
-    void ShowCollision() { if (collisionModal) collisionModal.SetActive(true); }
+    void ShowCollision()
+    {
+        AudioManager.Instance.PlayCollision();
+        if (collisionModal) collisionModal.SetActive(true);
+    }
     void HideCollision() { if (collisionModal) collisionModal.SetActive(false); }
 
     // ── Input unificado (touch nativo en móvil, mouse en desktop) ─────────────
@@ -410,6 +415,7 @@ public class AtomPlacementController : MonoBehaviour
     {
         if (!selected) return;
         Destroy(selected.gameObject);
+        AudioManager.Instance.PlayDeleteAtom();
         selected = null;
         ShowDelete(false);
         Dirty = true;

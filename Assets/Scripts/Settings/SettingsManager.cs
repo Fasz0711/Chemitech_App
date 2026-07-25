@@ -77,9 +77,8 @@ public class SettingsManager : MonoBehaviour
         Wire(qualityButtons, i => Highlight(qualityButtons, i));
         Wire(fxButtons,      i => Highlight(fxButtons, i));
 
-        WireSlider(sliderBrillo,  lblBrillo);
-        WireSlider(sliderMusica,  lblMusica);
-        WireSlider(sliderEfectos, lblEfectos);
+        WireSlider(sliderBrillo, lblBrillo);
+        WireAudioSliders();
 
         if (btnCerrarSesion)      btnCerrarSesion.onClick.AddListener(ShowLogoutModal);
         if (btnCambiarContrasena && changePassword) btnCambiarContrasena.onClick.AddListener(changePassword.Open);
@@ -108,10 +107,12 @@ public class SettingsManager : MonoBehaviour
         SelectTab(0);
         Highlight(qualityButtons, 2); // Alto
         Highlight(fxButtons, 1);      // Medio
-        RefreshLabel(sliderBrillo,  lblBrillo);
-        RefreshLabel(sliderMusica,  lblMusica);
-        RefreshLabel(sliderEfectos, lblEfectos);
+        RefreshLabel(sliderBrillo, lblBrillo);
     }
+
+    // Volcamos las preferencias a disco al salir de Ajustes, no en cada frame
+    // del slider (ver AudioPrefs.Flush).
+    private void OnDisable() => AudioPrefs.Flush();
 
     private void Wire(Button[] btns, System.Action<int> onSelect)
     {
@@ -131,6 +132,46 @@ public class SettingsManager : MonoBehaviour
     private void RefreshLabel(Slider s, TextMeshProUGUI lbl)
     {
         if (s && lbl) lbl.text = Mathf.RoundToInt(s.value).ToString();
+    }
+
+    // ── Audio: los sliders controlan el volumen real de todo el juego ────────────
+    // Arrancan en el valor guardado (no en el que dejó el builder) y cada cambio
+    // se aplica en vivo sobre AudioManager y se persiste en AudioPrefs.
+    private void WireAudioSliders()
+    {
+        if (sliderMusica)
+        {
+            sliderMusica.SetValueWithoutNotify(AudioPrefs.Music);
+            RefreshLabel(sliderMusica, lblMusica);
+            sliderMusica.onValueChanged.AddListener(v =>
+            {
+                RefreshLabel(sliderMusica, lblMusica);
+                AudioManager.Instance.SetMusicVolume(Mathf.RoundToInt(v));
+            });
+        }
+
+        if (sliderEfectos)
+        {
+            sliderEfectos.SetValueWithoutNotify(AudioPrefs.Sfx);
+            RefreshLabel(sliderEfectos, lblEfectos);
+            sliderEfectos.onValueChanged.AddListener(v =>
+            {
+                RefreshLabel(sliderEfectos, lblEfectos);
+                AudioManager.Instance.SetSfxVolume(Mathf.RoundToInt(v));
+                PreviewSfx();
+            });
+        }
+    }
+
+    private float _lastPreview;
+
+    // Muestra audible del nivel elegido. Arrastrar el slider dispara el callback
+    // en cada frame, así que se limita a un pitido cada 120 ms.
+    private void PreviewSfx()
+    {
+        if (Time.unscaledTime - _lastPreview < 0.12f) return;
+        _lastPreview = Time.unscaledTime;
+        AudioManager.Instance.PlayUiClick();
     }
 
     private void SelectTab(int index)
