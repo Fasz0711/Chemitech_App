@@ -68,6 +68,11 @@ public class ZonaJuegoManager : MonoBehaviour
     {
         bondManager = FindObjectOfType<BondManager>();
 
+        // Ambientación y efectos 3D. Se crean por código para no tener que tocar
+        // ZonaJuegoScene, que está ajustada a mano.
+        new GameObject("ZoneEnvironment").AddComponent<ZoneEnvironment>();
+        new GameObject("ZoneEffects").AddComponent<ZoneEffects>();
+
         // Carga el tiempo acumulado y los átomos guardados del universo.
         if (PlayContext.Current != null) elapsed = PlayContext.Current.playSeconds;
         lastReportedElapsed = (long)elapsed; // el tiempo cargado ya fue reportado en sesiones previas

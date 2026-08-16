@@ -37,7 +37,8 @@ public class AudioManager : MonoBehaviour
     AudioSource musicSource, sfxSource;
     AudioClip   clipPlace, clipDelete, clipCollision, clipFormed, clipDiscovery;
     AudioClip   clipNeutral, clipPrimary, clipCancel, clipBack, clipDanger, clipToggle, clipError;
-    float       sfxGain;   // cacheado: los efectos se disparan muy seguido
+    float       sfxGain;      // cacheado: los efectos se disparan muy seguido
+    string      appliedUser;  // sesión cuyos volúmenes están aplicados
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     static void Bootstrap()
@@ -138,7 +139,8 @@ public class AudioManager : MonoBehaviour
     void ApplyVolumes()
     {
         if (musicSource) musicSource.volume = Gain(AudioPrefs.Music) * MUSIC_HEADROOM;
-        sfxGain = Gain(AudioPrefs.Sfx);
+        sfxGain     = Gain(AudioPrefs.Sfx);
+        appliedUser = SessionData.UserId ?? "";
     }
 
     /// <summary>Aplica y persiste el volumen de música (0..100). Lo llama Ajustes.</summary>
@@ -206,6 +208,10 @@ public class AudioManager : MonoBehaviour
 
     void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
+        // Los volúmenes se guardan por cuenta, así que al iniciar o cerrar
+        // sesión (que siempre implica cambio de escena) hay que releerlos.
+        if ((SessionData.UserId ?? "") != appliedUser) ApplyVolumes();
+
         EnsureListener();
         BindButtons();                      // botones que ya existen en la escena
         StartCoroutine(BindAfterStart());   // tarjetas instanciadas en Start() (diario, universos…)

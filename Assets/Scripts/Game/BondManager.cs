@@ -371,7 +371,21 @@ public class BondManager : MonoBehaviour
     {
         ShowBanner("¡Molécula formada!", C_OK);
         if (!newDiscoveryThisBatch) AudioManager.Instance.PlayMoleculeFormed();
+        EmitBondPulses();
         bannerHideCo = StartCoroutine(HideBannerAfter(formedBannerSeconds));
+    }
+
+    // Un pulso por enlace de la molécula recién formada. Solo se llama desde
+    // ShowMoleculeFormed, que ya comprobó que los enlaces CAMBIARON: reconfirmar
+    // una molécula existente no vuelve a lanzar el efecto.
+    void EmitBondPulses()
+    {
+        var fx = ZoneEffects.Instance;
+        if (fx == null) return;
+
+        foreach (var (a, b, _) in batchBonds)
+            if (byId.TryGetValue(a, out var A) && byId.TryGetValue(b, out var B))
+                fx.BondFormed(A.transform.position, B.transform.position);
     }
 
     IEnumerator HideBannerAfter(float secs)

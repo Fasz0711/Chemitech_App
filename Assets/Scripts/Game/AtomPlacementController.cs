@@ -50,6 +50,9 @@ public class AtomPlacementController : MonoBehaviour
     Atom3D  selected;
     int     nextId;
 
+    // Marca de suelo + línea de altura + anillo de selección (ver PlacementGuides).
+    PlacementGuides guides;
+
     // previsualización
     GameObject previewGhost;
     Material   previewMat;
@@ -72,6 +75,9 @@ public class AtomPlacementController : MonoBehaviour
     {
         if (!cam) cam = Camera.main;
         atomsRoot = new GameObject("Atoms").transform;
+
+        guides = new GameObject("PlacementGuides").AddComponent<PlacementGuides>();
+        guides.Setup(atomScale);
     }
 
     void Start()
@@ -99,6 +105,20 @@ public class AtomPlacementController : MonoBehaviour
     {
         HandlePointer();
         UpdateReticle();
+        UpdateGuides();
+    }
+
+    /// <summary>
+    /// Las guías siguen al átomo ACTIVO: la previsualización tiene prioridad
+    /// porque, mientras colocas, es lo que estás moviendo.
+    /// </summary>
+    void UpdateGuides()
+    {
+        if (!guides) return;
+
+        if (previewGhost)   guides.Track(previewGhost.transform, false);
+        else if (selected)  guides.Track(selected.transform, true);
+        else                guides.Hide();
     }
 
     // ── Previsualización ──────────────────────────────────────────────────────
@@ -162,8 +182,10 @@ public class AtomPlacementController : MonoBehaviour
         if (armedAtom < 0 || previewGhost == null) return;
         Vector3 pos = previewGhost.transform.position;
         if (Overlaps(pos)) { ShowCollision(); return; }
-        PlaceAtom(armedAtom, pos);
-        AudioManager.Instance.PlayPlaceAtom();  // solo al colocar el jugador, no al restaurar un save
+        // animate: solo al colocar el jugador. Al restaurar un save entrarían
+        // decenas de átomos a la vez y el efecto sería un estallido sin sentido.
+        PlaceAtom(armedAtom, pos, animate: true);
+        AudioManager.Instance.PlayPlaceAtom();
         Dirty = true;
     }
 
@@ -328,7 +350,7 @@ public class AtomPlacementController : MonoBehaviour
     }
 
     // ── Colocar / mover / borrar ──────────────────────────────────────────────
-    void PlaceAtom(int index, Vector3 worldPos)
+    void PlaceAtom(int index, Vector3 worldPos, bool animate = false)
     {
         var info = AtomCatalog.All[index];
         float x = Mathf.Clamp(worldPos.x, -platformHalf, platformHalf);
@@ -346,6 +368,12 @@ public class AtomPlacementController : MonoBehaviour
 
         var a = root.AddComponent<Atom3D>();
         a.Init(index, info.symbol, nextId++, atomBaseMaterial, info.color, sphere.GetComponent<Renderer>());
+
+        // El "plop" va en la esfera hija, no en el raíz: BondManager lee la
+        // posición del raíz para detectar la estructura y animarlo provocaría
+        // llamadas al backend mientras dura el efecto.
+        if (animate && GraphicsManager.Instance.Effects != GraphicsLevel.Bajo)
+            sphere.AddComponent<SpawnPop>().Play(Vector3.one * atomScale);
 
         if (showLabels && labelFont) AddLabel(root.transform, info.symbol);
     }

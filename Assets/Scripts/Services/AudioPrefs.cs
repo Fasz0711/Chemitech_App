@@ -1,10 +1,9 @@
 using UnityEngine;
 
 /// <summary>
-/// Preferencias de audio, guardadas POR DISPOSITIVO (PlayerPrefs global, sin
-/// userId). El volumen depende del entorno físico —auriculares, lugar, hora—
-/// no de la cuenta, así que se comparte entre invitado y cualquier usuario y
-/// sobrevive al cambio de sesión.
+/// Preferencias de audio, guardadas POR CUENTA (ver AccountPrefs): cada usuario
+/// recuerda su volumen en este dispositivo y el invitado siempre arranca en los
+/// valores por defecto.
 ///
 /// Los valores son 0..100 para coincidir con los sliders de Ajustes; el paso a
 /// ganancia real lo hace AudioManager.
@@ -20,20 +19,13 @@ public static class AudioPrefs
 
     public static int Music
     {
-        get => PlayerPrefs.GetInt(KEY_MUSIC, DEFAULT_MUSIC);
-        set => PlayerPrefs.SetInt(KEY_MUSIC, Mathf.Clamp(value, 0, 100));
+        get => AccountPrefs.GetInt(KEY_MUSIC, DEFAULT_MUSIC);
+        set => AccountPrefs.SetInt(KEY_MUSIC, Mathf.Clamp(value, 0, 100));
     }
 
     public static int Sfx
     {
-        get => PlayerPrefs.GetInt(KEY_SFX, DEFAULT_SFX);
-        set => PlayerPrefs.SetInt(KEY_SFX, Mathf.Clamp(value, 0, 100));
+        get => AccountPrefs.GetInt(KEY_SFX, DEFAULT_SFX);
+        set => AccountPrefs.SetInt(KEY_SFX, Mathf.Clamp(value, 0, 100));
     }
-
-    /// <summary>
-    /// Vuelca a disco. Se llama al salir de Ajustes, no en cada frame del
-    /// slider: PlayerPrefs.Save() escribe el archivo completo y arrastrar el
-    /// control dispararía decenas de escrituras por segundo.
-    /// </summary>
-    public static void Flush() => PlayerPrefs.Save();
 }

@@ -74,8 +74,8 @@ public class SettingsManager : MonoBehaviour
         if (btnBack) btnBack.onClick.AddListener(() => SceneManager.LoadScene(escenaMenu));
 
         Wire(tabButtons, SelectTab);
-        Wire(qualityButtons, i => Highlight(qualityButtons, i));
-        Wire(fxButtons,      i => Highlight(fxButtons, i));
+        Wire(qualityButtons, SelectQuality);
+        Wire(fxButtons,      SelectEffects);
 
         WireSlider(sliderBrillo, lblBrillo);
         WireAudioSliders();
@@ -103,16 +103,33 @@ public class SettingsManager : MonoBehaviour
 
         if (logged) LoadAccount();
 
-        // Estado inicial (según mockups)
         SelectTab(0);
-        Highlight(qualityButtons, 2); // Alto
-        Highlight(fxButtons, 1);      // Medio
+
+        // Gráficos: se restaura lo guardado de la cuenta (invitado → Medio),
+        // no un valor fijo. Solo se pinta el segmento; no se re-aplica, porque
+        // GraphicsManager ya tiene ese nivel puesto desde que arrancó el juego.
+        Highlight(qualityButtons, (int)GraphicsPrefs.Quality);
+        Highlight(fxButtons,      (int)GraphicsPrefs.Effects);
+
         RefreshLabel(sliderBrillo, lblBrillo);
     }
 
     // Volcamos las preferencias a disco al salir de Ajustes, no en cada frame
-    // del slider (ver AudioPrefs.Flush).
-    private void OnDisable() => AudioPrefs.Flush();
+    // del slider (ver AccountPrefs.Flush).
+    private void OnDisable() => AccountPrefs.Flush();
+
+    // ── Gráficos: los segmentos aplican de verdad y persisten por cuenta ─────────
+    private void SelectQuality(int index)
+    {
+        Highlight(qualityButtons, index);
+        GraphicsManager.Instance.SetQuality((GraphicsLevel)index);
+    }
+
+    private void SelectEffects(int index)
+    {
+        Highlight(fxButtons, index);
+        GraphicsManager.Instance.SetEffects((GraphicsLevel)index);
+    }
 
     private void Wire(Button[] btns, System.Action<int> onSelect)
     {
