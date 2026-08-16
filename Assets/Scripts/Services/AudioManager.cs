@@ -35,7 +35,8 @@ public class AudioManager : MonoBehaviour
     const string MUSIC_RESOURCE_PATH = "Music/bgm_main";
 
     AudioSource musicSource, sfxSource;
-    AudioClip   clipUiClick, clipPlace, clipDelete, clipCollision, clipFormed, clipDiscovery;
+    AudioClip   clipPlace, clipDelete, clipCollision, clipFormed, clipDiscovery;
+    AudioClip   clipNeutral, clipPrimary, clipCancel, clipBack, clipDanger, clipToggle, clipError;
     float       sfxGain;   // cacheado: los efectos se disparan muy seguido
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
@@ -75,7 +76,14 @@ public class AudioManager : MonoBehaviour
 
     void BuildClips()
     {
-        clipUiClick   = ProceduralAudio.UiClick();
+        clipNeutral = ProceduralAudio.UiClick();
+        clipPrimary = ProceduralAudio.UiPrimary();
+        clipCancel  = ProceduralAudio.UiCancel();
+        clipBack    = ProceduralAudio.UiBack();
+        clipDanger  = ProceduralAudio.UiDanger();
+        clipToggle  = ProceduralAudio.UiToggle();
+        clipError   = ProceduralAudio.UiError();
+
         clipPlace     = ProceduralAudio.PlaceAtom();
         clipDelete    = ProceduralAudio.DeleteAtom();
         clipCollision = ProceduralAudio.Collision();
@@ -169,7 +177,25 @@ public class AudioManager : MonoBehaviour
         sfxSource.PlayOneShot(clip, sfxGain);
     }
 
-    public void PlayUiClick()        => PlaySfx(clipUiClick);
+    /// <summary>Sonido de interfaz según la familia del botón.</summary>
+    public void PlayUi(UiSfxRole role)
+    {
+        switch (role)
+        {
+            case UiSfxRole.Silent:  return;
+            case UiSfxRole.Primary: PlaySfx(clipPrimary); break;
+            case UiSfxRole.Cancel:  PlaySfx(clipCancel);  break;
+            case UiSfxRole.Back:    PlaySfx(clipBack);    break;
+            case UiSfxRole.Danger:  PlaySfx(clipDanger);  break;
+            case UiSfxRole.Toggle:  PlaySfx(clipToggle);  break;
+            default:                PlaySfx(clipNeutral); break;
+        }
+    }
+
+    /// <summary>Una acción falló (credenciales, validación del backend…).</summary>
+    public void PlayError()          => PlaySfx(clipError);
+
+    public void PlayUiClick()        => PlaySfx(clipNeutral);
     public void PlayPlaceAtom()      => PlaySfx(clipPlace);
     public void PlayDeleteAtom()     => PlaySfx(clipDelete);
     public void PlayCollision()      => PlaySfx(clipCollision);
@@ -203,8 +229,13 @@ public class AudioManager : MonoBehaviour
         foreach (var b in buttons)
         {
             if (!b || b.GetComponent<UiClickSfx>()) continue;
-            b.gameObject.AddComponent<UiClickSfx>();
-            b.onClick.AddListener(PlayUiClick);
+
+            // La marca se añade siempre (incluso a los Silent) para que el
+            // re-escaneo no vuelva a evaluar este botón.
+            var role = b.gameObject.AddComponent<UiClickSfx>().Resolve();
+            if (role == UiSfxRole.Silent) continue;
+
+            b.onClick.AddListener(() => PlayUi(role));
         }
     }
 

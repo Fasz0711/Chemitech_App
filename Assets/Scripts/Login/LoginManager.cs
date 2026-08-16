@@ -145,6 +145,10 @@ public class LoginManager : MonoBehaviour
     // ── Helpers ───────────────────────────────────────────────────────────────
     private void ShowError(string msg)
     {
+        // Solo se llama al pulsar "Iniciar sesión" (campos vacíos o rechazo del
+        // backend), nunca al teclear, así que es seguro sonar aquí.
+        AudioManager.Instance.PlayError();
+
         if (txtError)
         {
             txtError.text = msg;

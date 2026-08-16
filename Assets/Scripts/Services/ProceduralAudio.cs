@@ -68,6 +68,66 @@ public static class ProceduralAudio
         });
     }
 
+    /// <summary>Tick limpio y agudo: cambiar de pestaña, elegir ícono/color/avatar.</summary>
+    public static AudioClip UiToggle()
+    {
+        return Build("sfx_ui_toggle", 0.032f, t =>
+            Mathf.Sin(TAU * 2600f * t) * Env(t, 0.0008f, 0.007f) * 0.34f);
+    }
+
+    /// <summary>Barrido descendente: volver atrás, cerrar una pantalla.</summary>
+    public static AudioClip UiBack()
+    {
+        const float D = 0.09f;
+        return Build("sfx_ui_back", D, t =>
+            Mathf.Sin(SweepPhase(t, 900f, 520f, D)) * Env(t, 0.003f, 0.028f) * 0.40f);
+    }
+
+    /// <summary>Dos notas ascendentes: confirmar, avanzar, guardar.</summary>
+    public static AudioClip UiPrimary()
+    {
+        return Build("sfx_ui_primary", 0.16f, t =>
+              Note(t, 0.00f, 659.25f, 0.10f, 0.30f)    // Mi5
+            + Note(t, 0.06f, 987.77f, 0.12f, 0.28f));  // Si5
+    }
+
+    /// <summary>Click grave y amortiguado, sin movimiento tonal: cancelar o descartar.</summary>
+    public static AudioClip UiCancel()
+    {
+        var rng = new System.Random(41);
+        return Build("sfx_ui_cancel", 0.07f, t =>
+        {
+            float body  = Mathf.Sin(TAU * 420f * t);
+            float noise = (float)(rng.NextDouble() * 2.0 - 1.0) * 0.15f;
+            return (body + noise) * Env(t, 0.002f, 0.018f) * 0.38f;
+        });
+    }
+
+    /// <summary>Dos tonos graves descendentes con aspereza: acción destructiva.</summary>
+    public static AudioClip UiDanger()
+    {
+        return Build("sfx_ui_danger", 0.28f, t =>
+        {
+            float tones = Note(t, 0.00f, 320f, 0.14f, 0.32f)
+                        + Note(t, 0.10f, 240f, 0.20f, 0.32f);
+            float grit  = Mathf.Sign(Mathf.Sin(TAU * 55f * t)) * 0.12f;
+            return tones * (0.88f + grit);
+        });
+    }
+
+    /// <summary>Zumbido descendente con trémolo: la acción falló.</summary>
+    public static AudioClip UiError()
+    {
+        const float D = 0.30f;
+        return Build("sfx_ui_error", D, t =>
+        {
+            float tone = Mathf.Sin(SweepPhase(t, 400f, 300f, D));
+            float sq   = Mathf.Sign(tone) * 0.35f;                       // aspereza
+            float trem = 0.65f + 0.35f * Mathf.Sin(TAU * 22f * t);       // vibración de "error"
+            return (tone * 0.60f + sq) * trem * Env(t, 0.004f, 0.10f) * 0.42f;
+        });
+    }
+
     // ── Efectos de la zona de juego ───────────────────────────────────────────
 
     /// <summary>"Pop" ascendente al colocar un átomo.</summary>
