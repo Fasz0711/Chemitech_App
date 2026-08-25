@@ -77,7 +77,7 @@ public class ApiManager : MonoBehaviour
     public void GetProfile(string publicId,
                            Action<ProfileResponse> onSuccess, Action<int, string> onError)
     {
-        StartCoroutine(GetRaw($"/users/profile/{publicId}", publicId,
+        StartCoroutine(GetAuthed($"/users/profile/{publicId}",
             onSuccess: json => onSuccess?.Invoke(JsonUtility.FromJson<ProfileResponse>(json)),
             onError: onError));
     }
@@ -85,7 +85,7 @@ public class ApiManager : MonoBehaviour
     public void GetJournal(string userPublicId,
                            Action<JournalEntry[]> onSuccess, Action<int, string> onError)
     {
-        StartCoroutine(GetRaw($"/journal/{userPublicId}", userPublicId,
+        StartCoroutine(GetAuthed($"/journal/{userPublicId}",
             onSuccess: json =>
             {
                 JournalEntry[] items;
@@ -113,6 +113,7 @@ public class ApiManager : MonoBehaviour
         StartCoroutine(PostRaw("/session/login", body,
             onSuccess: json =>
             {
+                _redirectingToLogin = false; // nueva sesión válida
                 var resp = JsonUtility.FromJson<LoginResponse>(json);
                 onSuccess?.Invoke(resp);
             },
@@ -131,7 +132,7 @@ public class ApiManager : MonoBehaviour
     {
         string endpoint = $"/journal/{userPublicId}/created-universes";
         Debug.Log($"[API] PATCH {BASE_URL}{endpoint}");
-        StartCoroutine(PatchRaw(endpoint, userPublicId, null,
+        StartCoroutine(PatchAuthed(endpoint, null,
             json => onSuccess?.Invoke(JsonUtility.FromJson<JournalStatsResponse>(json)),
             onError));
     }
@@ -141,19 +142,22 @@ public class ApiManager : MonoBehaviour
     {
         string endpoint = $"/journal/{userPublicId}/created-universes/decrement";
         Debug.Log($"[API] PATCH {BASE_URL}{endpoint}");
-        StartCoroutine(PatchRaw(endpoint, userPublicId, null,
+        StartCoroutine(PatchAuthed(endpoint, null,
             json => onSuccess?.Invoke(JsonUtility.FromJson<JournalStatsResponse>(json)),
             onError));
     }
 
+    // El accessToken se ignora (se toma de SessionData para permitir refresh+reintento);
+    // se mantiene en la firma por compatibilidad con las pantallas que ya lo pasan.
     public void DeleteAccount(string accessToken, Action<string> onSuccess, Action<int, string> onError)
     {
         Debug.Log($"[API] DELETE {BASE_URL}/users/me");
-        StartCoroutine(DeleteRaw("/users/me", accessToken,
+        StartCoroutine(DeleteAuthed("/users/me",
             json => onSuccess?.Invoke(JsonUtility.FromJson<MessageResponse>(json).message),
             onError));
     }
 
+    // El accessToken se ignora (se toma de SessionData). Ver nota en DeleteAccount.
     public void ChangePassword(string accessToken, string currentPassword, string newPassword,
                                Action<string> onSuccess, Action<int, string> onError)
     {
@@ -162,7 +166,7 @@ public class ApiManager : MonoBehaviour
             currentPassword = currentPassword, newPassword = newPassword
         });
         Debug.Log($"[API] PATCH {BASE_URL}/authentication/password");
-        StartCoroutine(PatchAuthRaw("/authentication/password", accessToken, body,
+        StartCoroutine(PatchAuthed("/authentication/password", body,
             json => onSuccess?.Invoke(JsonUtility.FromJson<MessageResponse>(json).message),
             onError));
     }
@@ -205,7 +209,7 @@ public class ApiManager : MonoBehaviour
         string endpoint = $"/journal/{userPublicId}/time-played";
         string body = JsonUtility.ToJson(new TimePlayedRequest { seconds = seconds });
         Debug.Log($"[API] PATCH {BASE_URL}{endpoint}\n{body}");
-        StartCoroutine(PatchRaw(endpoint, userPublicId, body,
+        StartCoroutine(PatchAuthed(endpoint, body,
             json => onSuccess?.Invoke(JsonUtility.FromJson<JournalStatsResponse>(json)),
             onError));
     }
@@ -213,16 +217,22 @@ public class ApiManager : MonoBehaviour
     public void DetectMolecule(string userPublicId, AtomDTO[] atoms, BondDTO[] bonds,
                                Action<DetectResponse> onSuccess, Action<int, string> onError)
     {
-        // Invitado (sin userId): se omite userPublicId del JSON para no mandarlo vacío.
-        string body = string.IsNullOrEmpty(userPublicId)
-            ? JsonUtility.ToJson(new DetectRequestGuest { atoms = atoms, bonds = bonds })
-            : JsonUtility.ToJson(new DetectRequest { userPublicId = userPublicId, atoms = atoms, bonds = bonds });
-        Debug.Log($"[API] POST {BASE_URL}/detection/molecule\n{body}");
+        // Logeado = hay userId y access token. Invitado = sin ambos.
+        bool logged = !string.IsNullOrEmpty(userPublicId) && !string.IsNullOrEmpty(SessionData.AccessToken);
 
-        StartCoroutine(PostRaw("/detection/molecule", body,
-            onSuccess: json => { Debug.Log($"[API] respuesta OK:\n{json}"); onSuccess?.Invoke(JsonUtility.FromJson<DetectResponse>(json)); },
-            onError: onError,
-            timeoutSeconds: DETECT_TIMEOUT_SECONDS));
+        // Invitado: sin token y sin userPublicId (mandarlo sin token daría 401).
+        // Logeado: con token; userPublicId en el body coincide con el del token (permitido).
+        string body = logged
+            ? JsonUtility.ToJson(new DetectRequest { userPublicId = userPublicId, atoms = atoms, bonds = bonds })
+            : JsonUtility.ToJson(new DetectRequestGuest { atoms = atoms, bonds = bonds });
+        Debug.Log($"[API] POST {BASE_URL}/detection/molecule (logged={logged})\n{body}");
+
+        void OnOk(string json) { Debug.Log($"[API] respuesta OK:\n{json}"); onSuccess?.Invoke(JsonUtility.FromJson<DetectResponse>(json)); }
+
+        if (logged)
+            StartCoroutine(PostAuthed("/detection/molecule", body, OnOk, onError, DETECT_TIMEOUT_SECONDS));
+        else
+            StartCoroutine(PostRaw("/detection/molecule", body, OnOk, onError, DETECT_TIMEOUT_SECONDS));
     }
 
     // ── Core HTTP ─────────────────────────────────────────────────────────────
@@ -235,128 +245,170 @@ public class ApiManager : MonoBehaviour
             onError);
     }
 
-    // GET crudo. Envía el public_id como header (según contrato del backend).
-    IEnumerator GetRaw(string endpoint, string publicIdHeader, Action<string> onSuccess, Action<int, string> onError)
+    // ── HTTP autenticado (Authorization: Bearer + refresh automático) ───────────
+    // El access token vence a los 30 min. Ante 401 ERR_TOKEN_EXPIRED se refresca una
+    // vez y se reintenta; si el token es inválido/ausente o el refresh falla, la
+    // sesión muere y se vuelve al login.
+    bool _redirectingToLogin;
+    bool _refreshing;
+    bool _lastRefreshOk;
+
+    IEnumerator SendAuthed(Func<UnityWebRequest> build, Action<string> onSuccess, Action<int, string> onError)
     {
-        string url = BASE_URL + endpoint;
-
-        using var req = UnityWebRequest.Get(url);
-        req.downloadHandler = new DownloadHandlerBuffer();
-        req.SetRequestHeader("Accept", "application/json");
-        if (!string.IsNullOrEmpty(publicIdHeader))
-            req.SetRequestHeader("public_id", publicIdHeader);
-
-        yield return req.SendWebRequest();
-
-        string responseText = req.downloadHandler.text;
-
-        if (req.result == UnityWebRequest.Result.Success)
+        for (int attempt = 0; attempt < 2; attempt++)
         {
-            onSuccess?.Invoke(responseText);
-        }
-        else
-        {
+            using var req = build();
+            if (!string.IsNullOrEmpty(SessionData.AccessToken))
+                req.SetRequestHeader("Authorization", "Bearer " + SessionData.AccessToken);
+
+            yield return req.SendWebRequest();
+
+            string responseText = req.downloadHandler != null ? req.downloadHandler.text : "";
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                onSuccess?.Invoke(responseText);
+                yield break;
+            }
+
             int code = (int)req.responseCode;
             string detail = TryParseDetail(responseText);
-            Debug.LogWarning($"[API] GET {url} FALLÓ · result={req.result} · code={code} · error='{req.error}' · body='{responseText}'");
+            Debug.LogWarning($"[API] {req.method} {req.url} FALLÓ · result={req.result} · code={code} · detail={detail}");
+
+            // Access token vencido → refrescar una vez y reintentar.
+            if (code == 401 && detail == "ERR_TOKEN_EXPIRED" && attempt == 0)
+            {
+                bool refreshed = false;
+                yield return RefreshTokenRoutine(ok => refreshed = ok);
+                if (refreshed) continue;    // reintenta con el token nuevo
+                EndSession();
+                onError?.Invoke(code, detail);
+                yield break;
+            }
+
+            // Token ausente o inválido (incluye mandar el refresh por error) → sesión muerta.
+            if (code == 401 && (detail == "ERR_TOKEN_MISSING" || detail == "ERR_TOKEN_INVALID"))
+            {
+                EndSession();
+                onError?.Invoke(code, detail);
+                yield break;
+            }
+
+            if (code == 403 && detail == "ERR_NOT_RESOURCE_OWNER")
+                Debug.LogWarning("[API] ERR_NOT_RESOURCE_OWNER: se pidió un recurso de otra cuenta (bug de cliente, no se reintenta).");
+
             onError?.Invoke(code, detail);
+            yield break;
         }
     }
 
-    // PATCH crudo. Envía el user_public_id como header; el body es opcional.
-    IEnumerator PatchRaw(string endpoint, string userPublicIdHeader, string jsonBody,
-                         Action<string> onSuccess, Action<int, string> onError)
+    // Refresca el access token con POST /session/refresh. Single-flight: si ya hay uno
+    // en curso, espera su resultado en vez de disparar otro (el refresh token es de un solo uso).
+    IEnumerator RefreshTokenRoutine(Action<bool> done)
     {
-        string url = BASE_URL + endpoint;
-
-        using var req = new UnityWebRequest(url, "PATCH");
-        if (!string.IsNullOrEmpty(jsonBody))
+        if (_refreshing)
         {
-            req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(jsonBody));
+            while (_refreshing) yield return null;
+            done(_lastRefreshOk);
+            yield break;
+        }
+
+        string rt = SessionData.RefreshToken;
+        if (string.IsNullOrEmpty(rt)) { done(false); yield break; }
+
+        _refreshing = true;
+        _lastRefreshOk = false;
+
+        string body = JsonUtility.ToJson(new RefreshRequest { refreshToken = rt });
+        using (var req = new UnityWebRequest(BASE_URL + "/session/refresh", "POST"))
+        {
+            req.uploadHandler   = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body));
+            req.downloadHandler = new DownloadHandlerBuffer();
             req.SetRequestHeader("Content-Type", "application/json");
-        }
-        req.downloadHandler = new DownloadHandlerBuffer();
-        req.SetRequestHeader("Accept", "application/json");
-        if (!string.IsNullOrEmpty(userPublicIdHeader))
-            req.SetRequestHeader("user_public_id", userPublicIdHeader);
+            req.SetRequestHeader("Accept", "application/json");
 
-        yield return req.SendWebRequest();
+            yield return req.SendWebRequest();
 
-        string responseText = req.downloadHandler.text;
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                var resp = JsonUtility.FromJson<LoginResponse>(req.downloadHandler.text);
+                // El refresh token es deslizante: puede venir uno nuevo (o no).
+                string newRefresh   = string.IsNullOrEmpty(resp.refreshToken) ? rt : resp.refreshToken;
+                string newTokenType = string.IsNullOrEmpty(resp.tokenType) ? SessionData.TokenType : resp.tokenType;
+                SessionData.SetTokens(resp.accessToken, newRefresh, newTokenType, resp.expiresIn);
+                _lastRefreshOk = !string.IsNullOrEmpty(resp.accessToken);
+                if (_lastRefreshOk) { _redirectingToLogin = false; Debug.Log("[API] Access token refrescado."); }
+            }
+            else
+            {
+                Debug.LogWarning($"[API] Refresh falló · code={(int)req.responseCode} · {req.error}");
+            }
+        }
 
-        if (req.result == UnityWebRequest.Result.Success)
-        {
-            onSuccess?.Invoke(responseText);
-        }
-        else
-        {
-            int code = (int)req.responseCode;
-            string detail = TryParseDetail(responseText);
-            Debug.LogWarning($"[API] PATCH {url} FALLÓ · result={req.result} · code={code} · error='{req.error}' · body='{responseText}'");
-            onError?.Invoke(code, detail);
-        }
+        _refreshing = false;
+        done(_lastRefreshOk);
     }
 
-    // PATCH crudo con Authorization: Bearer y body JSON.
-    IEnumerator PatchAuthRaw(string endpoint, string accessToken, string jsonBody,
-                             Action<string> onSuccess, Action<int, string> onError)
+    // Sesión muerta: limpiar y volver al login (una sola vez, aunque fallen varias peticiones).
+    void EndSession()
     {
-        string url = BASE_URL + endpoint;
+        if (_redirectingToLogin) return;
+        _redirectingToLogin = true;
+        Debug.LogWarning("[API] Sesión finalizada (token inválido o refresh fallido) → LoginScene.");
+        SessionData.Clear();
+        UnityEngine.SceneManagement.SceneManager.LoadScene("LoginScene");
+    }
 
-        using var req = new UnityWebRequest(url, "PATCH");
-        if (!string.IsNullOrEmpty(jsonBody))
+    // ── Constructores de petición autenticada ──────────────────────────────────
+    IEnumerator GetAuthed(string endpoint, Action<string> onSuccess, Action<int, string> onError)
+    {
+        return SendAuthed(() =>
         {
-            req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(jsonBody));
+            var req = UnityWebRequest.Get(BASE_URL + endpoint);
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.SetRequestHeader("Accept", "application/json");
+            return req;
+        }, onSuccess, onError);
+    }
+
+    IEnumerator PatchAuthed(string endpoint, string jsonBody, Action<string> onSuccess, Action<int, string> onError)
+    {
+        return SendAuthed(() =>
+        {
+            var req = new UnityWebRequest(BASE_URL + endpoint, "PATCH");
+            if (!string.IsNullOrEmpty(jsonBody))
+            {
+                req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(jsonBody));
+                req.SetRequestHeader("Content-Type", "application/json");
+            }
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.SetRequestHeader("Accept", "application/json");
+            return req;
+        }, onSuccess, onError);
+    }
+
+    IEnumerator DeleteAuthed(string endpoint, Action<string> onSuccess, Action<int, string> onError)
+    {
+        return SendAuthed(() =>
+        {
+            var req = new UnityWebRequest(BASE_URL + endpoint, "DELETE");
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.SetRequestHeader("Accept", "application/json");
+            return req;
+        }, onSuccess, onError);
+    }
+
+    IEnumerator PostAuthed(string endpoint, string jsonBody, Action<string> onSuccess, Action<int, string> onError, int timeoutSeconds = 0)
+    {
+        return SendAuthed(() =>
+        {
+            var req = new UnityWebRequest(BASE_URL + endpoint, "POST");
+            req.uploadHandler   = new UploadHandlerRaw(Encoding.UTF8.GetBytes(jsonBody));
+            req.downloadHandler = new DownloadHandlerBuffer();
             req.SetRequestHeader("Content-Type", "application/json");
-        }
-        req.downloadHandler = new DownloadHandlerBuffer();
-        req.SetRequestHeader("Accept", "application/json");
-        if (!string.IsNullOrEmpty(accessToken))
-            req.SetRequestHeader("Authorization", "Bearer " + accessToken);
-
-        yield return req.SendWebRequest();
-
-        string responseText = req.downloadHandler.text;
-
-        if (req.result == UnityWebRequest.Result.Success)
-        {
-            onSuccess?.Invoke(responseText);
-        }
-        else
-        {
-            int code = (int)req.responseCode;
-            string detail = TryParseDetail(responseText);
-            Debug.LogWarning($"[API] PATCH {url} FALLÓ · result={req.result} · code={code} · error='{req.error}' · body='{responseText}'");
-            onError?.Invoke(code, detail);
-        }
-    }
-
-    // DELETE crudo con Authorization: Bearer. Sin body.
-    IEnumerator DeleteRaw(string endpoint, string accessToken, Action<string> onSuccess, Action<int, string> onError)
-    {
-        string url = BASE_URL + endpoint;
-
-        using var req = new UnityWebRequest(url, "DELETE");
-        req.downloadHandler = new DownloadHandlerBuffer();
-        req.SetRequestHeader("Accept", "application/json");
-        if (!string.IsNullOrEmpty(accessToken))
-            req.SetRequestHeader("Authorization", "Bearer " + accessToken);
-
-        yield return req.SendWebRequest();
-
-        string responseText = req.downloadHandler.text;
-
-        if (req.result == UnityWebRequest.Result.Success)
-        {
-            onSuccess?.Invoke(responseText);
-        }
-        else
-        {
-            int code = (int)req.responseCode;
-            string detail = TryParseDetail(responseText);
-            Debug.LogWarning($"[API] DELETE {url} FALLÓ · result={req.result} · code={code} · error='{req.error}' · body='{responseText}'");
-            onError?.Invoke(code, detail);
-        }
+            req.SetRequestHeader("Accept", "application/json");
+            if (timeoutSeconds > 0) req.timeout = timeoutSeconds;
+            return req;
+        }, onSuccess, onError);
     }
 
     // Variante que entrega el cuerpo crudo (JSON) para que el caller lo parsee.
@@ -404,6 +456,7 @@ public class ApiManager : MonoBehaviour
     [Serializable] class AccountResponse { public string userId; }
     [Serializable] class LoginRequest    { public string email; public string password; }
     [Serializable] class LogoutRequest     { public string refreshToken; }
+    [Serializable] class RefreshRequest    { public string refreshToken; }
     [Serializable] class ChangePasswordRequest { public string currentPassword; public string newPassword; }
     [Serializable] class ResetVerifyRequest     { public string email; public string code; }
     [Serializable] class ResetPasswordRequest   { public string email; public string code; public string newPassword; }
