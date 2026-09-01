@@ -20,7 +20,8 @@ public class TutorialManager : MonoBehaviour
     {
         public string title;
         [TextArea(2, 4)] public string body;
-        public string hint;   // línea de ejemplo/ilustración (vacío = se oculta)
+        public string hint;   // texto corto de la pista (vacío = se oculta)
+        public Sprite icon;   // ícono de la pista (sprite real, no glifo)
     }
 
     [Header("Fondo / overlay")]
@@ -36,6 +37,7 @@ public class TutorialManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI stepTitle;
     [SerializeField] private TextMeshProUGUI stepBody;
     [SerializeField] private GameObject      hintBox;
+    [SerializeField] private Image           hintIcon;
     [SerializeField] private TextMeshProUGUI stepHint;
     [SerializeField] private Button          btnAtras;
     [SerializeField] private Button          btnSiguiente;
@@ -131,9 +133,11 @@ public class TutorialManager : MonoBehaviour
         if (stepTitle) stepTitle.text = $"{_current + 1} - {s.title}";
         if (stepBody)  stepBody.text  = s.body;
 
+        bool hasIcon = s.icon != null;
         bool hasHint = !string.IsNullOrEmpty(s.hint);
-        if (hintBox)  hintBox.SetActive(hasHint);
+        if (hintIcon) { hintIcon.gameObject.SetActive(hasIcon); if (hasIcon) hintIcon.sprite = s.icon; }
         if (stepHint) stepHint.text = s.hint;
+        if (hintBox)  hintBox.SetActive(hasIcon || hasHint);
 
         bool last = _current == steps.Length - 1;
         if (btnSiguienteLabel) btnSiguienteLabel.text = last ? "¡Listo!" : "Siguiente";

@@ -24,29 +24,37 @@ public static class TutorialTool
     static readonly Color HINTBG  = new Color(0.09f, 0.10f, 0.24f, 1f);
 
     // Contenido de los pasos (informativo). El usuario puede editarlo en el inspector.
-    static readonly (string title, string body, string hint)[] STEPS =
+    // Cada paso lleva un ícono SPRITE real (no glifo) para la pista.
+    static readonly (string title, string body, string hint, string icon)[] STEPS =
     {
         ("Barra de átomos",
          "Abre el \"Selector de átomos\", elige un elemento y quedará listo en la barra inferior.",
-         "⚛️  →  👆  →  ¡Aparece en el mundo!"),
+         "Elige un elemento en el Selector de átomos.",
+         "Assets/Sprites/icon-beaker.png"),
         ("Colocar átomos",
          "Toca un slot de la barra: aparece una previsualización en el centro. Muévela con las flechas y pulsa \"Presiona para colocar átomo\".",
-         "👆 Slot   →   ⬆⬇⬅➡   →   Colocar"),
+         "Mueve la vista previa con las flechas y colócalo.",
+         "Assets/Sprites/AtomCircle.png"),
         ("Mover y mirar",
          "Arrastra en el mundo para rotar la cámara. El d-pad de la izquierda desplaza la vista y las flechas de la derecha suben o bajan; \"Recentrar\" vuelve a la vista inicial.",
-         "🖱️ Arrastrar = rotar    ·    ⬆⬇ = subir/bajar"),
+         "Arrastra para rotar; el d-pad y las flechas mueven la cámara.",
+         "Assets/Sprites/orbit-ring.png"),
         ("Editar átomos",
          "Toca un átomo ya colocado para seleccionarlo: muévelo con las flechas o elimínalo con el botón de borrar.",
-         "👆 Átomo   →   mover  /  🗑️ borrar"),
+         "Toca un átomo colocado para moverlo o borrarlo.",
+         "Assets/Sprites/edit.png"),
         ("Crear moléculas",
          "Acerca átomos compatibles: el sistema detecta la estructura y dibuja los enlaces. Verás el aviso \"¡Molécula formada!\".",
-         "⚛️ + ⚛️   →   🔗   →   ¡Molécula formada!"),
+         "Junta átomos compatibles y se forma la molécula.",
+         "Assets/Sprites/AtomCircle.png"),
         ("Detección en línea",
          "La detección usa un servicio de IA. Si se cae, verás un aviso y se reintenta solo; colocar, mover o borrar átomos siempre funciona.",
-         "⚠️ Sin conexión   →   se reintenta solo"),
+         "Usa un servicio de IA; si se cae, se reintenta solo.",
+         "Assets/Sprites/gear-icon.png"),
         ("Diario y pausa",
          "Cada molécula nueva se guarda en tu Diario. Usa el botón de pausa (arriba a la izquierda) para guardar, ajustes, tutorial o salir.",
-         "⏸️ Pausa   →   Guardar · Ajustes · Salir"),
+         "Pausa (arriba-izquierda) para guardar, ajustes o salir.",
+         "Assets/Sprites/diary-icon.png"),
     };
 
     [MenuItem("ChemiTech/Add/Tutorial (ZonaJuego)")]
@@ -85,7 +93,7 @@ public static class TutorialTool
         MakeText(welcome.transform, "Title", "¡Bienvenido al universo!", new Vector2(0f, 128f),
                  new Vector2(500f, 56f), 38f, Color.white, TextAlignmentOptions.Center, bold: true);
         MakeText(welcome.transform, "Body",
-                 "¿Quieres ver un tutorial rápido para aprender lo básico? Solo toma unos 60 segundos ⏱️",
+                 "¿Quieres ver un tutorial rápido para aprender lo básico? Solo toma unos 60 segundos.",
                  new Vector2(0f, 54f), new Vector2(480f, 90f), 23f, new Color(1f, 1f, 1f, 0.85f),
                  TextAlignmentOptions.Center);
 
@@ -111,8 +119,15 @@ public static class TutorialTool
         SetRT(hintBox, new Vector2(0f, -24f), new Vector2(474f, 66f));
         var hintImg = hintBox.AddComponent<Image>();
         hintImg.sprite = rounded; hintImg.type = Image.Type.Sliced; hintImg.color = HINTBG;
-        var stepHint = MakeText(hintBox.transform, "Hint", "…", Vector2.zero, new Vector2(454f, 60f),
-                                20f, new Color(1f, 1f, 1f, 0.92f), TextAlignmentOptions.Center);
+
+        // Ícono de la pista: sprite real (lo asigna el manager por paso).
+        var hintIconGo = MakeEmpty(hintBox.transform, "Icon");
+        SetRT(hintIconGo, new Vector2(-200f, 0f), new Vector2(40f, 40f));
+        var hintIcon = hintIconGo.AddComponent<Image>();
+        hintIcon.color = Color.white; hintIcon.preserveAspect = true; hintIcon.raycastTarget = false;
+
+        var stepHint = MakeText(hintBox.transform, "Hint", "…", new Vector2(22f, 0f), new Vector2(388f, 58f),
+                                19f, new Color(1f, 1f, 1f, 0.92f), TextAlignmentOptions.Left);
 
         var btnAtras = MakeButton(step.transform, "BtnAtras", "Atrás",
                                   new Vector2(-120f, -120f), new Vector2(210f, 60f), DARKBTN, out _, 26f);
@@ -130,7 +145,12 @@ public static class TutorialTool
         closeImg.preserveAspect = true;
         var btnClose = closeGo.AddComponent<Button>();
         btnClose.targetGraphic = closeImg;
-        MakeLabelCentered(closeGo.transform, "✕", 24f);
+        // "X" como sprite (no glifo).
+        var xGo = MakeEmpty(closeGo.transform, "X");
+        SetRT(xGo, Vector2.zero, new Vector2(22f, 22f));
+        var xImg = xGo.AddComponent<Image>();
+        xImg.sprite = Spr("Assets/Sprites/Login/icon-close.png");
+        xImg.color = Color.white; xImg.preserveAspect = true; xImg.raycastTarget = false;
 
         // ── TutorialManager ─────────────────────────────────────────────────────
         var mgr = overlay.AddComponent<TutorialManager>();
@@ -143,6 +163,7 @@ public static class TutorialTool
         SetRef(so, "stepTitle", stepTitle);
         SetRef(so, "stepBody", stepBody);
         SetRef(so, "hintBox", hintBox);
+        SetRef(so, "hintIcon", hintIcon);
         SetRef(so, "stepHint", stepHint);
         SetRef(so, "btnAtras", btnAtras);
         SetRef(so, "btnSiguiente", btnSig);
@@ -159,6 +180,7 @@ public static class TutorialTool
             el.FindPropertyRelative("title").stringValue = STEPS[i].title;
             el.FindPropertyRelative("body").stringValue  = STEPS[i].body;
             el.FindPropertyRelative("hint").stringValue  = STEPS[i].hint;
+            el.FindPropertyRelative("icon").objectReferenceValue = Spr(STEPS[i].icon);
         }
         so.ApplyModifiedProperties();
 
