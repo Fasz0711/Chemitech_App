@@ -44,8 +44,18 @@ public class BondManager : MonoBehaviour
     readonly Dictionary<int, Atom3D> byId     = new Dictionary<int, Atom3D>();
 
     // Enlaces actualmente dibujados (los devueltos por el backend).
-    class BondView { public int a, b, order; public GameObject[] cyls; }
+    //
+    // 'order' es cuántas LÍNEAS paralelas tiene el enlace (simple/doble/triple).
+    // 'cyls' tiene una pieza por línea, o dos si el enlace es bicolor: cada mitad
+    // lleva el color de su átomo, como en cualquier visor molecular. Con bicolor
+    // el índice de la línea i son cyls[i*2] (lado A) y cyls[i*2+1] (lado B).
+    class BondView { public int a, b, order; public GameObject[] cyls; public bool bicolor; }
     readonly List<BondView> bondViews = new List<BondView>();
+
+    // Un material por elemento, reutilizado entre todos sus enlaces: crear uno
+    // por mitad dispararía el número de materiales en moléculas grandes.
+    readonly Dictionary<int, Material> halfMats = new Dictionary<int, Material>();
+    static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
     // Estado de detección
     string lastHash = "", sentHash = "";
@@ -248,13 +258,58 @@ public class BondManager : MonoBehaviour
     void RebuildBondViews()
     {
         ClearBondViews();
+
+        // En Calidad = Bajo se mantiene el cilindro gris de una pieza: partir cada
+        // enlace duplica los objetos, y un triple pasaría de 3 piezas a 6.
+        bool bicolor = GraphicsManager.Instance.Quality != GraphicsLevel.Bajo;
+
         foreach (var (a, b, order) in batchBonds)
         {
             int n = Mathf.Clamp(order, 1, 3);
-            var bv = new BondView { a = a, b = b, order = n, cyls = new GameObject[n] };
-            for (int i = 0; i < n; i++) bv.cyls[i] = CreateCyl();
+            var bv = new BondView
+            {
+                a = a, b = b, order = n, bicolor = bicolor,
+                cyls = new GameObject[bicolor ? n * 2 : n],
+            };
+
+            byId.TryGetValue(a, out var atomA);
+            byId.TryGetValue(b, out var atomB);
+
+            for (int i = 0; i < n; i++)
+            {
+                if (bicolor)
+                {
+                    bv.cyls[i * 2]     = CreateCyl(HalfMatFor(atomA));
+                    bv.cyls[i * 2 + 1] = CreateCyl(HalfMatFor(atomB));
+                }
+                else bv.cyls[i] = CreateCyl(bondMaterial);
+            }
+
             bondViews.Add(bv);
         }
+    }
+
+    /// <summary>Material del lado del enlace que toca a 'atom', cacheado por elemento.</summary>
+    Material HalfMatFor(Atom3D atom)
+    {
+        if (atom == null || bondMaterial == null) return bondMaterial;
+
+        if (halfMats.TryGetValue(atom.atomIndex, out var cached) && cached) return cached;
+
+        var m = new Material(bondMaterial);
+        // Se aclara hacia blanco: con el color puro del elemento, los oscuros
+        // (el carbono es #4A4E5A) darían enlaces casi negros e ilegibles.
+        var c = AtomCatalog.All[atom.atomIndex].color;
+        m.SetColor(BaseColorId, Color.Lerp(c, Color.white, 0.30f));
+
+        halfMats[atom.atomIndex] = m;
+        return m;
+    }
+
+    void OnDestroy()
+    {
+        foreach (var m in halfMats.Values) if (m) Destroy(m);
+        halfMats.Clear();
     }
 
     void ClearBondViews()
@@ -294,13 +349,13 @@ public class BondManager : MonoBehaviour
         sentHash = h;   // hash == sentHash → DetectionStep no vuelve a detectar
     }
 
-    GameObject CreateCyl()
+    GameObject CreateCyl(Material mat)
     {
         var cyl = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         cyl.name = "Bond";
         var col = cyl.GetComponent<Collider>(); if (col) Destroy(col);
         cyl.transform.SetParent(bondsRoot, false);
-        if (bondMaterial) cyl.GetComponent<Renderer>().sharedMaterial = bondMaterial;
+        if (mat) cyl.GetComponent<Renderer>().sharedMaterial = mat;
         return cyl;
     }
 
@@ -323,22 +378,41 @@ public class BondManager : MonoBehaviour
             if (perp.sqrMagnitude < 1e-4f) perp = Vector3.Cross(dirN, Vector3.up);
             perp = perp.normalized;
 
-            int n = bv.cyls.Length;
+            // OJO: el número de LÍNEAS es bv.order, no cyls.Length. Con bicolor
+            // hay dos piezas por línea, y usar la longitud del array haría que un
+            // enlace doble se dibujara como cuatro líneas separadas.
+            int lines = bv.order;
+
             // Enlaces múltiples: líneas un poco más finas y con separación proporcional
             // al grosor, para que doble/triple siempre se vean como líneas distintas.
-            float t = (n == 1) ? bondThickness : bondThickness * 0.72f;
+            float t = (lines == 1) ? bondThickness : bondThickness * 0.72f;
             float spacing = Mathf.Max(bondSpacing, t * 2.6f);
-            for (int i = 0; i < n; i++)
+
+            for (int i = 0; i < lines; i++)
             {
-                var c = bv.cyls[i]; if (!c) continue;
-                c.SetActive(true);
-                float off = (n == 1) ? 0f : (i - (n - 1) * 0.5f) * spacing;
+                float off = (lines == 1) ? 0f : (i - (lines - 1) * 0.5f) * spacing;
                 Vector3 a2 = pa + perp * off, b2 = pb + perp * off;
-                c.transform.position = (a2 + b2) * 0.5f;
-                c.transform.up = dirN;
-                c.transform.localScale = new Vector3(t, len * 0.5f, t);
+
+                if (bv.bicolor)
+                {
+                    Vector3 mid = (a2 + b2) * 0.5f;
+                    PlaceSegment(bv.cyls[i * 2],     a2,  mid, dirN, t);
+                    PlaceSegment(bv.cyls[i * 2 + 1], mid, b2,  dirN, t);
+                }
+                else PlaceSegment(bv.cyls[i], a2, b2, dirN, t);
             }
         }
+    }
+
+    /// <summary>Coloca un cilindro cubriendo el tramo from→to.</summary>
+    static void PlaceSegment(GameObject c, Vector3 from, Vector3 to, Vector3 dirN, float thickness)
+    {
+        if (!c) return;
+        c.SetActive(true);
+        c.transform.position   = (from + to) * 0.5f;
+        c.transform.up         = dirN;
+        // El cilindro primitivo de Unity mide 2 unidades de alto: de ahí el medio.
+        c.transform.localScale = new Vector3(thickness, (to - from).magnitude * 0.5f, thickness);
     }
 
     // ── Hash de estructura (solo átomos: los enlaces los da el backend) ────────

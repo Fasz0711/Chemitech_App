@@ -56,12 +56,21 @@ public class ZonaJuegoManager : MonoBehaviour
     [SerializeField] private TutorialManager tutorial;
 
     [Header("Escenas")]
-    [SerializeField] private string escenaSalir  = "MisUniversosScene";
-    [SerializeField] private string escenaDiario = "DiaryScene";
+    [SerializeField] private string escenaSalir   = "MisUniversosScene";
+    [SerializeField] private string escenaDiario  = "DiaryScene";
+    [SerializeField] private string escenaAjustes = "SettingsScene";
 
     float elapsed;
     bool  paused;
     long  lastReportedElapsed; // segundos ya enviados al backend (evita doble conteo)
+    long  lastSavedElapsed;    // 'elapsed' en el último Guardar (progreso comprometido)
+
+    // Escena a la que se irá si el jugador confirma salir sin guardar.
+    string pendingLeaveScene;
+
+    // Margen antes de avisar por tiempo no guardado. Sin él, cualquier salida
+    // tras un par de segundos de juego dispararía el modal y sería molesto.
+    const long UNSAVED_TIME_THRESHOLD = 60;
     BondManager bondManager;
 
     void Start()
@@ -76,6 +85,7 @@ public class ZonaJuegoManager : MonoBehaviour
         // Carga el tiempo acumulado y los átomos guardados del universo.
         if (PlayContext.Current != null) elapsed = PlayContext.Current.playSeconds;
         lastReportedElapsed = (long)elapsed; // el tiempo cargado ya fue reportado en sesiones previas
+        lastSavedElapsed    = (long)elapsed; // y también está ya guardado en el universo
         if (txtUniverse) txtUniverse.text = PlayContext.UniverseName;
 
         if (place != null && PlayContext.Current != null)
@@ -97,10 +107,10 @@ public class ZonaJuegoManager : MonoBehaviour
         if (btnPause)       btnPause.onClick.AddListener(OpenPause);
         if (btnReanudar)    btnReanudar.onClick.AddListener(ClosePause);
         if (btnGuardar)     btnGuardar.onClick.AddListener(Guardar);
-        if (btnAjustes)     btnAjustes.onClick.AddListener(() => Debug.Log("[ZonaJuego] Ajustes — pendiente."));
+        if (btnAjustes)     btnAjustes.onClick.AddListener(OnAjustes);
         if (btnTutorial)    btnTutorial.onClick.AddListener(OnTutorial);
         if (btnSalir)       btnSalir.onClick.AddListener(OnSalir);
-        if (btnExitConfirm) btnExitConfirm.onClick.AddListener(() => SceneManager.LoadScene(escenaSalir));
+        if (btnExitConfirm) btnExitConfirm.onClick.AddListener(ConfirmLeave);
         if (btnExitCancel)  btnExitCancel.onClick.AddListener(CloseExitConfirm);
 
         // Modal de descubrimiento (nueva molécula)
@@ -185,6 +195,7 @@ public class ZonaJuegoManager : MonoBehaviour
         PlayContext.Current.playSeconds = (long)elapsed;
         UniverseStore.Update(PlayContext.Current);
         place.ClearDirty();
+        lastSavedElapsed = (long)elapsed;   // el tiempo queda comprometido junto con los átomos
         Debug.Log($"[ZonaJuego] Guardado: {PlayContext.Current.atoms.Count} átomos · {PlayContext.Current.bonds.Count} enlaces · {PlayContext.Current.playSeconds}s");
         ReportTimeDelta();
         if (savedToast) StartCoroutine(ShowSavedToast());
@@ -248,11 +259,58 @@ public class ZonaJuegoManager : MonoBehaviour
         if (savedToast) savedToast.SetActive(false);
     }
 
-    void OnSalir()
+    void OnSalir()   => RequestLeave(escenaSalir,   "¿Salir sin guardar?",         "Salir");
+    void OnAjustes() => RequestLeave(escenaAjustes, "¿Ir a ajustes sin guardar?",  "Ir a ajustes");
+
+    /// <summary>
+    /// Cualquier salida de la zona de juego pasa por aquí. Ajustes descarga la
+    /// escena igual que Salir, así que descarta el mismo progreso y merece el
+    /// mismo aviso: sin él, tocar "Ajustes" se llevaba los átomos y el tiempo
+    /// sin decir nada.
+    /// </summary>
+    void RequestLeave(string scene, string title, string confirmLabel)
     {
-        // Solo pide confirmación si hay cambios sin guardar; si no, sale directo.
-        if (place != null && place.Dirty) OpenExitConfirm();
-        else SceneManager.LoadScene(escenaSalir);
+        pendingLeaveScene = scene;
+
+        if (!HasUnsavedProgress()) { SceneManager.LoadScene(scene); return; }
+
+        ConfigureExitModal(title, confirmLabel);
+        OpenExitConfirm();
+    }
+
+    /// <summary>
+    /// Hay progreso sin comprometer. Además de los átomos, cuenta el TIEMPO:
+    /// solo se registra al guardar, así que salir tras un rato de juego lo
+    /// pierde aunque no se haya tocado ningún átomo.
+    /// </summary>
+    bool HasUnsavedProgress()
+    {
+        if (place != null && place.Dirty) return true;
+        return (long)elapsed - lastSavedElapsed >= UNSAVED_TIME_THRESHOLD;
+    }
+
+    void ConfirmLeave()
+    {
+        SceneManager.LoadScene(string.IsNullOrEmpty(pendingLeaveScene) ? escenaSalir : pendingLeaveScene);
+    }
+
+    // El modal es el mismo para las dos salidas, así que se le adaptan el título
+    // y la etiqueta del botón rojo: "Salir" no tiene sentido si vas a Ajustes.
+    // Se buscan en el momento porque no hay campos cableados para ellos.
+    void ConfigureExitModal(string title, string confirmLabel)
+    {
+        if (exitModal)
+        {
+            var t = exitModal.transform.Find("Panel/Title");
+            if (t && t.TryGetComponent<TextMeshProUGUI>(out var tmp)) tmp.text = title;
+        }
+
+        if (btnExitConfirm)
+        {
+            // Por nombre del hijo no: se busca el texto que haya dentro del botón.
+            var lbl = btnExitConfirm.GetComponentInChildren<TextMeshProUGUI>(true);
+            if (lbl) lbl.text = confirmLabel;
+        }
     }
 
     void OpenExitConfirm()  { if (exitModal) exitModal.SetActive(true); }

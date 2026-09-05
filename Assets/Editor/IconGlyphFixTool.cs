@@ -6,11 +6,10 @@ using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
-/// Herramienta ADITIVA: reemplaza los "iconos" que eran glifos de texto rotos
-/// (la fuente Fredoka no los tiene y no hay fallback ni sprite asset) por sprites
-/// reales (Image), igual que los demás iconos del HUD. Idempotente.
-///   • BtnRecentrar: "⟳  Recentrar" → ícono orbit-ring + "Recentrar".
-///   • SavedToast:   "Guardado ✓"  → ícono check-green + "Guardado".
+/// Herramienta ADITIVA: limpia los "iconos" que eran glifos de texto rotos
+/// (la fuente Fredoka no los tiene y no hay fallback ni sprite asset). Idempotente.
+///   • BtnRecentrar: "⟳  Recentrar" → "Recentrar" (sin icono).
+///   • SavedToast:   "Guardado ✓"  → "Guardado" (sin icono).
 /// Menú: ChemiTech → Fix → Icon Glyphs (ZonaJuego)
 /// </summary>
 public static class IconGlyphFixTool
@@ -30,12 +29,12 @@ public static class IconGlyphFixTool
         int fixes = 0;
 
         // ── Recentrar ───────────────────────────────────────────────────────────
+        // Solo se limpia el glifo ⟳ roto; queda como texto "Recentrar" (sin icono).
         var recenter = FindDeep(canvas.transform, "BtnRecentrar");
         if (recenter)
         {
             SetLabel(recenter, "Recentrar");
-            EnsureIcon(recenter, "Assets/Sprites/orbit-ring.png",
-                       new Vector2(-70f, 0f), new Vector2(24f, 24f), Hex("23204A"));
+            RemoveChild(recenter, "Icon");   // quita el icono si una corrida previa lo agregó
             fixes++;
         }
 
@@ -59,9 +58,9 @@ public static class IconGlyphFixTool
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
 
-        Debug.Log($"[IconGlyphFixTool] ✓ {fixes} icono(s) reemplazado(s) por sprites.");
+        Debug.Log($"[IconGlyphFixTool] ✓ {fixes} glifo(s) roto(s) limpiado(s).");
         EditorUtility.DisplayDialog("¡Listo!",
-            $"{fixes} icono(s) de glifo roto reemplazado(s) por sprite (Recentrar, toast Guardado).", "OK");
+            "Glifos rotos limpiados: Recentrar y el toast \"Guardado\" ahora son solo texto (sin icono).", "OK");
     }
 
     // Cambia el texto del hijo "Label" (quita el glifo roto).
@@ -72,26 +71,10 @@ public static class IconGlyphFixTool
         if (tmp) tmp.text = text;
     }
 
-    // Crea (o refresca) un hijo "Icon" con el sprite dado, anclado al centro.
-    static void EnsureIcon(Transform parent, string spritePath, Vector2 pos, Vector2 size, Color color)
+    static void RemoveChild(Transform parent, string name)
     {
-        var iconT = DirectChild(parent, "Icon");
-        GameObject go = iconT ? iconT.gameObject : null;
-        if (go == null)
-        {
-            go = new GameObject("Icon", typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-        }
-        var rt = go.GetComponent<RectTransform>();
-        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = pos;
-        rt.sizeDelta = size;
-
-        var img = go.GetComponent<Image>() ?? go.AddComponent<Image>();
-        img.sprite = AssetDatabase.LoadAssetAtPath<Sprite>(spritePath);
-        img.color = color;
-        img.preserveAspect = true;
-        img.raycastTarget = false;
+        var c = DirectChild(parent, name);
+        if (c) Object.DestroyImmediate(c.gameObject);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -122,6 +105,4 @@ public static class IconGlyphFixTool
         }
         return null;
     }
-
-    static Color Hex(string h) { ColorUtility.TryParseHtmlString("#" + h, out var c); return c; }
 }

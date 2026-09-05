@@ -17,7 +17,7 @@ public class AtomInfo
     public bool   diatomic;
     public Color  color;
 
-    public string Formula   => diatomic ? symbol + "₂" : symbol; // X₂
+    public string Formula   => AtomCatalog.NormalizeFormula(diatomic ? symbol + "₂" : symbol);
     public string PopupText => $"{nameEs} - {Formula}";
 
     public bool Matches(AtomFilter f)
@@ -80,6 +80,19 @@ public static class AtomCatalog
         for (int i = 0; i < All.Count; i++)
             if (All[i].symbol == symbol) return i;
         return -1;
+    }
+
+    /// <summary>Normaliza una fórmula química reemplazando subíndices Unicode por ASCII puro.
+    /// Fredoka no tiene subíndices (₀-₉) horneados, así que cualquier fórmula que los use
+    /// quedará con glifos rotos. Este helper convierte "O₂" → "O2", "H₂O" → "H2O", etc.</summary>
+    public static string NormalizeFormula(string formula)
+    {
+        if (string.IsNullOrEmpty(formula)) return formula;
+        return formula
+            .Replace("₀", "0").Replace("₁", "1").Replace("₂", "2")
+            .Replace("₃", "3").Replace("₄", "4").Replace("₅", "5")
+            .Replace("₆", "6").Replace("₇", "7").Replace("₈", "8")
+            .Replace("₉", "9");
     }
 
     static AtomInfo A(string sym, string name, int z, bool metal, bool nonmetal,

@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.Rendering;
 
 /// <summary>
 /// Guías espaciales del átomo ACTIVO (el seleccionado, o la previsualización que
@@ -85,33 +84,8 @@ public class PlacementGuides : MonoBehaviour
         if (col) Destroy(col);
     }
 
-    /// <summary>URP Unlit transparente, misma receta que usa ZonaJuegoBuilder para el fantasma.</summary>
-    static Material MakeUnlitMat(Texture2D tex)
-    {
-        // Shader.Find en runtime solo encuentra shaders incluidos en la build, y
-        // ningún material del proyecto usa URP/Unlit, así que puede quedar fuera
-        // aunque en el Editor funcione. Caemos a Lit, que sí está garantizado
-        // por los materiales existentes.
-        var shader = Shader.Find("Universal Render Pipeline/Unlit");
-        if (shader == null)
-        {
-            shader = Shader.Find("Universal Render Pipeline/Lit");
-            Debug.LogWarning("[PlacementGuides] URP/Unlit no está incluido en la build; " +
-                             "se usa Lit. Agrégalo en Project Settings → Graphics → Always Included Shaders.");
-        }
-
-        var m = new Material(shader);
-        m.SetFloat("_Surface", 1f);   // Transparent
-        m.SetFloat("_Blend", 0f);     // Alpha
-        m.SetFloat("_ZWrite", 0f);
-        m.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
-        m.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
-        m.SetOverrideTag("RenderType", "Transparent");
-        m.renderQueue = (int)RenderQueue.Transparent;
-        m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-        if (tex) m.SetTexture("_BaseMap", tex);
-        return m;
-    }
+    /// <summary>URP Unlit transparente (ver GuideMaterials).</summary>
+    static Material MakeUnlitMat(Texture2D tex) => GuideMaterials.NewAlpha(tex);
 
     /// <summary>
     /// Coloca las guías bajo/alrededor del objetivo. 'isSelection' distingue un

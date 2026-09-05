@@ -71,6 +71,12 @@ public class OrbitCameraController : MonoBehaviour
         desDist = Mathf.Clamp(desDist - sign * zoomSpeed * Time.deltaTime, minDist, maxDist);
     }
 
+    /// <summary>Establece la distancia de zoom directamente (para slider de UI).</summary>
+    public void SetZoomDistance(float distance)
+    {
+        desDist = Mathf.Clamp(distance, minDist, maxDist);
+    }
+
     /// <summary>sign &gt; 0 sube la cámara, &lt; 0 la baja (mueve el punto objetivo en Y).</summary>
     public void MoveVertical(float sign)
     {

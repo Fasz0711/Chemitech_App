@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 /// <summary>
 /// Efectos puntuales de la zona de juego: por ahora, el pulso que marca la
@@ -145,25 +144,6 @@ public class ZoneEffects : MonoBehaviour
         return pulse;
     }
 
-    /// <summary>
-    /// URP Unlit con mezcla aditiva: los destellos suman luz en vez de tapar, que
-    /// es lo que hace que se lean como energía y no como una calcomanía.
-    /// </summary>
-    static Material MakeAdditiveMat(Texture2D tex)
-    {
-        var shader = Shader.Find("Universal Render Pipeline/Unlit")
-                  ?? Shader.Find("Universal Render Pipeline/Lit");
-
-        var m = new Material(shader);
-        m.SetFloat("_Surface", 1f);
-        m.SetFloat("_Blend", 1f);     // Additive
-        m.SetFloat("_ZWrite", 0f);
-        m.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
-        m.SetInt("_DstBlend", (int)BlendMode.One);
-        m.SetOverrideTag("RenderType", "Transparent");
-        m.renderQueue = (int)RenderQueue.Transparent;
-        m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-        if (tex) m.SetTexture("_BaseMap", tex);
-        return m;
-    }
+    /// <summary>URP Unlit con mezcla aditiva (ver GuideMaterials).</summary>
+    static Material MakeAdditiveMat(Texture2D tex) => GuideMaterials.NewAdditive(tex);
 }
