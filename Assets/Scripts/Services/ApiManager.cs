@@ -24,7 +24,8 @@ public class ApiManager : MonoBehaviour
     // const string BASE_URL = "http://192.168.18.26:8000/api"; // Example for mobile
         
     //LAPTOP
-    const string BASE_URL = "http://127.0.0.1:8000/api";
+    const string BASE_URL = "http://192.168.18.10:8000/api"; //const string BASE_URL = "http://127.0.0.1:8000/api";
+
 
     // Tiempo de espera (s) para la detección de moléculas. Si el servicio de IA no
     // responde dentro de este margen, el request falla con code 0 (pérdida de conexión).
@@ -260,6 +261,7 @@ public class ApiManager : MonoBehaviour
             using var req = build();
             if (!string.IsNullOrEmpty(SessionData.AccessToken))
                 req.SetRequestHeader("Authorization", "Bearer " + SessionData.AccessToken);
+            req.timeout = 10; // evita conexiones colgadas indefinidamente (especialmente importante en celular)
 
             yield return req.SendWebRequest();
 
@@ -325,6 +327,7 @@ public class ApiManager : MonoBehaviour
             req.downloadHandler = new DownloadHandlerBuffer();
             req.SetRequestHeader("Content-Type", "application/json");
             req.SetRequestHeader("Accept", "application/json");
+            req.timeout = 10; // evita conexiones colgadas indefinidamente
 
             yield return req.SendWebRequest();
 

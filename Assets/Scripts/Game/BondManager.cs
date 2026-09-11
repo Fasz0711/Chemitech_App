@@ -27,6 +27,7 @@ public class BondManager : MonoBehaviour
     [SerializeField] private float bondSpacing     = 0.20f; // separación entre líneas paralelas (orden 2/3)
     [SerializeField] private float detectDelay     = 0.45f; // debounce tras el último cambio
     [SerializeField] private float offlineRetryInterval = 5f; // reintento de detección mientras el servicio está caído
+    [SerializeField] private float offlineIndicatorDuration = 3f; // tiempo que el aviso offline permanece visible (segundos)
     [SerializeField] private float formedBannerSeconds  = 2f; // el banner "¡Molécula formada!" se auto-oculta tras esto
 
     static readonly Color C_DETECT = new Color(0.10f, 0.65f, 0.81f, 1f);
@@ -76,6 +77,13 @@ public class BondManager : MonoBehaviour
     // Estado de conexión con el servicio de IA
     bool  online = true;
     float lastAttemptTime;
+    float offlineIndicatorShowTime; // cuándo se mostró el indicador (para auto-ocultarlo después de offlineIndicatorDuration)
+
+    // ¿Hay ahora mismo algo que detectar (un grupo de ≥2 átomos)? El aviso de
+    // "servicio no disponible" solo se muestra si lo hay: sin nada que detectar
+    // no hemos podido comprobar el servicio, así que afirmar que está caído sería
+    // decir lo que no sabemos, y además no le sirve de nada al jugador.
+    bool hasDetectableStructure;
     readonly List<(int a, int b, int order)> batchBonds = new List<(int, int, int)>();
 
     void Awake()
@@ -116,6 +124,7 @@ public class BondManager : MonoBehaviour
         {
             sentHash = ""; lastHash = "";
             ClearBondViews(); batchBonds.Clear();
+            SetDetectableStructure(false);   // tablero vacío: no hay nada que comprobar
             if (!detecting) HideBanner();
             return;
         }
@@ -146,10 +155,12 @@ public class BondManager : MonoBehaviour
         if (candidates.Count == 0)
         {
             ClearBondViews(); batchBonds.Clear();
+            SetDetectableStructure(false);   // átomos sueltos: no hay molécula candidata
             HideBanner();
             return;
         }
 
+        SetDetectableStructure(true);
         currentBatch++;
         int batch = currentBatch;
         pendingRequests = candidates.Count;
@@ -186,11 +197,15 @@ public class BondManager : MonoBehaviour
 
     void OnClusterResult(int batch, ApiManager.DetectResponse resp, Atom3D[] map, bool connectionError)
     {
-        if (batch != currentBatch) return; // batch viejo (la estructura ya cambió)
-
         // Conexión con el servicio de IA: error de red/timeout/5xx → offline; cualquier
         // respuesta del servidor (válida o no) → online.
+        //
+        // Va ANTES del descarte por batch obsoleto a propósito: que la estructura
+        // haya cambiado no invalida lo que acabamos de aprender sobre el servicio,
+        // y tirar esa información retrasaba innecesariamente ocultar el aviso.
         SetOnline(!connectionError);
+
+        if (batch != currentBatch) return; // batch viejo (la estructura ya cambió)
 
         bool valid = resp != null && resp.isValid && resp.molecule != null;
         if (valid)
@@ -498,9 +513,47 @@ public class BondManager : MonoBehaviour
     // ── Conexión con el servicio de detección ──────────────────────────────────
     void SetOnline(bool value)
     {
-        if (online == value) return;
-        online = value;
-        if (detectionOfflineIndicator) detectionOfflineIndicator.SetActive(!online);
-        Debug.Log($"[Detect] Servicio de detección: {(online ? "DISPONIBLE" : "NO DISPONIBLE")}");
+        if (online != value)
+        {
+            online = value;
+            Debug.Log($"[Detect] Servicio de detección: {(online ? "DISPONIBLE" : "NO DISPONIBLE")}");
+        }
+        RefreshOfflineIndicator();
+    }
+
+    /// <summary>
+    /// El aviso se muestra solo si el servicio falló Y hay una estructura que
+    /// detectar, pero AUTO-SE OCULTA después de offlineIndicatorDuration segundos
+    /// (para no ser demasiado intrusivo). Antes dependía únicamente de 'online', y
+    /// como 'online' solo se puede volver a poner en true desde una respuesta del
+    /// servidor —que exige un grupo de ≥2 átomos— el aviso se quedaba fijo para
+    /// siempre en cuanto el jugador borraba o separaba sus átomos.
+    /// </summary>
+    void RefreshOfflineIndicator()
+    {
+        if (!detectionOfflineIndicator) return;
+
+        bool shouldShow = !online && hasDetectableStructure;
+        bool isShown = detectionOfflineIndicator.activeSelf;
+
+        // Si debe mostrarse y no está visible → mostrar y registrar el tiempo
+        if (shouldShow && !isShown)
+        {
+            detectionOfflineIndicator.SetActive(true);
+            offlineIndicatorShowTime = Time.time;
+        }
+        // Si está visible pero ya pasó el tiempo o no debe mostrarse → ocultar
+        else if (isShown && (!shouldShow || Time.time - offlineIndicatorShowTime >= offlineIndicatorDuration))
+        {
+            detectionOfflineIndicator.SetActive(false);
+        }
+    }
+
+    /// <summary>Marca si hay algo que detectar y refresca el aviso en consecuencia.</summary>
+    void SetDetectableStructure(bool value)
+    {
+        if (hasDetectableStructure == value) return;
+        hasDetectableStructure = value;
+        RefreshOfflineIndicator();
     }
 }
