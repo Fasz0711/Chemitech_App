@@ -38,35 +38,25 @@ public class BondManager : MonoBehaviour
     /// "¡Nuevo descubrimiento!" en ZonaJuegoManager.</summary>
     public event System.Action<string, string> OnNewDiscovery;
 
-    Transform bondsRoot;
-    Camera    cam;
+    // Dibuja los enlaces que devuelve el backend. Vive aparte para que la escena
+    // de clase pueda pintar enlaces ya resueltos sin arrastrar la detección.
+    BondRenderer bondRenderer;
 
     readonly List<Atom3D>            atomsBuf = new List<Atom3D>();
     readonly Dictionary<int, Atom3D> byId     = new Dictionary<int, Atom3D>();
-
-    // Enlaces actualmente dibujados (los devueltos por el backend).
-    //
-    // 'order' es cuántas LÍNEAS paralelas tiene el enlace (simple/doble/triple).
-    // 'cyls' tiene una pieza por línea, o dos si el enlace es bicolor: cada mitad
-    // lleva el color de su átomo, como en cualquier visor molecular. Con bicolor
-    // el índice de la línea i son cyls[i*2] (lado A) y cyls[i*2+1] (lado B).
-    class BondView { public int a, b, order; public GameObject[] cyls; public bool bicolor; }
-    readonly List<BondView> bondViews = new List<BondView>();
-
-    // Un material por elemento, reutilizado entre todos sus enlaces: crear uno
-    // por mitad dispararía el número de materiales en moléculas grandes.
-    readonly Dictionary<int, Material> halfMats = new Dictionary<int, Material>();
-    static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
 
     // Estado de detección
     string lastHash = "", sentHash = "";
     float  lastChangeTime;
     bool   detecting;
     int    pendingRequests, currentBatch;
-    bool   anyValid;
+    bool   anyValid;     // algún cluster devolvió una molécula COMPLETA
+    bool   anyResponse;  // algún cluster recibió respuesta del servidor (no fue todo red caída)
 
-    // Firma de los enlaces ya dibujados al iniciar un batch: sirve para saber si la
-    // detección REALMENTE formó/cambió una molécula o solo reconfirmó una existente.
+    // Firma de los enlaces de moléculas COMPLETAS del batch anterior: sirve para saber si
+    // la detección REALMENTE formó algo o solo reconfirmó lo que ya había. Solo cuenta lo
+    // válido: una molécula a medias cambia los enlaces dibujados en cada paso intermedio,
+    // y celebrar eso sería un falso positivo.
     string    prevBondsSig = "";
     Coroutine bannerHideCo;
 
@@ -84,12 +74,15 @@ public class BondManager : MonoBehaviour
     // no hemos podido comprobar el servicio, así que afirmar que está caído sería
     // decir lo que no sabemos, y además no le sirve de nada al jugador.
     bool hasDetectableStructure;
-    readonly List<(int a, int b, int order)> batchBonds = new List<(int, int, int)>();
+    // batchBonds:      TODO lo que se dibuja, incluidas las moléculas a medias.
+    // batchValidBonds: solo lo de moléculas completas → decide el banner y los pulsos.
+    readonly List<(int a, int b, int order)> batchBonds      = new List<(int, int, int)>();
+    readonly List<(int a, int b, int order)> batchValidBonds = new List<(int, int, int)>();
 
     void Awake()
     {
-        bondsRoot = new GameObject("Bonds").transform;
-        cam = Camera.main;
+        var bondsRoot = new GameObject("Bonds").transform;
+        bondRenderer = new BondRenderer(bondsRoot, bondMaterial, byId, bondThickness, bondSpacing);
     }
 
     void Start()
@@ -102,7 +95,7 @@ public class BondManager : MonoBehaviour
     {
         GatherAtoms(placement ? placement.AtomsRoot : null);
         DetectionStep();
-        UpdateBondVisuals();
+        bondRenderer.UpdateVisuals();
     }
 
     void GatherAtoms(Transform root)
@@ -123,7 +116,7 @@ public class BondManager : MonoBehaviour
         if (atomsBuf.Count == 0)
         {
             sentHash = ""; lastHash = "";
-            ClearBondViews(); batchBonds.Clear();
+            ClearDrawnBonds();
             SetDetectableStructure(false);   // tablero vacío: no hay nada que comprobar
             if (!detecting) HideBanner();
             return;
@@ -147,14 +140,13 @@ public class BondManager : MonoBehaviour
     void StartDetection()
     {
         lastAttemptTime = Time.time;   // marca el intento (aunque no haya candidatos)
-        prevBondsSig = BondsSignature(ExportBonds()); // enlaces dibujados ANTES de este batch
 
         var clusters = ClusterAtoms();
         // Solo grupos con ≥2 átomos son candidatos a molécula.
         var candidates = clusters.FindAll(c => c.Count >= 2);
         if (candidates.Count == 0)
         {
-            ClearBondViews(); batchBonds.Clear();
+            ClearDrawnBonds();
             SetDetectableStructure(false);   // átomos sueltos: no hay molécula candidata
             HideBanner();
             return;
@@ -165,9 +157,11 @@ public class BondManager : MonoBehaviour
         int batch = currentBatch;
         pendingRequests = candidates.Count;
         anyValid = false;
+        anyResponse = false;
         detecting = true;
         newDiscoveryThisBatch = false;
         batchBonds.Clear();
+        batchValidBonds.Clear();
         ShowBanner("Detectando interacción atómica…", C_DETECT);
         Debug.Log($"[Detect] {candidates.Count} candidato(s) · userId='{SessionData.UserId}'");
 
@@ -207,21 +201,25 @@ public class BondManager : MonoBehaviour
 
         if (batch != currentBatch) return; // batch viejo (la estructura ya cambió)
 
+        if (resp != null) anyResponse = true;
+
+        // 'bonds' de primer nivel se DIBUJA SIEMPRE, válida o no. El alumno arma la
+        // molécula átomo por átomo y casi todos los pasos intermedios son incompletos:
+        // sin esto, dos carbonos juntos no mostrarían ningún enlace hasta completar el
+        // etano. Mientras está a medias todos vienen simples (el orden real no existe aún).
+        if (resp?.bonds != null)
+            foreach (var bd in resp.bonds) AddBond(batchBonds, bd, map);
+
         bool valid = resp != null && resp.isValid && resp.molecule != null;
         if (valid)
         {
             anyValid = true;
             var m = resp.molecule;
-            Debug.Log($"[Detect] {m.name} ({m.molecularFormula}) · enlaces={m.bonds?.Length ?? 0}");
+            Debug.Log($"[Detect] {m.name} ({m.molecularFormula}) · enlaces={resp.bonds?.Length ?? 0}");
+
+            // Los enlaces de la molécula COMPLETA van aparte: son los que deciden el banner.
             if (m.bonds != null)
-                foreach (var bd in m.bonds)
-                {
-                    // bd.begin/endAtomId son índices locales del request → Atom3D real.
-                    if (bd.beginAtomId >= 0 && bd.beginAtomId < map.Length &&
-                        bd.endAtomId   >= 0 && bd.endAtomId   < map.Length)
-                        batchBonds.Add((map[bd.beginAtomId].id, map[bd.endAtomId].id, bd.order));
-                }
-            RebuildBondViews();
+                foreach (var bd in m.bonds) AddBond(batchValidBonds, bd, map);
 
             // Primera vez que se descubre esta molécula → avisar para el modal.
             if (m.isNewDiscovery)
@@ -231,17 +229,53 @@ public class BondManager : MonoBehaviour
                 OnNewDiscovery?.Invoke(m.molecularFormula, m.name);
             }
         }
+        else if (resp != null)
+        {
+            Debug.Log($"[Detect] a medias ({resp.invalidityReason}) · enlaces={resp.bonds?.Length ?? 0}");
+        }
+
+        // Solo se redibuja si el servidor contestó. Con el servicio caído se mantiene en
+        // pantalla lo último dibujado: borrarlo haría desaparecer las moléculas del alumno
+        // por un problema de red.
+        if (resp != null) bondRenderer.SetBonds(batchBonds);
 
         pendingRequests--;
         if (pendingRequests <= 0)
         {
             detecting = false;
-            // Solo celebramos si los enlaces CAMBIARON respecto a lo ya dibujado. Reconfirmar
-            // una molécula que ya existía (p. ej. al colocar un átomo suelto aparte, o tras
-            // recargar el universo) no vuelve a mostrar el banner.
-            if (anyValid && BondsSignature(batchBonds) != prevBondsSig) ShowMoleculeFormed();
-            else                                                        HideBanner();
+
+            // Batch entero sin respuesta (servicio caído): no sabemos nada nuevo, así que
+            // no se toca la firma. Resetearla haría que al volver el servicio se celebrara
+            // otra vez una molécula que ya estaba dibujada.
+            if (!anyResponse) { HideBanner(); return; }
+
+            // Solo celebramos si los enlaces de moléculas COMPLETAS cambiaron. Reconfirmar
+            // una que ya existía (al colocar un átomo aparte, o tras recargar el universo)
+            // no vuelve a mostrar el banner, y los pasos intermedios tampoco lo disparan.
+            string validSig = BondsSignature(batchValidBonds);
+            if (anyValid && validSig != prevBondsSig) ShowMoleculeFormed();
+            else                                      HideBanner();
+            prevBondsSig = validSig;
         }
+    }
+
+    // Traduce un enlace del backend a ids de Atom3D reales: begin/endAtomId son índices
+    // locales del request (0..n-1), no los ids del mundo.
+    static void AddBond(List<(int a, int b, int order)> into, ApiManager.BondDTO bd, Atom3D[] map)
+    {
+        if (bd.beginAtomId >= 0 && bd.beginAtomId < map.Length &&
+            bd.endAtomId   >= 0 && bd.endAtomId   < map.Length)
+            into.Add((map[bd.beginAtomId].id, map[bd.endAtomId].id, bd.order));
+    }
+
+    // No queda nada dibujado: también se olvida la firma, o al rearmar la misma molécula
+    // no saldría el banner.
+    void ClearDrawnBonds()
+    {
+        bondRenderer.Clear();
+        batchBonds.Clear();
+        batchValidBonds.Clear();
+        prevBondsSig = "";
     }
 
     // ── Agrupamiento por cercanía (componentes por distancia; NO decide enlaces) ─
@@ -269,85 +303,10 @@ public class BondManager : MonoBehaviour
         return new List<List<Atom3D>>(groups.Values);
     }
 
-    // ── Dibujo de enlaces (según orden, orientados a la cámara) ────────────────
-    void RebuildBondViews()
-    {
-        ClearBondViews();
-
-        // En Calidad = Bajo se mantiene el cilindro gris de una pieza: partir cada
-        // enlace duplica los objetos, y un triple pasaría de 3 piezas a 6.
-        bool bicolor = GraphicsManager.Instance.Quality != GraphicsLevel.Bajo;
-
-        foreach (var (a, b, order) in batchBonds)
-        {
-            int n = Mathf.Clamp(order, 1, 3);
-            var bv = new BondView
-            {
-                a = a, b = b, order = n, bicolor = bicolor,
-                cyls = new GameObject[bicolor ? n * 2 : n],
-            };
-
-            byId.TryGetValue(a, out var atomA);
-            byId.TryGetValue(b, out var atomB);
-
-            for (int i = 0; i < n; i++)
-            {
-                if (bicolor)
-                {
-                    bv.cyls[i * 2]     = CreateCyl(HalfMatFor(atomA));
-                    bv.cyls[i * 2 + 1] = CreateCyl(HalfMatFor(atomB));
-                }
-                else bv.cyls[i] = CreateCyl(bondMaterial);
-            }
-
-            bondViews.Add(bv);
-        }
-    }
-
-    /// <summary>Material del lado del enlace que toca a 'atom', cacheado por elemento.</summary>
-    Material HalfMatFor(Atom3D atom)
-    {
-        if (atom == null || bondMaterial == null) return bondMaterial;
-
-        if (halfMats.TryGetValue(atom.atomIndex, out var cached) && cached) return cached;
-
-        var m = new Material(bondMaterial);
-        // Se aclara hacia blanco: con el color puro del elemento, los oscuros
-        // (el carbono es #4A4E5A) darían enlaces casi negros e ilegibles.
-        var c = AtomCatalog.All[atom.atomIndex].color;
-        m.SetColor(BaseColorId, Color.Lerp(c, Color.white, 0.30f));
-
-        halfMats[atom.atomIndex] = m;
-        return m;
-    }
-
-    void OnDestroy()
-    {
-        foreach (var m in halfMats.Values) if (m) Destroy(m);
-        halfMats.Clear();
-    }
-
-    void ClearBondViews()
-    {
-        foreach (var bv in bondViews)
-            if (bv.cyls != null)
-                foreach (var c in bv.cyls) if (c) Destroy(c);
-        bondViews.Clear();
-    }
-
-    static void HideBond(BondView bv)
-    {
-        if (bv.cyls == null) return;
-        foreach (var c in bv.cyls) if (c) c.SetActive(false);
-    }
+    void OnDestroy() => bondRenderer?.Dispose();
 
     // ── Guardar / restaurar enlaces (para no re-descubrir al recargar) ─────────
-    public List<(int a, int b, int order)> ExportBonds()
-    {
-        var list = new List<(int, int, int)>();
-        foreach (var bv in bondViews) list.Add((bv.a, bv.b, bv.order));
-        return list;
-    }
+    public List<(int a, int b, int order)> ExportBonds() => bondRenderer.ExportBonds();
 
     /// <summary>
     /// Dibuja enlaces cargados SIN llamar al backend, y marca la estructura actual
@@ -357,77 +316,17 @@ public class BondManager : MonoBehaviour
     {
         GatherAtoms(placement ? placement.AtomsRoot : null);
         batchBonds.Clear();
-        if (bonds != null) batchBonds.AddRange(bonds);
-        RebuildBondViews();
+        batchValidBonds.Clear();
+        if (bonds != null) { batchBonds.AddRange(bonds); batchValidBonds.AddRange(bonds); }
+        bondRenderer.SetBonds(batchBonds);
+
+        // Lo guardado ya se descubrió antes: su firma cuenta como "lo que ya había", así
+        // que al reabrir el universo no se vuelve a celebrar.
+        prevBondsSig = BondsSignature(batchValidBonds);
+
         string h = StructureHash();
         lastHash = h;
         sentHash = h;   // hash == sentHash → DetectionStep no vuelve a detectar
-    }
-
-    GameObject CreateCyl(Material mat)
-    {
-        var cyl = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        cyl.name = "Bond";
-        var col = cyl.GetComponent<Collider>(); if (col) Destroy(col);
-        cyl.transform.SetParent(bondsRoot, false);
-        if (mat) cyl.GetComponent<Renderer>().sharedMaterial = mat;
-        return cyl;
-    }
-
-    void UpdateBondVisuals()
-    {
-        if (!cam) cam = Camera.main;
-        foreach (var bv in bondViews)
-        {
-            if (!byId.TryGetValue(bv.a, out var A)) { HideBond(bv); continue; }
-            if (!byId.TryGetValue(bv.b, out var B)) { HideBond(bv); continue; }
-
-            Vector3 pa = A.transform.position, pb = B.transform.position;
-            Vector3 dir = pb - pa; float len = dir.magnitude;
-            if (len < 1e-4f) continue;
-            Vector3 dirN = dir / len;
-
-            // Perpendicular al enlace, en el plano de la cámara (para ver las líneas paralelas).
-            Vector3 view = cam ? ((pa + pb) * 0.5f - cam.transform.position).normalized : Vector3.forward;
-            Vector3 perp = Vector3.Cross(dirN, view);
-            if (perp.sqrMagnitude < 1e-4f) perp = Vector3.Cross(dirN, Vector3.up);
-            perp = perp.normalized;
-
-            // OJO: el número de LÍNEAS es bv.order, no cyls.Length. Con bicolor
-            // hay dos piezas por línea, y usar la longitud del array haría que un
-            // enlace doble se dibujara como cuatro líneas separadas.
-            int lines = bv.order;
-
-            // Enlaces múltiples: líneas un poco más finas y con separación proporcional
-            // al grosor, para que doble/triple siempre se vean como líneas distintas.
-            float t = (lines == 1) ? bondThickness : bondThickness * 0.72f;
-            float spacing = Mathf.Max(bondSpacing, t * 2.6f);
-
-            for (int i = 0; i < lines; i++)
-            {
-                float off = (lines == 1) ? 0f : (i - (lines - 1) * 0.5f) * spacing;
-                Vector3 a2 = pa + perp * off, b2 = pb + perp * off;
-
-                if (bv.bicolor)
-                {
-                    Vector3 mid = (a2 + b2) * 0.5f;
-                    PlaceSegment(bv.cyls[i * 2],     a2,  mid, dirN, t);
-                    PlaceSegment(bv.cyls[i * 2 + 1], mid, b2,  dirN, t);
-                }
-                else PlaceSegment(bv.cyls[i], a2, b2, dirN, t);
-            }
-        }
-    }
-
-    /// <summary>Coloca un cilindro cubriendo el tramo from→to.</summary>
-    static void PlaceSegment(GameObject c, Vector3 from, Vector3 to, Vector3 dirN, float thickness)
-    {
-        if (!c) return;
-        c.SetActive(true);
-        c.transform.position   = (from + to) * 0.5f;
-        c.transform.up         = dirN;
-        // El cilindro primitivo de Unity mide 2 unidades de alto: de ahí el medio.
-        c.transform.localScale = new Vector3(thickness, (to - from).magnitude * 0.5f, thickness);
     }
 
     // ── Hash de estructura (solo átomos: los enlaces los da el backend) ────────
@@ -472,7 +371,7 @@ public class BondManager : MonoBehaviour
         var fx = ZoneEffects.Instance;
         if (fx == null) return;
 
-        foreach (var (a, b, _) in batchBonds)
+        foreach (var (a, b, _) in batchValidBonds)
             if (byId.TryGetValue(a, out var A) && byId.TryGetValue(b, out var B))
                 fx.BondFormed(A.transform.position, B.transform.position);
     }

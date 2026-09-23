@@ -180,15 +180,18 @@ public static class LoginSceneBuilder
             68f, Color.white, FontStyles.Bold, 3f);
 
         // ── Etiqueta Correo ───────────────────────────────────────────────────
-        MakeTMP(inner.transform, fnt, "LabelEmail", "Correo electrónico",
+        // Los alumnos de la validación entran con su código (3A_07), no con correo.
+        MakeTMP(inner.transform, fnt, "LabelEmail", "Correo o código",
             new Vector2(300f, 36f), new Vector2(-232f, 145f),
             24f, Hex("A2A2A2"), FontStyles.Normal, 0f);
 
         // ── Campo Email ───────────────────────────────────────────────────────
+        // ContentType Standard, NO EmailAddress: ese activa la validación de caracteres
+        // de TMP y el teclado de correo. Quién es válido lo decide el servidor.
         refs.emailField = MakeInputField(inner.transform, fnt, uiSpr,
-            "EmailField", "alex@chemitech.com",
+            "EmailField", "correo@ejemplo.com  o  3A_07",
             new Vector2(0f, 73f), sprEmail,
-            TMP_InputField.ContentType.EmailAddress);
+            TMP_InputField.ContentType.Standard);
 
         // ── Etiqueta Contraseña ───────────────────────────────────────────────
         MakeTMP(inner.transform, fnt, "LabelPassword", "Contraseña",

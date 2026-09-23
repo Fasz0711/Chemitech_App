@@ -1,0 +1,699 @@
+================================================================================
+CHEMITECH — CONTEXTO DE LA APLICACIÓN (ESTADO ACTUAL)
+================================================================================
+Generado por: Claude (Claude Code)
+Fecha de generación: 2026-09-20
+Propósito: documento base de contexto del CLIENTE (app Unity). El autor lo
+           actualiza con las nuevas características ligadas al OE4 redefinido.
+Alcance:   SOLO la aplicación Unity. El backend se documenta aparte.
+
+CÓMO USAR ESTE ARCHIVO
+  - Todo lo que está aquí fue verificado leyendo el código del repo, no es
+    de memoria ni supuesto.
+  - Las secciones marcadas [POR COMPLETAR] son huecos que debe llenar el autor.
+  - Al añadir características nuevas, actualizar: §3 (escenas), §4 (navegación),
+    §5 (pantallas), §11 (datos) y §14 (pendientes).
+
+================================================================================
+1. RESUMEN GENERAL
+================================================================================
+
+ChemiTech es una aplicación educativa de química en Unity (móvil + PC) donde el
+usuario construye moléculas colocando átomos en un espacio 3D. La app NO decide
+los enlaces: envía la configuración de átomos a un backend que resuelve la
+estructura química real y devuelve los enlaces, la fórmula y las propiedades.
+Los hallazgos se registran en un "Diario" de moléculas descubiertas.
+
+Conceptos centrales:
+  - UNIVERSO: una partida/espacio de trabajo guardado, con nombre, icono, color,
+    tiempo jugado y los átomos/enlaces que el usuario colocó.
+  - ÁTOMO: elemento del catálogo (24 disponibles) que se coloca en el mundo 3D.
+  - DETECCIÓN: proceso automático que agrupa átomos por cercanía y consulta al
+    backend para resolver qué molécula forman.
+  - DIARIO: catálogo de moléculas que el usuario ha descubierto.
+
+Modos de uso:
+  - INVITADO (guest): juega sin cuenta. No guarda progreso en servidor, no tiene
+    diario persistente en la nube, y el tutorial se le muestra siempre.
+  - LOGUEADO: tiene cuenta, universos, diario, estadísticas y perfil.
+
+================================================================================
+2. STACK TÉCNICO
+================================================================================
+
+  - Motor:            Unity (proyecto 3D con UI en Canvas)
+  - Lenguaje:         C#
+  - UI:               Unity UI (uGUI) + TextMeshPro (TMP)
+  - Fuente principal: Fredoka-Medium SDF
+  - Red:              UnityWebRequest (coroutines), JSON con JsonUtility
+  - Backend local:    http://127.0.0.1:8000/api  (FastAPI/uvicorn)
+  - Persistencia:     PlayerPrefs + archivos JSON locales (DeviceStorage)
+  - Plataformas:      PC (editor/standalone) y Android (probado en móvil)
+
+RESTRICCIÓN IMPORTANTE DE UI (afecta cualquier feature nueva):
+  La fuente Fredoka NO tiene fallback ni hay sprite asset de emojis en el
+  proyecto (m_FallbackFontAssetTable vacío, defaultSpriteAsset es una
+  referencia rota). Por lo tanto:
+    - NO usar emojis ni glifos especiales (⟳ ✓ ✕ → ⬆ 👆 🔗 …) dentro de texto TMP:
+      se renderizan en blanco.
+    - Los iconos deben ser Image + sprite real.
+    - Los subíndices químicos van en ASCII ("H2O", no "H₂O"). Existe el helper
+      AtomCatalog.NormalizeFormula() que convierte subíndices Unicode a ASCII.
+    - Símbolos ASCII sí funcionan (el HUD usa "II" para pausa y "X" para cerrar).
+
+================================================================================
+3. MAPA DE ESCENAS (19)
+================================================================================
+
+MENÚ Y SESIÓN
+  SampleScene .................. Menú principal (pese al nombre, es el menú real)
+  LoginScene ................... Inicio de sesión
+  GuestPromptScene ............. Aviso previo a jugar como invitado
+  PerfilScene .................. Perfil del usuario + selección de avatar
+  SettingsScene ................ Ajustes (gráficos, audio, cuenta)
+
+REGISTRO (flujo de 4 pasos)
+  RegisterEmailScene ........... Paso 1: correo
+  RegisterPasswordScene ........ Paso 2: contraseña (con validación de fuerza)
+  RegisterUsernameScene ........ Paso 3: nombre de usuario
+  CuentaCreadaScene ............ Paso 4: confirmación de cuenta creada
+
+RECUPERACIÓN DE CONTRASEÑA (flujo de 4 pasos)
+  ForgotPasswordEmailScene ..... Paso 1: pedir correo
+  ForgotPasswordCodeScene ...... Paso 2: código OTP de 6 caracteres
+  ForgotPasswordResetScene ..... Paso 3: nueva contraseña
+  ForgotPasswordSuccessScene ... Paso 4: confirmación
+
+UNIVERSOS
+  MisUniversosScene ............ Lista de universos guardados
+  CrearUniversoScene ........... Crear universo (nombre, icono, color)
+  EditarUniversoScene .......... Editar/eliminar universo
+
+JUEGO
+  ZonaJuegoScene ............... Zona de juego 3D (pantalla principal del juego)
+
+DIARIO
+  DiaryScene ................... Lista de moléculas descubiertas
+  MoleculeDetailScene .......... Ficha detallada de una molécula + visor 3D
+
+================================================================================
+4. FLUJO DE NAVEGACIÓN
+================================================================================
+
+                        ┌──────────────┐
+                        │  SampleScene │  (Menú principal)
+                        └──────┬───────┘
+         ┌─────────────┬───────┼────────────┬──────────────┐
+         │             │       │            │              │
+     [Jugar]       [Diario] [Ajustes]   [Perfil]      [Sesión]
+         │             │       │            │              │
+         │             ▼       ▼            ▼              ▼
+         │       DiaryScene  Settings    Perfil        LoginScene
+         │             │      Scene      Scene             │
+         │             ▼                                   │
+         │     MoleculeDetailScene                         │
+         │                                                 │
+    ¿logueado?                                             │
+    ├── NO ──► GuestPromptScene ──► ZonaJuegoScene         │
+    └── SÍ ──► MisUniversosScene                           │
+                   │                                       │
+                   ├── [Crear] ──► CrearUniversoScene      │
+                   ├── [Editar] ─► EditarUniversoScene     │
+                   └── [Jugar] ──► ZonaJuegoScene          │
+                                                           │
+  LoginScene ──┬── [Entrar] ──────► SampleScene ───────────┘
+               ├── [Registrarse] ─► RegisterEmailScene
+               │                      → RegisterPasswordScene
+               │                      → RegisterUsernameScene
+               │                      → CuentaCreadaScene → SampleScene
+               └── [Olvidé mi contraseña] ─► ForgotPasswordEmailScene
+                                               → ForgotPasswordCodeScene
+                                               → ForgotPasswordResetScene
+                                               → ForgotPasswordSuccessScene
+                                               → LoginScene
+
+Desde ZonaJuegoScene (menú de pausa):
+  - Reanudar, Guardar, Ajustes (→ SettingsScene), Ver tutorial, Salir
+  - Salir → MisUniversosScene (con confirmación si hay cambios sin guardar)
+  - Al descubrir molécula nueva → modal con opción "Ver diario" (→ DiaryScene)
+
+Navegación forzada:
+  - Si la sesión muere (token inválido o refresh fallido), ApiManager fuerza
+    LoadScene("LoginScene") desde cualquier pantalla.
+
+================================================================================
+5. DETALLE DE PANTALLAS
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 SampleScene — MENÚ PRINCIPAL
+--------------------------------------------------------------------------------
+Manager: MainMenu/MainMenuManager.cs
+Elementos:
+  - Botones: Jugar, Diario, Ajustes
+  - Botón de sesión (esquina inferior derecha):
+      · Invitado  → texto "Iniciar sesión" → LoginScene
+      · Logueado  → muestra avatar + nombre → PerfilScene
+  - Fondo animado: átomos flotantes (FloatingAtom), destellos (SparkleEffect),
+    animaciones de entrada (MenuAnimator), efecto de pulsación (ButtonPressEffect)
+Lógica:
+  - "Jugar" bifurca según sesión:
+      · Invitado → GuestPromptScene
+      · Logueado → MisUniversosScene
+
+--------------------------------------------------------------------------------
+5.2 LoginScene — INICIO DE SESIÓN
+--------------------------------------------------------------------------------
+Manager: Login/LoginManager.cs
+Elementos: campo correo, campo contraseña (con ojo mostrar/ocultar), botón
+           entrar, enlace "¿Olvidaste tu contraseña?", enlace a registro,
+           botón atrás.
+Lógica:
+  - POST /session/login. Al éxito guarda tokens en SessionData y va a SampleScene.
+  - "Olvidaste" limpia PasswordResetData, pre-rellena el correo escrito y navega
+    a ForgotPasswordEmailScene.
+
+--------------------------------------------------------------------------------
+5.3 REGISTRO (4 pasos)
+--------------------------------------------------------------------------------
+Managers: Register/RegisterEmailManager.cs, RegisterPasswordManager.cs,
+          RegisterUsernameManager.cs, CuentaCreadaManager.cs
+Datos en tránsito: Services/RegistrationData.cs (estático, entre escenas)
+
+  Paso 1 — Correo:
+    Valida formato y disponibilidad con POST /authentication/validate/email
+  Paso 2 — Contraseña:
+    Barra de fuerza + checklist de 4 requisitos (8+ caracteres, mayúscula,
+    número, símbolo). Valida contra POST /authentication/validate/password
+    con debounce (~0.8s). Campo de confirmación con indicador de coincidencia.
+  Paso 3 — Nombre de usuario:
+    Valida con POST /authentication/validate/username
+  Paso 4 — Cuenta creada:
+    Llama POST /authentication/account y muestra confirmación.
+
+--------------------------------------------------------------------------------
+5.4 RECUPERACIÓN DE CONTRASEÑA (4 pasos)
+--------------------------------------------------------------------------------
+Managers: ForgotPassword/ForgotPassword{Email,Code,Reset,Success}Manager.cs
+Datos en tránsito: Services/PasswordResetData.cs (Email + Code)
+
+  Paso 1 — Correo:   POST /authentication/password/reset/request
+  Paso 2 — Código:   6 casillas alfanuméricas con auto-avance, retroceso con
+                     backspace y pegado distribuido. Verifica con
+                     POST /authentication/password/reset/verify (no consume el
+                     código). Botón "Reenviar" con cooldown de 60 segundos.
+  Paso 3 — Nueva contraseña: mismo validador de fuerza que el registro.
+                     POST /authentication/password/reset
+  Paso 4 — Éxito:    Limpia PasswordResetData y SessionData (el backend revoca
+                     todas las sesiones) y vuelve a LoginScene.
+
+--------------------------------------------------------------------------------
+5.5 GuestPromptScene — AVISO DE INVITADO
+--------------------------------------------------------------------------------
+Manager: GuestPrompt/GuestPromptManager.cs
+Explica las limitaciones de jugar sin cuenta. Opciones: iniciar sesión o
+continuar como invitado (→ ZonaJuegoScene).
+
+--------------------------------------------------------------------------------
+5.6 MisUniversosScene — LISTA DE UNIVERSOS
+--------------------------------------------------------------------------------
+Manager: MisUniversos/MisUniversosManager.cs
+Elementos: lista de tarjetas de universo (nombre, icono, color, tiempo jugado),
+           botón crear (en lista y en estado vacío), botón atrás.
+Acciones por tarjeta: Jugar (→ ZonaJuegoScene) / Editar (→ EditarUniversoScene)
+Estado vacío: mensaje + botón de creación.
+
+--------------------------------------------------------------------------------
+5.7 CrearUniversoScene / EditarUniversoScene
+--------------------------------------------------------------------------------
+Managers: CrearUniverso/CrearUniversoManager.cs, EditarUniversoManager.cs
+Contexto de edición: Universe/UniverseEditContext.cs
+Campos: nombre del universo, selector de icono, selector de color (tema).
+Crear: añade a UniverseStore y notifica al backend con
+       PATCH /journal/{id}/created-universes
+Editar: renombrar, cambiar icono/color, y eliminar (con confirmación). Al
+       eliminar llama PATCH /journal/{id}/created-universes/decrement
+
+--------------------------------------------------------------------------------
+5.8 ZonaJuegoScene — ZONA DE JUEGO 3D  ★ PANTALLA PRINCIPAL
+--------------------------------------------------------------------------------
+Manager principal: Game/ZonaJuegoManager.cs
+Ver detalle completo en §6.
+
+--------------------------------------------------------------------------------
+5.9 DiaryScene — DIARIO DE MOLÉCULAS
+--------------------------------------------------------------------------------
+Manager: Diary/DiaryManager.cs
+Elementos: lista/grid de moléculas descubiertas con su icono (MoleculeIcon),
+           fórmula y nombre. Botón atrás.
+Estado invitado: muestra vista alternativa con botones "Iniciar sesión" y
+           "Crear cuenta" (el diario requiere cuenta).
+Estado vacío: mensaje + botón "Empezar a jugar" (→ ZonaJuegoScene).
+Datos: GET /journal/{userPublicId}
+Al tocar una molécula: guarda DiaryDetailContext y navega a MoleculeDetailScene.
+NOTA: la escena está ajustada a mano; no reconstruir destructivamente.
+
+--------------------------------------------------------------------------------
+5.10 MoleculeDetailScene — FICHA DE MOLÉCULA
+--------------------------------------------------------------------------------
+Manager: Diary/MoleculeDetailManager.cs
+Muestra:
+  - Fórmula molecular y nombre
+  - Descripción
+  - Fila de composición: chips por elemento (símbolo + cantidad)
+  - Fecha de descubrimiento
+  - Categoría
+  - Solubilidad acuosa
+  - Masa molar
+  - Visor 3D interactivo de la molécula (Diary/MoleculeViewer3D.cs)
+Contexto de entrada: Diary/DiaryDetailContext.cs
+
+--------------------------------------------------------------------------------
+5.11 PerfilScene — PERFIL
+--------------------------------------------------------------------------------
+Manager: Perfil/PerfilManager.cs
+Dos vistas internas:
+  - profileView: nombre de usuario, correo, número de moléculas descubiertas,
+                 avatar actual, botón "Cambiar avatar", cerrar sesión.
+  - avatarView:  cuadrícula de avatares seleccionables con anillo de selección,
+                 vista previa, botones Cancelar / Guardar.
+Datos: GET /users/profile/{publicId}
+Avatar: se guarda localmente (Services/AvatarStore.cs, AvatarCatalog.cs) y se
+        refleja en la cabecera de otras pantallas (Services/HeaderAvatar.cs).
+
+--------------------------------------------------------------------------------
+5.12 SettingsScene — AJUSTES
+--------------------------------------------------------------------------------
+Manager: Settings/SettingsManager.cs
+Organizada en PESTAÑAS (tabButtons / tabPanels):
+  - Gráficos: calidad (botones segmentados), efectos visuales (segmentados),
+              slider de brillo.
+              Persistencia: Services/GraphicsPrefs.cs, GraphicsManager.cs
+  - Audio:    slider de música, slider de efectos.
+              Persistencia: Services/AudioPrefs.cs, AudioManager.cs
+  - Cuenta:   vista distinta según sesión.
+              · Logueado: cerrar sesión, cambiar contraseña, eliminar cuenta.
+              · Invitado: botones para iniciar sesión / registrarse.
+Cambiar contraseña: Settings/ChangePasswordController.cs
+                    PATCH /authentication/password
+Eliminar cuenta:    DELETE /users/me
+
+================================================================================
+6. ZONA DE JUEGO — DETALLE
+================================================================================
+
+Manager: Game/ZonaJuegoManager.cs
+Escena ajustada a mano. Solo se extiende con herramientas de editor ADITIVAS.
+
+6.1 HUD
+  - Barra superior:
+      · Botón de pausa (icono "II" en ASCII)
+      · Etiqueta del universo + cronómetro acumulado ("Universo 1 · 0:00:00")
+      · Botón "Recentrar" (devuelve la cámara a su posición inicial)
+  - Controles de cámara:
+      · D-pad izquierdo: desplaza la vista sobre el plano
+      · Flechas verticales derechas: sube/baja la cámara
+      · Arrastrar sobre el mundo: rota la cámara (Game/DragRotateCatcher.cs)
+  - Hotbar inferior: 6 ranuras de átomos con icono, símbolo y contador
+  - Botón "Selector de átomos" (abre el catálogo)
+  - Botón contextual "Presiona para colocar átomo"
+  - Barra de estado (banner): "Detectando interacción atómica…" (azul) →
+    "¡Molécula formada!" (verde, se auto-oculta a los ~2s)
+  - Indicador discreto "detección no disponible" cuando el backend está caído
+    (se auto-oculta tras ~3s; configurable)
+
+6.2 Cámara (Game/OrbitCameraController.cs)
+  Cámara orbital con suavizado. Parámetros por defecto:
+    - Yaw inicial 35°, pitch inicial 28°, distancia inicial 16
+    - Pitch entre 5° y 80°
+    - Distancia (zoom) entre 6 y 34
+  Métodos: Rotate(), PanScreen(), Zoom(), SetZoomDistance(), MoveVertical(),
+           Recenter()
+
+6.3 Selector de átomos (Game/AtomSelectorController.cs)
+  - Modal con cuadrícula de los 24 elementos disponibles
+  - Buscador por símbolo, nombre o número atómico
+  - Filtros: Todos / Metales / Gases / No metales / Metaloides
+  - Al tocar un átomo: aparece un popup con "Nombre - Fórmula" durante unos
+    segundos, y el átomo queda asignado a una ranura del hotbar
+
+6.4 Colocación de átomos (Game/AtomPlacementController.cs)
+  - Al elegir una ranura aparece una PREVISUALIZACIÓN (fantasma) en el centro
+  - Se mueve con las flechas y se confirma con "Presiona para colocar átomo"
+  - Guías visuales de colocación: Game/PlacementGuides.cs, GuideMaterials.cs
+  - Detección de colisión: modal de aviso si el punto está ocupado
+  - Átomo colocado: Game/Atom3D.cs, con animación de aparición (SpawnPop.cs)
+  - Al tocar un átomo ya colocado: se selecciona y se puede mover o eliminar
+
+6.5 Catálogo de átomos (Game/AtomCatalog.cs)
+  24 elementos disponibles:
+    C, H, O, N, S, Cl, F, P, Na, Br, I, Si, K, Ca, Zn, Al, Li, Sn, Fe, Co, Cu,
+    B, Cr, Mn
+  Cada AtomInfo tiene: símbolo, nombre en español, número atómico, banderas
+  (metal / no metal / gas / metaloide / diatómico) y color.
+  Propiedades derivadas:
+    - Formula   → añade "2" si es diatómico (normalizado a ASCII)
+    - PopupText → "Nombre - Fórmula"
+
+6.6 Menú de pausa
+  Opciones: Reanudar universo, Guardar, Ajustes (→ SettingsScene),
+            Ver tutorial, Salir al menú de universos.
+  - El cronómetro se detiene mientras la pausa (o el tutorial) está abierta
+  - "Guardar" persiste el universo y muestra un toast "Guardado"
+  - "Salir" pide confirmación si hay cambios sin guardar
+  - Al guardar se envía el tiempo jugado: PATCH /journal/{id}/time-played
+
+6.7 Modal de descubrimiento
+  Cuando el backend marca isNewDiscovery, se muestra un modal de
+  "¡Nuevo descubrimiento!" con la fórmula y el nombre, sonido de fanfarria,
+  y botones Continuar / Ver diario.
+
+6.8 Tutorial (Game/TutorialManager.cs)
+  - Modal de bienvenida + 7 pasos informativos con título, texto y una pista
+    con icono (sprite real, no emoji)
+  - Pasos: (1) Barra de átomos, (2) Colocar átomos, (3) Mover y mirar,
+    (4) Editar átomos, (5) Crear moléculas, (6) Detección en línea,
+    (7) Diario y pausa
+  - Navegación: Atrás / Siguiente / X, con puntos de progreso
+  - Auto-reproducción:
+      · LOGUEADO: solo la PRIMERA vez por cuenta
+        (PlayerPrefs "chemitech_tutorial_seen_{userId}")
+      · INVITADO: SIEMPRE que entra
+  - Se puede repetir desde el menú de pausa ("Ver tutorial")
+  - Mientras está abierto, el cronómetro se pausa
+
+6.9 Ambientación
+  Game/ZoneEnvironment.cs, ZoneEffects.cs, ProceduralTextures.cs — plataforma,
+  postes, materiales y efectos del espacio de juego. El tema visual (color)
+  viene del universo (Universe/UniverseTheme.cs).
+
+================================================================================
+7. SISTEMA DE DETECCIÓN DE MOLÉCULAS  ★ NÚCLEO EDUCATIVO
+================================================================================
+
+Manager: Game/BondManager.cs
+
+PRINCIPIO CLAVE: la app NO decide los enlaces. Solo agrupa átomos por cercanía
+para separar candidatos y envía cada grupo al backend con bonds vacío. El
+backend resuelve la química real y devuelve los enlaces con su orden
+(simple/doble/triple), que la app dibuja.
+
+7.1 Ciclo de detección
+  1. Cada frame se calcula un "hash" de la estructura (posiciones + elementos)
+  2. Si cambió, se reinicia un debounce (detectDelay ≈ 0.45s)
+  3. Cuando la estructura se estabiliza, se agrupan los átomos por distancia
+     (clusterDistance ≈ 2.0) → cada grupo es un candidato
+  4. Por cada candidato se hace POST /detection/molecule con:
+       { atoms: [{id, element, x, y, z}], bonds: [] }
+     (ids locales 0..n-1, mapeados a los Atom3D reales)
+  5. La respuesta trae isValid, molecule{...} con bonds, fórmula y propiedades
+  6. Se dibujan los enlaces devueltos y se muestra el banner si CAMBIARON
+
+7.2 Dibujado de enlaces
+  - Cada enlace se dibuja como N cilindros paralelos según su orden
+    (1 = simple, 2 = doble, 3 = triple); separación ≈ 0.20
+  - Enlaces BICOLOR: cada mitad lleva el color de su átomo, como en un visor
+    molecular estándar
+  - Se reutiliza un material por elemento para no disparar el número de
+    materiales en moléculas grandes
+
+7.3 Banner y anti-repetición
+  - Antes de cada detección se guarda una "firma" de los enlaces ya dibujados
+  - El banner "¡Molécula formada!" solo aparece si la firma CAMBIÓ. Reconfirmar
+    una molécula existente (p. ej. al colocar un átomo suelto aparte, o al
+    recargar el universo) NO vuelve a mostrar el banner.
+
+7.4 Modo offline / servicio caído
+  - Error de red, timeout o 5xx → se marca el servicio como NO DISPONIBLE
+  - Cualquier respuesta del servidor (válida o no) → se marca DISPONIBLE
+  - Mientras está caído, reintenta automáticamente cada ~5s (offlineRetryInterval)
+    sin requerir interacción del usuario
+  - El aviso "detección no disponible" solo se muestra si además HAY una
+    estructura que detectar, y se auto-oculta tras ~3s (offlineIndicatorDuration)
+  - Colocar, mover y borrar átomos SIEMPRE funciona aunque el servicio esté caído
+  - Las peticiones tienen timeout de 10s para evitar conexiones colgadas
+    (especialmente importante en móvil)
+
+7.5 Comportamiento conocido a revisar  [PENDIENTE]
+  - Con CO2 el backend devuelve correctamente 3 enlaces.
+  - Con H2O el backend devuelve isValid=true y fórmula "H2O", pero con
+    bonds: [] (vacío), por lo que no se dibuja ningún enlace. El SMILES que
+    devuelve es "[H+].[OH-]" (especies iónicas separadas). Parece un problema
+    del BACKEND al generar enlaces en estructuras iónicas, no del cliente.
+  - Pruebas sugeridas para acotar: O2, N2, Cl2, H2, CO, NH3, CH4, H2S, NaCl.
+
+================================================================================
+8. BACKEND / API
+================================================================================
+
+Base URL (desarrollo local): http://127.0.0.1:8000/api
+Definida en: Assets/Scripts/Services/ApiManager.cs (constante BASE_URL)
+
+Para probar en MÓVIL físico:
+  - Cambiar BASE_URL a la IP LAN del PC, p. ej. http://192.168.x.x:8000/api
+  - Arrancar el backend escuchando en todas las interfaces:
+      python -m uvicorn app.app:app --reload --host 0.0.0.0
+  - PC y móvil en la misma red WiFi, y el firewall debe permitir el puerto 8000
+
+8.1 Endpoints consumidos por la app
+  AUTENTICACIÓN Y VALIDACIÓN
+    POST   /authentication/validate/email
+    POST   /authentication/validate/password
+    POST   /authentication/validate/username
+    POST   /authentication/account ................ crear cuenta
+    PATCH  /authentication/password ............... cambiar contraseña (Bearer)
+    POST   /authentication/password/reset/request . pedir código
+    POST   /authentication/password/reset/verify .. verificar código
+    POST   /authentication/password/reset ......... aplicar nueva contraseña
+
+  SESIÓN
+    POST   /session/login
+    POST   /session/logout
+    POST   /session/refresh ....................... refrescar access token
+
+  USUARIO
+    GET    /users/profile/{publicId} .............. perfil (Bearer, owner)
+    DELETE /users/me .............................. eliminar cuenta (Bearer)
+
+  DIARIO Y ESTADÍSTICAS  (todos Bearer + owner)
+    GET    /journal/{userPublicId}
+    PATCH  /journal/{userPublicId}/time-played
+    PATCH  /journal/{userPublicId}/created-universes
+    PATCH  /journal/{userPublicId}/created-universes/decrement
+
+  DETECCIÓN
+    POST   /detection/molecule .................... invitado o logueado
+
+8.2 Métodos públicos de ApiManager
+  CreateAccount, Login, Logout, ValidateEmail, ValidatePassword,
+  ValidateUsername, GetProfile, DeleteAccount, ChangePassword,
+  RequestPasswordReset, VerifyPasswordResetCode, ResetPassword,
+  GetJournal, AddTimePlayed, AddCreatedUniverse, DecrementCreatedUniverse,
+  DetectMolecule
+
+================================================================================
+9. AUTENTICACIÓN
+================================================================================
+
+Modelo: access token (Bearer, ~30 min) + refresh token (deslizante, un solo uso).
+
+9.1 Envío
+  Todos los endpoints protegidos envían:  Authorization: Bearer <accessToken>
+  (Ya NO se usan los antiguos headers public_id / user_public_id.)
+
+9.2 Refresh automático con reintento
+  - SendAuthed() envuelve toda petición autenticada.
+  - Ante 401 ERR_TOKEN_EXPIRED: llama a POST /session/refresh, actualiza los
+    tokens y REINTENTA la petición una vez, de forma transparente.
+  - El refresh es SINGLE-FLIGHT: si varias peticiones caducan a la vez, solo se
+    hace un refresh y las demás esperan su resultado (el refresh token es de un
+    solo uso).
+
+9.3 Sesión muerta
+  - Ante ERR_TOKEN_INVALID / ERR_TOKEN_MISSING, o si el refresh falla:
+    se limpia SessionData y se navega a LoginScene (una sola vez, con guarda).
+  - 403 ERR_NOT_RESOURCE_OWNER solo se registra en log (indica bug de cliente).
+
+9.4 Invitado vs logueado en detección
+  - INVITADO: sin token y sin userPublicId en el cuerpo
+  - LOGUEADO: con Bearer y con userPublicId (que debe coincidir con el del token)
+  - Los errores de conexión (código 0 o 5xx) los trata BondManager como "offline"
+
+9.5 Persistencia de sesión
+  Services/SessionData.cs guarda en PlayerPrefs:
+    chemitech_session_userid / username / email / access / refresh /
+    tokentype / expires
+  IsLoggedIn = hay accessToken no vacío.
+
+================================================================================
+10. PERSISTENCIA LOCAL
+================================================================================
+
+  Services/DeviceStorage.cs ..... lectura/escritura de archivos JSON locales
+  Universe/UniverseStore.cs ..... CRUD de universos (Load, Save, Add, Update,
+                                  Remove) con detección de archivo corrupto
+  Services/SessionData.cs ....... tokens y datos de sesión (PlayerPrefs)
+  Services/AvatarStore.cs ....... avatar elegido por el usuario
+  Services/AccountPrefs.cs ...... preferencias por cuenta
+  Services/GraphicsPrefs.cs ..... calidad, efectos, brillo
+  Services/AudioPrefs.cs ........ volúmenes de música y efectos
+  PlayerPrefs "chemitech_tutorial_seen_{userId}" ... tutorial visto por cuenta
+
+================================================================================
+11. MODELO DE DATOS
+================================================================================
+
+11.1 Universo (Universe/UniverseData.cs)
+  UniverseData:
+    id (string), name (string), iconIndex (int), colorIndex (int),
+    createdAtTicks (long), playSeconds (long),
+    atoms: List<AtomSave> { element, x, y, z },
+    bonds: List<BondSave> { a, b, order }
+  UniverseCollection: List<UniverseData>
+
+  Los bonds se guardan para NO volver a "descubrir" lo ya descubierto al
+  recargar el universo.
+
+11.2 Diario (Diary/JournalModels.cs)
+  JournalEntry:
+    canonicalSmiles, molecularFormula, isKnown, rediscoveryCount,
+    firstDiscoveredAt, lastDiscoveredAt, molecule
+  JournalMolecule:
+    canonicalSmiles, molecularFormula, inchikey, name (null en moléculas
+    exóticas), iupacName, description, category, isKnown, molarMass,
+    polarity, logP, aqueousSolubility, aqueousSolubilityLogS,
+    composition[] { element, count },
+    structure { atoms[], bonds[] }
+
+11.3 Respuesta de detección (ApiManager.DetectResponse)
+  message, isValid, invalidityReason, molecule {
+    name, canonicalSmiles, molecularFormula, inchikey,
+    bonds[] { beginAtomId, endAtomId, order },
+    molarMass, polarity, logP, aqueousSolubility, aqueousSolubilityLogS,
+    isKnown, isNewDiscovery
+  }
+
+11.4 Contextos estáticos entre escenas
+  Game/PlayContext.cs ............... universo actualmente en juego
+  Universe/UniverseEditContext.cs ... universo que se está editando
+  Diary/DiaryDetailContext.cs ....... molécula a mostrar en el detalle
+  Services/RegistrationData.cs ...... datos del registro en curso
+  Services/PasswordResetData.cs ..... correo + código de recuperación
+
+================================================================================
+12. SISTEMAS TRANSVERSALES
+================================================================================
+
+  AUDIO
+    Services/AudioManager.cs ....... reproductor central (música y SFX)
+    Services/ProceduralAudio.cs .... generación de sonidos por código
+    Services/UiClickSfx.cs ......... sonido de clic en botones
+    Services/UiSfxRole.cs .......... rol sonoro por tipo de botón
+    Sonidos destacados: clic UI, aparición de átomo, molécula formada,
+    fanfarria de descubrimiento nuevo.
+
+  GRÁFICOS
+    Services/GraphicsManager.cs .... aplica calidad, efectos y brillo
+    Game/ProceduralTextures.cs ..... texturas generadas por código
+
+  AVATAR
+    Services/AvatarCatalog.cs ...... catálogo de avatares disponibles
+    Services/AvatarStore.cs ........ avatar seleccionado (persistente)
+    Services/HeaderAvatar.cs ....... muestra el avatar en las cabeceras.
+                                     Convención: avatar de la cuenta si está
+                                     logueado; genérico solo para invitados.
+
+  ENTRADA MÓVIL
+    Services/MobileInputSettings.cs
+    Game/HoldButton.cs ............. botón que repite acción mientras se mantiene
+    Game/Billboard.cs .............. elementos 3D que miran siempre a la cámara
+
+================================================================================
+13. CONVENCIONES DE DESARROLLO (IMPORTANTE)
+================================================================================
+
+13.1 Builders de editor ADITIVOS
+  Las pantallas se construyen con herramientas de editor bajo el menú
+  "ChemiTech/...". Regla: NUNCA usar builders destructivos que recreen la
+  escena desde cero. Los builders deben ser idempotentes (buscar-o-crear).
+
+  Escenas AJUSTADAS A MANO — no reconstruir destructivamente:
+    - ZonaJuegoScene (su builder original BORRA el HUD)
+    - DiaryScene
+
+  Herramientas aditivas existentes para ZonaJuegoScene:
+    ChemiTech → Add → Tutorial (ZonaJuego) ...... TutorialTool.cs
+    ChemiTech → Add → Detection Indicator ....... DetectionIndicatorTool.cs
+    ChemiTech → Add → Discovery Modal ........... DiscoveryModalTool.cs
+    ChemiTech → Fix → Icon Glyphs (ZonaJuego) ... IconGlyphFixTool.cs
+
+  Otros builders: LoginSceneBuilder, MainMenuBuilder, RegisterEmailBuilder,
+  RegisterPasswordBuilder, RegisterUsernameBuilder, CuentaCreadaBuilder,
+  ForgotPassword{Email,Code,Reset,Success}Builder (+ ForgotPasswordUI compartido),
+  MisUniversosBuilder, CrearUniversoBuilder, EditarUniversoBuilder,
+  DiaryBuilder, MoleculeDetailBuilder, PerfilBuilder, SettingsBuilder,
+  GuestPromptBuilder.
+
+13.2 Patrón de pantalla
+  Cada pantalla = Builder (editor, crea y cablea la UI) + Manager (runtime,
+  lógica) + Scene. El cableado de referencias se hace con SerializedObject
+  desde el builder, no arrastrando a mano en el inspector.
+
+13.3 Texto e iconos
+  Ver la restricción de fuente en §2. Resumen: iconos = Image + sprite;
+  nada de emojis ni glifos especiales en TMP; subíndices en ASCII.
+
+================================================================================
+14. ESTADO ACTUAL Y PENDIENTES CONOCIDOS
+================================================================================
+
+FUNCIONANDO
+  - Flujo completo de registro, login y recuperación de contraseña
+  - Autenticación con Bearer + refresh automático + expulsión al login
+  - Creación, edición, borrado y guardado de universos
+  - Colocación, movimiento y borrado de átomos en 3D
+  - Detección de moléculas contra el backend, con dibujado de enlaces
+  - Modo offline con reintento automático
+  - Diario y ficha de molécula con visor 3D
+  - Tutorial informativo de 7 pasos con reproducción por cuenta
+  - Ajustes de gráficos, audio y cuenta
+  - Perfil con selección de avatar
+
+PENDIENTE / A REVISAR
+  - [BACKEND] H2O devuelve bonds vacío (ver §7.5). Acotar con O2, N2, NH3, H2S.
+  - Al probar en móvil hay que revertir BASE_URL a 127.0.0.1 al terminar.
+  - Se retiró un slider de zoom experimental en la zona de juego (el control
+    competía con el gesto de rotar cámara). El método
+    OrbitCameraController.SetZoomDistance() quedó disponible pero sin uso.
+
+================================================================================
+15. [POR COMPLETAR] NUEVO OE4 — VALIDACIÓN
+================================================================================
+
+CAMBIO DE ENFOQUE (según indicación del autor):
+  El OE4 pasó de "fomentar el interés" a un objetivo más concreto centrado en
+  FACILITAR LA COMPRENSIÓN, validado mediante PRUEBAS PRE Y POST.
+
+  NOTA: en el enunciado recibido hay una ambigüedad a confirmar por el autor —
+  se menciona "facilitar la comprensión" y luego "validar que la aplicación
+  facilite el interés". Debe fijarse la redacción definitiva aquí.
+
+A DEFINIR POR EL AUTOR:
+  [ ] Redacción exacta y definitiva del nuevo OE4
+  [ ] Qué se entiende por "comprensión" y qué contenidos se evalúan
+  [ ] Diseño del pre-test y del post-test (número de ítems, formato, duración)
+  [ ] Dónde viven las pruebas: ¿dentro de la app o instrumento externo?
+  [ ] Si van dentro: nuevas pantallas, momento en que se disparan, y si se
+      bloquea o no el acceso al juego hasta completar el pre-test
+  [ ] Qué datos se registran y dónde se almacenan (local vs backend)
+  [ ] Nuevos endpoints necesarios (a coordinar con el backend)
+  [ ] Métricas de apoyo desde la app (tiempo jugado, moléculas descubiertas,
+      reintentos, uso del tutorial…) y si alimentan la validación
+  [ ] Identificación de participantes y consideraciones éticas / consentimiento
+
+CARACTERÍSTICAS NUEVAS PLANIFICADAS:
+  [ ] (pendiente de recibir el plan del autor)
+
+================================================================================
+FIN DEL DOCUMENTO
+================================================================================

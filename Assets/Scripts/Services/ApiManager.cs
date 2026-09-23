@@ -24,12 +24,17 @@ public class ApiManager : MonoBehaviour
     // const string BASE_URL = "http://192.168.18.26:8000/api"; // Example for mobile
         
     //LAPTOP
-    const string BASE_URL = "http://192.168.18.10:8000/api"; //const string BASE_URL = "http://127.0.0.1:8000/api";
+    // const string BASE_URL = "http://192.168.18.10:8000/api"; 
+    const string BASE_URL = "http://127.0.0.1:8000/api";
 
 
     // Tiempo de espera (s) para la detección de moléculas. Si el servicio de IA no
     // responde dentro de este margen, el request falla con code 0 (pérdida de conexión).
     const int DETECT_TIMEOUT_SECONDS = 8;
+
+    // Varias rutas de clase no llevan cuerpo, pero se mandan como POST con
+    // Content-Type json: un objeto vacío es lo que FastAPI acepta sin quejarse.
+    const string EMPTY_BODY = "{}";
 
     void Awake()
     {
@@ -236,6 +241,82 @@ public class ApiManager : MonoBehaviour
             StartCoroutine(PostRaw("/detection/molecule", body, OnOk, onError, DETECT_TIMEOUT_SECONDS));
     }
 
+    // ── Modo clase (Fase 1) ────────────────────────────────────────────────────
+    // Contrato: docs/CONTRATO_CLASES_FASE1.txt. Todas exigen Bearer y {id} es el
+    // publicId de la clase. Los 403 de clase (ERR_NOT_TEACHER, ERR_NOT_CLASS_OWNER,
+    // ERR_NOT_CLASS_MEMBER) NO son sesión muerta: SendAuthed ya solo expulsa en 401.
+
+    public void GetMyClasses(Action<MyClassesResponse> onSuccess, Action<int, string> onError)
+    {
+        Debug.Log($"[API] GET {BASE_URL}/classes/mine");
+        StartCoroutine(GetAuthed("/classes/mine",
+            json => onSuccess?.Invoke(JsonUtility.FromJson<MyClassesResponse>(json)),
+            onError));
+    }
+
+    /// <summary>Crea la clase Y las cuentas en una sola llamada (todo o nada).
+    /// OJO: las contraseñas de la respuesta son irrepetibles.</summary>
+    public void CreateClass(string name, string section, int studentCount,
+                            Action<ClassCreatedResponse> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new CreateClassRequest
+        {
+            name = name, section = section, studentCount = studentCount
+        });
+        Debug.Log($"[API] POST {BASE_URL}/classes - {body}");
+        StartCoroutine(PostAuthed("/classes", body,
+            json => onSuccess?.Invoke(JsonUtility.FromJson<ClassCreatedResponse>(json)),
+            onError));
+    }
+
+    /// <summary>Alumnos que llegan tarde. Continúa la numeración y devuelve SOLO
+    /// las cuentas nuevas, con la misma forma que CreateClass.</summary>
+    public void AddClassStudents(string classId, int count,
+                                 Action<ClassCreatedResponse> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new AddStudentsRequest { count = count });
+        Debug.Log($"[API] POST {BASE_URL}/classes/{classId}/students - {body}");
+        StartCoroutine(PostAuthed($"/classes/{classId}/students", body,
+            json => onSuccess?.Invoke(JsonUtility.FromJson<ClassCreatedResponse>(json)),
+            onError));
+    }
+
+    /// <summary>Repone la contraseña de un alumno que la olvidó. Cierra sus sesiones
+    /// abiertas: tiene que volver a entrar con la nueva.</summary>
+    public void ReplaceStudentPassword(string classId, string code,
+                                       Action<PasswordReplacedResponse> onSuccess, Action<int, string> onError)
+    {
+        Debug.Log($"[API] POST {BASE_URL}/classes/{classId}/students/{code}/password");
+        StartCoroutine(PostAuthed($"/classes/{classId}/students/{code}/password", EMPTY_BODY,
+            json => onSuccess?.Invoke(JsonUtility.FromJson<PasswordReplacedResponse>(json)),
+            onError));
+    }
+
+    public void StartClass(string classId, Action<ClassStatusResponse> onSuccess, Action<int, string> onError)
+        => SendClassStatus($"/classes/{classId}/start", onSuccess, onError);
+
+    /// <summary>TERMINAR ES DEFINITIVO: la clase no se puede reabrir. Confirmar antes.</summary>
+    public void StopClass(string classId, Action<ClassStatusResponse> onSuccess, Action<int, string> onError)
+        => SendClassStatus($"/classes/{classId}/stop", onSuccess, onError);
+
+    void SendClassStatus(string endpoint, Action<ClassStatusResponse> onSuccess, Action<int, string> onError)
+    {
+        Debug.Log($"[API] POST {BASE_URL}{endpoint}");
+        StartCoroutine(PostAuthed(endpoint, EMPTY_BODY,
+            json => onSuccess?.Invoke(JsonUtility.FromJson<ClassStatusResponse>(json)),
+            onError));
+    }
+
+    /// <summary>Sondeo. 'sinceVersion' es la última versión recibida; un valor negativo
+    /// pide el estado completo. Un since roto nunca da 400, así que no hay que validarlo.</summary>
+    public void GetClassState(string classId, int sinceVersion,
+                              Action<ClassStateResponse> onSuccess, Action<int, string> onError)
+    {
+        StartCoroutine(GetAuthed($"/classes/{classId}/state?since={sinceVersion}",
+            json => onSuccess?.Invoke(JsonUtility.FromJson<ClassStateResponse>(json)),
+            onError));
+    }
+
     // ── Core HTTP ─────────────────────────────────────────────────────────────
 
     // Variante que entrega el campo "message" ya parseado.
@@ -248,11 +329,22 @@ public class ApiManager : MonoBehaviour
 
     // ── HTTP autenticado (Authorization: Bearer + refresh automático) ───────────
     // El access token vence a los 30 min. Ante 401 ERR_TOKEN_EXPIRED se refresca una
-    // vez y se reintenta; si el token es inválido/ausente o el refresh falla, la
-    // sesión muere y se vuelve al login.
+    // vez y se reintenta. Solo se expulsa al login si el refresh es RECHAZADO; un
+    // fallo temporal (429, red caída) mantiene la sesión viva.
     bool _redirectingToLogin;
     bool _refreshing;
-    bool _lastRefreshOk;
+
+    /// <summary>Por qué terminó un refresh. Distinguir Retryable de Dead es lo que
+    /// evita expulsar a medio salón cuando 25 celulares refrescan a la vez y el
+    /// servidor responde 429.</summary>
+    enum RefreshResult { Ok, Retryable, Dead }
+
+    RefreshResult _lastRefreshResult;
+    int    _lastRefreshCode;
+    string _lastRefreshDetail = "";
+
+    const int   REFRESH_MAX_ATTEMPTS    = 3;
+    const float REFRESH_BACKOFF_SECONDS = 1f;
 
     IEnumerator SendAuthed(Func<UnityWebRequest> build, Action<string> onSuccess, Action<int, string> onError)
     {
@@ -279,11 +371,24 @@ public class ApiManager : MonoBehaviour
             // Access token vencido → refrescar una vez y reintentar.
             if (code == 401 && detail == "ERR_TOKEN_EXPIRED" && attempt == 0)
             {
-                bool refreshed = false;
-                yield return RefreshTokenRoutine(ok => refreshed = ok);
-                if (refreshed) continue;    // reintenta con el token nuevo
-                EndSession();
-                onError?.Invoke(code, detail);
+                var refresh = RefreshResult.Dead;
+                yield return RefreshTokenRoutine(r => refresh = r);
+
+                if (refresh == RefreshResult.Ok) continue;   // reintenta con el token nuevo
+
+                if (refresh == RefreshResult.Dead)
+                {
+                    EndSession();
+                    onError?.Invoke(code, detail);
+                }
+                else
+                {
+                    // Temporal (429 o red): el refresh token sigue siendo bueno, solo no
+                    // pudimos canjearlo ahora. Se reporta el fallo REAL para que el caller
+                    // reintente, y la sesión NO se cierra.
+                    Debug.LogWarning("[API] Refresh no disponible ahora (temporal). La sesión se mantiene.");
+                    onError?.Invoke(_lastRefreshCode, _lastRefreshDetail);
+                }
                 yield break;
             }
 
@@ -305,24 +410,37 @@ public class ApiManager : MonoBehaviour
 
     // Refresca el access token con POST /session/refresh. Single-flight: si ya hay uno
     // en curso, espera su resultado en vez de disparar otro (el refresh token es de un solo uso).
-    IEnumerator RefreshTokenRoutine(Action<bool> done)
+    // Ante un fallo temporal espera y reintenta antes de rendirse.
+    IEnumerator RefreshTokenRoutine(Action<RefreshResult> done)
     {
         if (_refreshing)
         {
             while (_refreshing) yield return null;
-            done(_lastRefreshOk);
+            done(_lastRefreshResult);
             yield break;
         }
 
         string rt = SessionData.RefreshToken;
-        if (string.IsNullOrEmpty(rt)) { done(false); yield break; }
+        if (string.IsNullOrEmpty(rt)) { done(RefreshResult.Dead); yield break; }
 
         _refreshing = true;
-        _lastRefreshOk = false;
+        _lastRefreshResult = RefreshResult.Dead;
+        _lastRefreshCode   = 0;
+        _lastRefreshDetail = "";
 
         string body = JsonUtility.ToJson(new RefreshRequest { refreshToken = rt });
-        using (var req = new UnityWebRequest(BASE_URL + "/session/refresh", "POST"))
+
+        for (int attempt = 0; attempt < REFRESH_MAX_ATTEMPTS; attempt++)
         {
+            if (attempt > 0)
+            {
+                // Backoff con jitter: si 25 celulares chocan con el mismo 429, reintentar
+                // todos en el mismo instante los vuelve a chocar. El jitter los desparrama.
+                float wait = REFRESH_BACKOFF_SECONDS * Mathf.Pow(2f, attempt - 1);
+                yield return new WaitForSeconds(wait * UnityEngine.Random.Range(0.6f, 1.4f));
+            }
+
+            using var req = new UnityWebRequest(BASE_URL + "/session/refresh", "POST");
             req.uploadHandler   = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body));
             req.downloadHandler = new DownloadHandlerBuffer();
             req.SetRequestHeader("Content-Type", "application/json");
@@ -338,25 +456,56 @@ public class ApiManager : MonoBehaviour
                 string newRefresh   = string.IsNullOrEmpty(resp.refreshToken) ? rt : resp.refreshToken;
                 string newTokenType = string.IsNullOrEmpty(resp.tokenType) ? SessionData.TokenType : resp.tokenType;
                 SessionData.SetTokens(resp.accessToken, newRefresh, newTokenType, resp.expiresIn);
-                _lastRefreshOk = !string.IsNullOrEmpty(resp.accessToken);
-                if (_lastRefreshOk) { _redirectingToLogin = false; Debug.Log("[API] Access token refrescado."); }
+                SessionData.SetRole(resp.role);
+
+                if (!string.IsNullOrEmpty(resp.accessToken))
+                {
+                    _lastRefreshResult  = RefreshResult.Ok;
+                    _redirectingToLogin = false;
+                    Debug.Log("[API] Access token refrescado.");
+                }
+                else
+                {
+                    // 200 sin token: no se arregla reintentando.
+                    _lastRefreshResult = RefreshResult.Dead;
+                    Debug.LogWarning("[API] Refresh devolvió 200 sin accessToken → sesión muerta.");
+                }
+                break;
             }
-            else
+
+            _lastRefreshCode   = (int)req.responseCode;
+            _lastRefreshDetail = TryParseDetail(req.downloadHandler != null ? req.downloadHandler.text : "");
+
+            if (IsTemporaryFailure(_lastRefreshCode, _lastRefreshDetail))
             {
-                Debug.LogWarning($"[API] Refresh falló · code={(int)req.responseCode} · {req.error}");
+                _lastRefreshResult = RefreshResult.Retryable;
+                Debug.LogWarning($"[API] Refresh temporal · code={_lastRefreshCode} · detail={_lastRefreshDetail} · intento {attempt + 1}/{REFRESH_MAX_ATTEMPTS}");
+                continue;
             }
+
+            _lastRefreshResult = RefreshResult.Dead;
+            Debug.LogWarning($"[API] Refresh rechazado · code={_lastRefreshCode} · detail={_lastRefreshDetail} → sesión muerta.");
+            break;
         }
 
         _refreshing = false;
-        done(_lastRefreshOk);
+        done(_lastRefreshResult);
     }
 
+    /// <summary>El refresh token sigue siendo válido; solo no pudimos canjearlo ahora.
+    /// 429 = límite de peticiones (un salón entero detrás de una sola IP), code 0 = red
+    /// caída o timeout, 5xx = el servidor se cayó. Nada de eso es culpa de la sesión.</summary>
+    static bool IsTemporaryFailure(int code, string detail)
+        => code == 429 || detail == "ERR_RATE_LIMITED" || code == 0 || code >= 500;
+
     // Sesión muerta: limpiar y volver al login (una sola vez, aunque fallen varias peticiones).
+    // Solo se llama cuando el servidor RECHAZA las credenciales, nunca por un 429 ni por
+    // falta de red: expulsar por eso vaciaría el salón a mitad de la clase.
     void EndSession()
     {
         if (_redirectingToLogin) return;
         _redirectingToLogin = true;
-        Debug.LogWarning("[API] Sesión finalizada (token inválido o refresh fallido) → LoginScene.");
+        Debug.LogWarning("[API] Sesión finalizada (credenciales rechazadas) → LoginScene.");
         SessionData.Clear();
         UnityEngine.SceneManagement.SceneManager.LoadScene("LoginScene");
     }
@@ -459,6 +608,8 @@ public class ApiManager : MonoBehaviour
     [Serializable] class AccountResponse { public string userId; }
     [Serializable] class LoginRequest    { public string email; public string password; }
     [Serializable] class LogoutRequest     { public string refreshToken; }
+    [Serializable] class CreateClassRequest { public string name; public string section; public int studentCount; }
+    [Serializable] class AddStudentsRequest { public int count; }
     [Serializable] class RefreshRequest    { public string refreshToken; }
     [Serializable] class ChangePasswordRequest { public string currentPassword; public string newPassword; }
     [Serializable] class ResetVerifyRequest     { public string email; public string code; }
@@ -503,6 +654,7 @@ public class ApiManager : MonoBehaviour
         public int    expiresIn;
         public string userId;        // incluido por el backend en el login
         public string userPublicId;  // alias por si el campo se llama así
+        public string role;          // "student" | "teacher"; llega en login Y en refresh
     }
 
     // ── Detección de moléculas ──────────────────────────────────────────────
@@ -534,6 +686,14 @@ public class ApiManager : MonoBehaviour
         public string      message;
         public bool        isValid;
         public string      invalidityReason;
+
+        /// <summary>Lo que el alumno conectó: SE DIBUJA SIEMPRE, sea la molécula válida
+        /// o no. Mientras está incompleta todos vienen simples (dos C solos no tienen
+        /// orden real todavía: con 6 H son etano, con 4 eteno). Nunca llega null.</summary>
+        public BondDTO[]   bonds;
+
+        /// <summary>Solo si isValid: fórmula, propiedades y descubrimiento. null si la
+        /// molécula está a medias.</summary>
         public MoleculeDTO molecule;
     }
 }

@@ -30,7 +30,16 @@ public static class SessionData
     public static string TokenType    { get; private set; } = "";
     public static int    ExpiresIn    { get; private set; } = 0;
 
+    /// <summary>"student" | "teacher". Lo manda el servidor en el login y en cada refresh.
+    /// Solo decide QUE PANTALLA se muestra: los permisos reales los aplica el backend en
+    /// cada peticion, asi que falsearlo en el dispositivo no da acceso a nada.</summary>
+    public static string Role { get; private set; } = "";
+
+    public const string ROLE_STUDENT = "student";
+    public const string ROLE_TEACHER = "teacher";
+
     public static bool IsLoggedIn => !string.IsNullOrEmpty(AccessToken);
+    public static bool IsTeacher  => Role == ROLE_TEACHER;
 
     // ── Persistencia ──────────────────────────────────────────────────────────
 
@@ -41,6 +50,7 @@ public static class SessionData
     const string KEY_REFRESH  = "chemitech_session_refresh";
     const string KEY_TYPE     = "chemitech_session_tokentype";
     const string KEY_EXPIRES  = "chemitech_session_expires";
+    const string KEY_ROLE     = "chemitech_session_role";
 
     /// <summary>
     /// Se ejecuta BeforeSplashScreen, es decir ANTES que los managers de audio y
@@ -69,6 +79,7 @@ public static class SessionData
         RefreshToken = refresh;
         TokenType    = PlayerPrefs.GetString(KEY_TYPE, "");
         ExpiresIn    = PlayerPrefs.GetInt(KEY_EXPIRES, 0);
+        Role         = PlayerPrefs.GetString(KEY_ROLE, "");
 
         Debug.Log($"[Session] Sesión restaurada · userId='{UserId}'");
     }
@@ -82,6 +93,7 @@ public static class SessionData
         PlayerPrefs.SetString(KEY_REFRESH,  RefreshToken);
         PlayerPrefs.SetString(KEY_TYPE,     TokenType);
         PlayerPrefs.SetInt   (KEY_EXPIRES,  ExpiresIn);
+        PlayerPrefs.SetString(KEY_ROLE,     Role);
         PlayerPrefs.Save();
     }
 
@@ -94,6 +106,7 @@ public static class SessionData
         PlayerPrefs.DeleteKey(KEY_REFRESH);
         PlayerPrefs.DeleteKey(KEY_TYPE);
         PlayerPrefs.DeleteKey(KEY_EXPIRES);
+        PlayerPrefs.DeleteKey(KEY_ROLE);
         PlayerPrefs.Save();
     }
 
@@ -126,10 +139,19 @@ public static class SessionData
         Persist();
     }
 
+    /// <summary>El rol llega en el login y en cada refresh. Un refresh que no lo traiga
+    /// NO borra el que ya habia: perderlo dejaria al docente viendo la vista de alumno.</summary>
+    public static void SetRole(string role)
+    {
+        if (string.IsNullOrEmpty(role)) return;
+        Role = role;
+        Persist();
+    }
+
     public static void Clear()
     {
         UserId = Username = Email = "";
-        AccessToken = RefreshToken = TokenType = "";
+        AccessToken = RefreshToken = TokenType = Role = "";
         ExpiresIn = 0;
         WipeStored();
     }

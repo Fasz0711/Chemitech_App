@@ -1,0 +1,1322 @@
+================================================================================
+CHEMITECH — CONTEXTO DE LA APLICACIÓN
+================================================================================
+Base:       documento generado por Claude Code leyendo el repo (2026-09-20).
+Actualizado: 2026-09-20 con las características derivadas del OE4 redefinido.
+Alcance:    SOLO la aplicación Unity. El backend se documenta aparte.
+Hermanos:   docs/contexto-proyecto.txt (tesis, validación, decisiones cerradas)
+            docs/backend_estado_actual.txt (backend; su §20 es el modo clase)
+
+CÓMO USAR ESTE ARCHIVO
+  - Lo marcado [OK] fue verificado leyendo el código del repo.
+  - Lo marcado [NUEVO] está decidido y aprobado por el asesor, pero AÚN NO
+    existe en el código. Es lo que hay que construir.
+  - Lo marcado [ABIERTO] falta decidir; la decisión es del autor o se coordina
+    con el backend.
+  - Al añadir características nuevas, actualizar: §3 (escenas), §4 (navegación),
+    §5 (pantallas), §11 (datos) y §14 (pendientes).
+
+================================================================================
+1. RESUMEN GENERAL
+================================================================================
+
+ChemiTech es una aplicación educativa de química en Unity (móvil + PC) donde el
+usuario construye moléculas colocando átomos en un espacio 3D. La app NO decide
+los enlaces: envía la configuración de átomos a un backend que resuelve la
+estructura química real y devuelve los enlaces, la fórmula y las propiedades.
+Los hallazgos se registran en un "Diario" de moléculas descubiertas.
+
+A partir del ciclo 10 la aplicación tiene DOS MODOS DE USO y DOS ROLES:
+
+  UNIVERSOS (existente, [OK])
+    El sandbox. Cada estudiante tiene sus universos y construye libremente.
+
+  CLASES (nuevo, [NUEVO])
+    El docente crea una clase, inicia la sesión y dirige una escena 3D
+    compartida ("pizarra virtual"). Los estudiantes la siguen desde su celular,
+    la exploran localmente y responden preguntas de predicción. La escena de la
+    clase es de SOLO LECTURA para el estudiante.
+
+Conceptos centrales:
+  - UNIVERSO: una partida/espacio de trabajo guardado, con nombre, icono, color,
+    tiempo jugado y los átomos/enlaces que el usuario colocó.
+  - ÁTOMO: elemento del catálogo (24 disponibles) que se coloca en el mundo 3D.
+  - DETECCIÓN: proceso automático que agrupa átomos por cercanía y consulta al
+    backend para resolver qué molécula forman. Solo corre en universos.
+  - DIARIO: catálogo de moléculas que el usuario ha descubierto.
+  - CLASE: sala virtual de un docente con estudiantes asignados. [NUEVO]
+  - ESCENA DE CLASE: contenido 3D vigente de una clase, versionado. [NUEVO]
+
+Modos de sesión:
+  - INVITADO (guest): juega sin cuenta. No guarda progreso en servidor, no tiene
+    diario persistente en la nube, y el tutorial se le muestra siempre.
+    NO puede entrar a clases. [NUEVO]
+  - LOGUEADO: tiene cuenta, universos, diario, estadísticas y perfil. Si su
+    cuenta es de estudiante asignado a una clase, ve la sección Clases.
+  - DOCENTE: rol nuevo. Ve la sección Clases con permisos de conducción. [NUEVO]
+
+================================================================================
+2. STACK TÉCNICO
+================================================================================
+
+  - Motor:            Unity (proyecto 3D con UI en Canvas)
+  - Lenguaje:         C#
+  - UI:               Unity UI (uGUI) + TextMeshPro (TMP)
+  - Fuente principal: Fredoka-Medium SDF
+  - Red:              UnityWebRequest (coroutines), JSON con JsonUtility
+  - Backend local:    http://127.0.0.1:8000/api  (FastAPI/uvicorn)
+  - Persistencia:     PlayerPrefs + archivos JSON locales (DeviceStorage)
+  - Plataformas:      PC (editor/standalone) y Android (probado en móvil)
+
+RESTRICCIÓN IMPORTANTE DE UI (afecta cualquier feature nueva):
+  La fuente Fredoka NO tiene fallback ni hay sprite asset de emojis en el
+  proyecto (m_FallbackFontAssetTable vacío, defaultSpriteAsset es una
+  referencia rota). Por lo tanto:
+    - NO usar emojis ni glifos especiales (⟳ ✓ ✕ → ⬆ 👆 🔗 …) dentro de texto TMP:
+      se renderizan en blanco.
+    - Los iconos deben ser Image + sprite real.
+    - Los subíndices químicos van en ASCII ("H2O", no "H₂O"). Existe el helper
+      AtomCatalog.NormalizeFormula() que convierte subíndices Unicode a ASCII.
+    - Símbolos ASCII sí funcionan (el HUD usa "II" para pausa y "X" para cerrar).
+
+  CONSECUENCIA PARA LAS CAPAS DE INFORMACIÓN [NUEVO]:
+    La capa de tipo de enlace muestra cargas parciales delta+ y delta−. Esos son
+    glifos griegos: NO se pueden escribir en TMP con Fredoka. Se resuelve con
+    sprites (Image) de delta+ y delta−, igual que el resto de iconos. Como
+    alternativa de emergencia, texto ASCII "d+" y "d-", pero el sprite es lo
+    correcto para un material que se proyecta en clase.
+    Lo mismo aplica a cualquier fórmula mostrada en la escena de clase: ASCII.
+
+BASE_URL EN LA VALIDACIÓN [NUEVO]:
+  El modo clase NO funciona contra 127.0.0.1: el día del taller los celulares de
+  los estudiantes están en la red del colegio y el backend debe estar desplegado
+  en AWS. El APK que se distribuye a los estudiantes tiene que compilarse con la
+  URL de producción. Es el error más fácil de cometer y deja la sesión inservible.
+
+================================================================================
+3. MAPA DE ESCENAS (19 actuales + 4 nuevas)
+================================================================================
+
+MENÚ Y SESIÓN
+  SampleScene .................. Menú principal (pese al nombre, es el menú real)
+  LoginScene ................... Inicio de sesión
+  GuestPromptScene ............. Aviso previo a jugar como invitado
+  PerfilScene .................. Perfil del usuario + selección de avatar
+  SettingsScene ................ Ajustes (gráficos, audio, cuenta)
+
+REGISTRO (flujo de 4 pasos)
+  RegisterEmailScene ........... Paso 1: correo
+  RegisterPasswordScene ........ Paso 2: contraseña (con validación de fuerza)
+  RegisterUsernameScene ........ Paso 3: nombre de usuario
+  CuentaCreadaScene ............ Paso 4: confirmación de cuenta creada
+
+RECUPERACIÓN DE CONTRASEÑA (flujo de 4 pasos)
+  ForgotPasswordEmailScene ..... Paso 1: pedir correo
+  ForgotPasswordCodeScene ...... Paso 2: código OTP de 6 caracteres
+  ForgotPasswordResetScene ..... Paso 3: nueva contraseña
+  ForgotPasswordSuccessScene ... Paso 4: confirmación
+
+UNIVERSOS
+  MisUniversosScene ............ Lista de universos guardados
+  CrearUniversoScene ........... Crear universo (nombre, icono, color)
+  EditarUniversoScene .......... Editar/eliminar universo
+
+JUEGO
+  ZonaJuegoScene ............... Zona de juego 3D (pantalla principal del juego)
+
+DIARIO
+  DiaryScene ................... Lista de moléculas descubiertas
+  MoleculeDetailScene .......... Ficha detallada de una molécula + visor 3D
+
+CLASES [NUEVO — POR IMPLEMENTAR]
+  MisClasesScene ............... Lista de clases (vista distinta por rol)
+  ClaseEsperaScene ............. Sala de espera del estudiante (sesión no iniciada)
+  ClaseEstudianteScene ......... Escena 3D de la clase, solo lectura
+  ClaseDocenteScene ............ Escena 3D + panel de conducción (pizarra virtual)
+
+  Decisión de diseño: son escenas NUEVAS, no un modo dentro de ZonaJuegoScene.
+  ZonaJuegoScene está ajustada a mano y su builder es destructivo (§13.1);
+  meterle un segundo modo es el camino corto a romper el HUD. Lo que sí se
+  reutiliza es el CÓDIGO de render: Atom3D, el dibujado de enlaces de
+  BondManager, OrbitCameraController, SpawnPop, Billboard y los materiales por
+  elemento. Si hace falta, extraer el dibujado de enlaces de BondManager a un
+  componente propio (p. ej. BondRenderer) para no arrastrar el ciclo de
+  detección a la clase.
+
+================================================================================
+4. FLUJO DE NAVEGACIÓN
+================================================================================
+
+                        ┌──────────────┐
+                        │  SampleScene │  (Menú principal)
+                        └──────┬───────┘
+      ┌──────────┬─────────────┼────────────┬──────────────┬─────────────┐
+      │          │             │            │              │             │
+  [Jugar]    [Diario]     [Ajustes]     [Perfil]       [Sesión]     [Clases]★
+      │          │             │            │              │             │
+      │          ▼             ▼            ▼              ▼             ▼
+      │    DiaryScene      Settings      Perfil        LoginScene   MisClasesScene
+      │          │          Scene         Scene             │             │
+      │          ▼                                          │             │
+      │  MoleculeDetailScene                                │             │
+      │                                                     │             │
+ ¿logueado?                                                 │             │
+ ├── NO ──► GuestPromptScene ──► ZonaJuegoScene             │             │
+ └── SÍ ──► MisUniversosScene                               │             │
+                │                                           │             │
+                ├── [Crear] ──► CrearUniversoScene          │             │
+                ├── [Editar] ─► EditarUniversoScene         │             │
+                └── [Jugar] ──► ZonaJuegoScene              │             │
+                                                            │             │
+  LoginScene ──┬── [Entrar] ──────► SampleScene ────────────┘             │
+               ├── [Registrarse] ─► RegisterEmailScene                    │
+               │                      → RegisterPasswordScene             │
+               │                      → RegisterUsernameScene             │
+               │                      → CuentaCreadaScene → SampleScene   │
+               └── [Olvidé mi contraseña] ─► ForgotPasswordEmailScene     │
+                                               → ForgotPasswordCodeScene  │
+                                               → ForgotPasswordResetScene │
+                                               → ForgotPasswordSuccessScene
+                                               → LoginScene
+
+  ★ CLASES [NUEVO]
+    MisClasesScene
+      · Invitado ....... aviso "inicia sesión con el código de tu docente"
+      · Sin clases ..... estado vacío; el acceso a universos sigue igual
+      · Estudiante ..... toca su clase →
+                           sesión no iniciada → ClaseEsperaScene
+                           sesión en curso    → ClaseEstudianteScene
+                         (ClaseEsperaScene pasa sola a ClaseEstudianteScene
+                          cuando el sondeo detecta que la sesión arrancó)
+      · Docente ........ [Crear clase] → modal de creación
+                         [Conducir]    → ClaseDocenteScene
+    Salir de la clase → MisClasesScene (sin confirmación: no hay cambios propios)
+    Si el docente cierra la sesión, el estudiante vuelve a ClaseEsperaScene con
+    el aviso "la clase terminó".
+
+Desde ZonaJuegoScene (menú de pausa):
+  - Reanudar, Guardar, Ajustes (→ SettingsScene), Ver tutorial, Salir
+  - Salir → MisUniversosScene (con confirmación si hay cambios sin guardar)
+  - Al descubrir molécula nueva → modal con opción "Ver diario" (→ DiaryScene)
+
+Navegación forzada:
+  - Si la sesión muere (token inválido o refresh fallido), ApiManager fuerza
+    LoadScene("LoginScene") desde cualquier pantalla.
+
+================================================================================
+5. DETALLE DE PANTALLAS
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 SampleScene — MENÚ PRINCIPAL
+--------------------------------------------------------------------------------
+Manager: MainMenu/MainMenuManager.cs
+Elementos:
+  - Botones: Jugar, Diario, Ajustes
+  - Botón "Clases" [NUEVO]: visible solo si la cuenta es docente o es un
+    estudiante con al menos una clase asignada. El invitado no lo ve.
+  - Botón de sesión (esquina inferior derecha):
+      · Invitado  → texto "Iniciar sesión" → LoginScene
+      · Logueado  → muestra avatar + nombre → PerfilScene
+  - Fondo animado: átomos flotantes (FloatingAtom), destellos (SparkleEffect),
+    animaciones de entrada (MenuAnimator), efecto de pulsación (ButtonPressEffect)
+Lógica:
+  - "Jugar" bifurca según sesión:
+      · Invitado → GuestPromptScene
+      · Logueado → MisUniversosScene
+
+--------------------------------------------------------------------------------
+5.2 LoginScene — INICIO DE SESIÓN
+--------------------------------------------------------------------------------
+Manager: Login/LoginManager.cs
+Elementos: campo correo, campo contraseña (con ojo mostrar/ocultar), botón
+           entrar, enlace "¿Olvidaste tu contraseña?", enlace a registro,
+           botón atrás.
+Lógica:
+  - POST /session/login. Al éxito guarda tokens en SessionData y va a SampleScene.
+  - "Olvidaste" limpia PasswordResetData, pre-rellena el correo escrito y navega
+    a ForgotPasswordEmailScene.
+
+INGRESO POR CÓDIGO [NUEVO]:
+  Los estudiantes de la validación son menores y no tienen correo en el sistema:
+  sus cuentas se crean por adelantado y su usuario es su código de sección y
+  orden de lista (3A-07). El campo de la pantalla debe aceptar ambas cosas.
+  Acordado con el backend (backend §20.3): /session/login no cambia. Si el
+  texto ingresado no contiene "@", el cliente lo completa con el subdominio
+  interno del proyecto (3A-07 → 3a-07@alumnos.<dominio-del-proyecto>) antes de
+  llamar a /session/login. NUNCA .local, .test ni otro dominio reservado: los
+  validadores de correo los rechazan y el login fallaría con 400. Lo que NO debe
+  pasar es pedirle a un chico de 3ro que escriba un correo largo el día del
+  taller.
+  [ABIERTO] Hoy el username no admite "-" (reglas del backend). O se permite el
+  guion o el código pasa a ser "3A_07" en todos lados (backend §20.3.a).
+  Etiqueta sugerida del campo: "Correo o código".
+
+--------------------------------------------------------------------------------
+5.3 REGISTRO (4 pasos)
+--------------------------------------------------------------------------------
+Managers: Register/RegisterEmailManager.cs, RegisterPasswordManager.cs,
+          RegisterUsernameManager.cs, CuentaCreadaManager.cs
+Datos en tránsito: Services/RegistrationData.cs (estático, entre escenas)
+
+  Paso 1 — Correo:
+    Valida formato y disponibilidad con POST /authentication/validate/email
+  Paso 2 — Contraseña:
+    Barra de fuerza + checklist de 4 requisitos (8+ caracteres, mayúscula,
+    número, símbolo). Valida contra POST /authentication/validate/password
+    con debounce (~0.8s). Campo de confirmación con indicador de coincidencia.
+  Paso 3 — Nombre de usuario:
+    Valida con POST /authentication/validate/username
+  Paso 4 — Cuenta creada:
+    Llama POST /authentication/account y muestra confirmación.
+
+  NOTA [NUEVO]: este flujo NO se usa en la validación. Las cuentas de los
+  participantes las crea el docente por adelantado (§16.6). El flujo de registro
+  se mantiene tal cual para el uso general de la app.
+
+--------------------------------------------------------------------------------
+5.4 RECUPERACIÓN DE CONTRASEÑA (4 pasos)
+--------------------------------------------------------------------------------
+Managers: ForgotPassword/ForgotPassword{Email,Code,Reset,Success}Manager.cs
+Datos en tránsito: Services/PasswordResetData.cs (Email + Code)
+
+  Paso 1 — Correo:   POST /authentication/password/reset/request
+  Paso 2 — Código:   6 casillas alfanuméricas con auto-avance, retroceso con
+                     backspace y pegado distribuido. Verifica con
+                     POST /authentication/password/reset/verify (no consume el
+                     código). Botón "Reenviar" con cooldown de 60 segundos.
+  Paso 3 — Nueva contraseña: mismo validador de fuerza que el registro.
+                     POST /authentication/password/reset
+  Paso 4 — Éxito:    Limpia PasswordResetData y SessionData (el backend revoca
+                     todas las sesiones) y vuelve a LoginScene.
+
+  NOTA [NUEVO]: las cuentas por código usan correos internos que nadie lee, así
+  que este flujo no sirve para ellas. Si un estudiante olvida su contraseña el
+  día del taller, la reemplaza el docente desde su panel.
+
+--------------------------------------------------------------------------------
+5.5 GuestPromptScene — AVISO DE INVITADO
+--------------------------------------------------------------------------------
+Manager: GuestPrompt/GuestPromptManager.cs
+Explica las limitaciones de jugar sin cuenta. Opciones: iniciar sesión o
+continuar como invitado (→ ZonaJuegoScene).
+[NUEVO] Añadir a la lista de limitaciones: "no puedes entrar a las clases de tu
+docente".
+
+--------------------------------------------------------------------------------
+5.6 MisUniversosScene — LISTA DE UNIVERSOS
+--------------------------------------------------------------------------------
+Manager: MisUniversos/MisUniversosManager.cs
+Elementos: lista de tarjetas de universo (nombre, icono, color, tiempo jugado),
+           botón crear (en lista y en estado vacío), botón atrás.
+Acciones por tarjeta: Jugar (→ ZonaJuegoScene) / Editar (→ EditarUniversoScene)
+Estado vacío: mensaje + botón de creación.
+[NUEVO] Los universos creados con "copiar a un universo nuevo" desde una clase
+aparecen aquí como cualquier otro (§16.5).
+
+--------------------------------------------------------------------------------
+5.7 CrearUniversoScene / EditarUniversoScene
+--------------------------------------------------------------------------------
+Managers: CrearUniverso/CrearUniversoManager.cs, EditarUniversoManager.cs
+Contexto de edición: Universe/UniverseEditContext.cs
+Campos: nombre del universo, selector de icono, selector de color (tema).
+Crear: añade a UniverseStore y notifica al backend con
+       PATCH /journal/{id}/created-universes
+Editar: renombrar, cambiar icono/color, y eliminar (con confirmación). Al
+       eliminar llama PATCH /journal/{id}/created-universes/decrement
+
+--------------------------------------------------------------------------------
+5.8 ZonaJuegoScene — ZONA DE JUEGO 3D  ★ PANTALLA PRINCIPAL
+--------------------------------------------------------------------------------
+Manager principal: Game/ZonaJuegoManager.cs
+Ver detalle completo en §6.
+
+--------------------------------------------------------------------------------
+5.9 DiaryScene — DIARIO DE MOLÉCULAS
+--------------------------------------------------------------------------------
+Manager: Diary/DiaryManager.cs
+Elementos: lista/grid de moléculas descubiertas con su icono (MoleculeIcon),
+           fórmula y nombre. Botón atrás.
+Estado invitado: muestra vista alternativa con botones "Iniciar sesión" y
+           "Crear cuenta" (el diario requiere cuenta).
+Estado vacío: mensaje + botón "Empezar a jugar" (→ ZonaJuegoScene).
+Datos: GET /journal/{userPublicId}
+Al tocar una molécula: guarda DiaryDetailContext y navega a MoleculeDetailScene.
+NOTA: la escena está ajustada a mano; no reconstruir destructivamente.
+
+--------------------------------------------------------------------------------
+5.10 MoleculeDetailScene — FICHA DE MOLÉCULA
+--------------------------------------------------------------------------------
+Manager: Diary/MoleculeDetailManager.cs
+Muestra:
+  - Fórmula molecular y nombre
+  - Descripción
+  - Fila de composición: chips por elemento (símbolo + cantidad)
+  - Fecha de descubrimiento
+  - Categoría
+  - Solubilidad acuosa
+  - Masa molar
+  - Visor 3D interactivo de la molécula (Diary/MoleculeViewer3D.cs)
+Contexto de entrada: Diary/DiaryDetailContext.cs
+
+--------------------------------------------------------------------------------
+5.11 PerfilScene — PERFIL
+--------------------------------------------------------------------------------
+Manager: Perfil/PerfilManager.cs
+Dos vistas internas:
+  - profileView: nombre de usuario, correo, número de moléculas descubiertas,
+                 avatar actual, botón "Cambiar avatar", cerrar sesión.
+  - avatarView:  cuadrícula de avatares seleccionables con anillo de selección,
+                 vista previa, botones Cancelar / Guardar.
+Datos: GET /users/profile/{publicId}
+Avatar: se guarda localmente (Services/AvatarStore.cs, AvatarCatalog.cs) y se
+        refleja en la cabecera de otras pantallas (Services/HeaderAvatar.cs).
+[NUEVO] Para cuentas por código, el correo interno no debe mostrarse (no aporta
+y confunde); en su lugar se muestra el código.
+
+--------------------------------------------------------------------------------
+5.12 SettingsScene — AJUSTES
+--------------------------------------------------------------------------------
+Manager: Settings/SettingsManager.cs
+Organizada en PESTAÑAS (tabButtons / tabPanels):
+  - Gráficos: calidad (botones segmentados), efectos visuales (segmentados),
+              slider de brillo.
+              Persistencia: Services/GraphicsPrefs.cs, GraphicsManager.cs
+  - Audio:    slider de música, slider de efectos.
+              Persistencia: Services/AudioPrefs.cs, AudioManager.cs
+  - Cuenta:   vista distinta según sesión.
+              · Logueado: cerrar sesión, cambiar contraseña, eliminar cuenta.
+              · Invitado: botones para iniciar sesión / registrarse.
+Cambiar contraseña: Settings/ChangePasswordController.cs
+                    PATCH /authentication/password
+Eliminar cuenta:    DELETE /users/me
+
+--------------------------------------------------------------------------------
+5.13 MisClasesScene — LISTA DE CLASES  [NUEVO]
+--------------------------------------------------------------------------------
+Manager propuesto: Clases/MisClasesManager.cs
+Vista ESTUDIANTE:
+  - Tarjetas de las clases asignadas: nombre, docente y estado
+    (sin iniciar / en curso / finalizada).
+  - Tocar una clase: si está en curso entra a ClaseEstudianteScene; si no, a
+    ClaseEsperaScene.
+  - Estado vacío: "No tienes clases asignadas" y acceso normal a universos.
+Vista DOCENTE:
+  - Tarjetas de sus clases con el número de estudiantes y el estado.
+  - Botón "Crear clase": nombre + sección + cantidad de estudiantes; al
+    confirmar, el backend genera los códigos y la pantalla muestra la lista
+    para entregarla al salón.
+  - Botón "Conducir" en la tarjeta → ClaseDocenteScene.
+Datos: GET /classes/mine
+
+--------------------------------------------------------------------------------
+5.14 ClaseEsperaScene — SALA DE ESPERA  [NUEVO]
+--------------------------------------------------------------------------------
+Manager propuesto: Clases/ClaseEsperaManager.cs
+  - Mensaje "Espera a que tu docente inicie la clase" + indicador de conexión.
+  - Sondea el estado de la clase cada 2–3 s; cuando pasa a "en curso", entra
+    solo a ClaseEstudianteScene.
+  - No muestra ninguna molécula, animación ni contenido de la lección. Esto es
+    un requisito de la validación, no una decisión estética: si el estudiante
+    pudiera ver el contenido antes del taller, el grupo con app tendría
+    exposición previa. El backend no debe entregar la escena mientras la sesión
+    no esté iniciada; la pantalla vacía sola no basta.
+  - Si el docente cierra la sesión mientras hay estudiantes dentro, vuelven aquí
+    con el aviso "la clase terminó".
+
+--------------------------------------------------------------------------------
+5.15 ClaseEstudianteScene — ESCENA DE CLASE (SOLO LECTURA)  [NUEVO]
+--------------------------------------------------------------------------------
+Manager propuesto: Clases/ClaseEstudianteManager.cs
+HUD:
+  - Barra superior: nombre de la clase, indicador de sincronización, botón salir.
+  - Sin hotbar, sin selector de átomos, sin botón de colocar: la escena no se
+    edita.
+  - Controles de cámara: los mismos gestos de la zona de juego (arrastrar para
+    rotar, d-pad para desplazar, flechas para subir/bajar).
+  - Botón "Volver a la vista del docente".
+  - Botón "Copiar a un universo nuevo" (§16.5).
+  - Tarjeta de fórmula 2D, expandible/contraíble, cuando la capa está activa.
+  - Tarjeta de predicción cuando el paso lo pide (§16.4).
+  - Indicador "Siguiendo la vista del docente" cuando la vista está fija.
+Comportamiento:
+  - Renderiza el estado que llega del backend; no corre detección (§7.6).
+  - Aislar molécula: tocar una la deja visible y atenúa las demás; tocarla otra
+    vez restablece. Es LOCAL: no viaja al servidor ni afecta a nadie más.
+  - El aislamiento se limpia cuando cambia la versión de la escena.
+  - El tutorial NO debe auto-reproducirse aquí (§6.8 lo dispara en la zona de
+    juego; la clase es otra escena y debe quedarse sin él).
+
+--------------------------------------------------------------------------------
+5.16 ClaseDocenteScene — PIZARRA VIRTUAL  [NUEVO]
+--------------------------------------------------------------------------------
+Manager propuesto: Clases/ClaseDocenteManager.cs
+La misma escena 3D que ve el estudiante, más el panel de conducción:
+  - Campo de instrucción en lenguaje natural + botón enviar.
+  - Barra de botones de acción rápida (mostrar molécula frecuente, resaltar,
+    capas, limpiar, fijar/liberar vista). Funciona sin el servicio externo.
+  - Panel de VISTA PREVIA: lista en lenguaje simple de lo que se va a aplicar,
+    con botones Confirmar y Descartar. Nada llega a los estudiantes hasta
+    confirmar.
+  - Controles de interacción: iniciar interacción del catálogo, Anterior /
+    Siguiente paso, y el número de paso actual.
+  - Contador de estudiantes conectados.
+  - Botones Iniciar sesión / Cerrar sesión de la clase.
+Mensajes de error que debe saber mostrar:
+  - "No se pudo interpretar la instrucción" + motivo (acción no soportada).
+  - "La escena no contiene ese elemento" (validación contra la escena actual).
+  - "Servicio de interpretación no disponible; usa los botones".
+
+--------------------------------------------------------------------------------
+5.17 MODAL DE CREACIÓN DE CLASE  [NUEVO]
+--------------------------------------------------------------------------------
+Dentro de MisClasesScene. Campos: nombre de la clase, sección (p. ej. "3A") y
+cantidad de estudiantes. Al confirmar, muestra la lista de códigos generados
+(3A-01 … 3A-25) con sus contraseñas iniciales, en una vista que se pueda leer
+para copiarla a papel. No se piden nombres ni correos de los estudiantes.
+
+================================================================================
+6. ZONA DE JUEGO — DETALLE
+================================================================================
+
+Manager: Game/ZonaJuegoManager.cs
+Escena ajustada a mano. Solo se extiende con herramientas de editor ADITIVAS.
+
+6.1 HUD
+  - Barra superior:
+      · Botón de pausa (icono "II" en ASCII)
+      · Etiqueta del universo + cronómetro acumulado ("Universo 1 · 0:00:00")
+      · Botón "Recentrar" (devuelve la cámara a su posición inicial)
+  - Controles de cámara:
+      · D-pad izquierdo: desplaza la vista sobre el plano
+      · Flechas verticales derechas: sube/baja la cámara
+      · Arrastrar sobre el mundo: rota la cámara (Game/DragRotateCatcher.cs)
+  - Hotbar inferior: 6 ranuras de átomos con icono, símbolo y contador
+  - Botón "Selector de átomos" (abre el catálogo)
+  - Botón contextual "Presiona para colocar átomo"
+  - Barra de estado (banner): "Detectando interacción atómica…" (azul) →
+    "¡Molécula formada!" (verde, se auto-oculta a los ~2s)
+  - Indicador discreto "detección no disponible" cuando el backend está caído
+    (se auto-oculta tras ~3s; configurable)
+
+6.2 Cámara (Game/OrbitCameraController.cs)
+  Cámara orbital con suavizado. Parámetros por defecto:
+    - Yaw inicial 35°, pitch inicial 28°, distancia inicial 16
+    - Pitch entre 5° y 80°
+    - Distancia (zoom) entre 6 y 34
+  Métodos: Rotate(), PanScreen(), Zoom(), SetZoomDistance(), MoveVertical(),
+           Recenter()
+  [NUEVO] La escena de clase reutiliza este controlador. "Volver a la vista del
+  docente" y la vista fija se implementan fijando yaw/pitch/distancia desde el
+  estado de la clase; SetZoomDistance(), que hoy está sin uso, sirve aquí.
+
+6.3 Selector de átomos (Game/AtomSelectorController.cs)
+  - Modal con cuadrícula de los 24 elementos disponibles
+  - Buscador por símbolo, nombre o número atómico
+  - Filtros: Todos / Metales / Gases / No metales / Metaloides
+  - Al tocar un átomo: aparece un popup con "Nombre - Fórmula" durante unos
+    segundos, y el átomo queda asignado a una ranura del hotbar
+
+6.4 Colocación de átomos (Game/AtomPlacementController.cs)
+  - Al elegir una ranura aparece una PREVISUALIZACIÓN (fantasma) en el centro
+  - Se mueve con las flechas y se confirma con "Presiona para colocar átomo"
+  - Guías visuales de colocación: Game/PlacementGuides.cs, GuideMaterials.cs
+  - Detección de colisión: modal de aviso si el punto está ocupado
+  - Átomo colocado: Game/Atom3D.cs, con animación de aparición (SpawnPop.cs)
+  - Al tocar un átomo ya colocado: se selecciona y se puede mover o eliminar
+  [NUEVO] Nada de esto existe en la escena de clase.
+
+6.5 Catálogo de átomos (Game/AtomCatalog.cs)
+  24 elementos disponibles:
+    C, H, O, N, S, Cl, F, P, Na, Br, I, Si, K, Ca, Zn, Al, Li, Sn, Fe, Co, Cu,
+    B, Cr, Mn
+  Cada AtomInfo tiene: símbolo, nombre en español, número atómico, banderas
+  (metal / no metal / gas / metaloide / diatómico) y color.
+  Propiedades derivadas:
+    - Formula   → añade "2" si es diatómico (normalizado a ASCII)
+    - PopupText → "Nombre - Fórmula"
+  [NUEVO] La capa de electronegatividad NO usa una tabla del cliente: el valor
+  llega por átomo en el estado de la escena (campo `en`, §11.5). Una sola
+  fuente, en el backend, que también genera las imágenes de la hoja impresa.
+
+6.6 Menú de pausa
+  Opciones: Reanudar universo, Guardar, Ajustes (→ SettingsScene),
+            Ver tutorial, Salir al menú de universos.
+  - El cronómetro se detiene mientras la pausa (o el tutorial) está abierta
+  - "Guardar" persiste el universo y muestra un toast "Guardado"
+  - "Salir" pide confirmación si hay cambios sin guardar
+  - Al guardar se envía el tiempo jugado: PATCH /journal/{id}/time-played
+
+6.7 Modal de descubrimiento
+  Cuando el backend marca isNewDiscovery, se muestra un modal de
+  "¡Nuevo descubrimiento!" con la fórmula y el nombre, sonido de fanfarria,
+  y botones Continuar / Ver diario.
+
+6.8 Tutorial (Game/TutorialManager.cs)
+  - Modal de bienvenida + 7 pasos informativos con título, texto y una pista
+    con icono (sprite real, no emoji)
+  - Pasos: (1) Barra de átomos, (2) Colocar átomos, (3) Mover y mirar,
+    (4) Editar átomos, (5) Crear moléculas, (6) Detección en línea,
+    (7) Diario y pausa
+  - Navegación: Atrás / Siguiente / X, con puntos de progreso
+  - Auto-reproducción:
+      · LOGUEADO: solo la PRIMERA vez por cuenta
+        (PlayerPrefs "chemitech_tutorial_seen_{userId}")
+      · INVITADO: SIEMPRE que entra
+  - Se puede repetir desde el menú de pausa ("Ver tutorial")
+  - Mientras está abierto, el cronómetro se pausa
+
+6.9 Ambientación
+  Game/ZoneEnvironment.cs, ZoneEffects.cs, ProceduralTextures.cs — plataforma,
+  postes, materiales y efectos del espacio de juego. El tema visual (color)
+  viene del universo (Universe/UniverseTheme.cs).
+  [NUEVO] La escena de clase usa la misma ambientación con un tema neutro; no
+  hereda color de ningún universo.
+
+================================================================================
+7. SISTEMA DE DETECCIÓN DE MOLÉCULAS  ★ NÚCLEO EDUCATIVO
+================================================================================
+
+Manager: Game/BondManager.cs
+
+PRINCIPIO CLAVE: la app NO decide los enlaces. Solo agrupa átomos por cercanía
+para separar candidatos y envía cada grupo al backend con bonds vacío. El
+backend resuelve la química real y devuelve los enlaces con su orden
+(simple/doble/triple), que la app dibuja.
+
+7.1 Ciclo de detección
+  1. Cada frame se calcula un "hash" de la estructura (posiciones + elementos)
+  2. Si cambió, se reinicia un debounce (detectDelay ≈ 0.45s)
+  3. Cuando la estructura se estabiliza, se agrupan los átomos por distancia
+     (clusterDistance ≈ 2.0) → cada grupo es un candidato
+  4. Por cada candidato se hace POST /detection/molecule con:
+       { atoms: [{id, element, x, y, z}], bonds: [] }
+     (ids locales 0..n-1, mapeados a los Atom3D reales)
+  5. La respuesta trae isValid, bonds (lo que se dibuja, SIEMPRE) y, si es
+     válida, molecule{...} con fórmula y propiedades  [CAMBIADO, §11.3]
+  6. Se dibujan los enlaces de `bonds` AUNQUE isValid sea false (molécula a
+     medias); el banner solo si isValid es true Y la firma CAMBIÓ
+
+7.2 Dibujado de enlaces
+  - Cada enlace se dibuja como N cilindros paralelos según su orden
+    (1 = simple, 2 = doble, 3 = triple); separación ≈ 0.20
+  - Enlaces BICOLOR: cada mitad lleva el color de su átomo, como en un visor
+    molecular estándar
+  - Se reutiliza un material por elemento para no disparar el número de
+    materiales en moléculas grandes
+  [NUEVO] La capa "tipo de enlace" pinta el enlace por su carácter iónico o
+  covalente, lo que choca con el bicolor por átomo. Regla: con la capa activa,
+  el color del tipo de enlace MANDA sobre el bicolor; al desactivarla, vuelve el
+  bicolor. Y como los materiales se reutilizan por elemento, la capa necesita su
+  propio juego de materiales para no teñir de paso los átomos.
+
+7.3 Banner y anti-repetición
+  - Antes de cada detección se guarda una "firma" de los enlaces ya dibujados
+  - El banner "¡Molécula formada!" solo aparece si la firma CAMBIÓ. Reconfirmar
+    una molécula existente (p. ej. al colocar un átomo suelto aparte, o al
+    recargar el universo) NO vuelve a mostrar el banner.
+
+7.4 Modo offline / servicio caído
+  - Error de red, timeout o 5xx → se marca el servicio como NO DISPONIBLE
+  - Cualquier respuesta del servidor (válida o no) → se marca DISPONIBLE
+  - Mientras está caído, reintenta automáticamente cada ~5s (offlineRetryInterval)
+    sin requerir interacción del usuario
+  - El aviso "detección no disponible" solo se muestra si además HAY una
+    estructura que detectar, y se auto-oculta tras ~3s (offlineIndicatorDuration)
+  - Colocar, mover y borrar átomos SIEMPRE funciona aunque el servicio esté caído
+  - Las peticiones tienen timeout de 10s para evitar conexiones colgadas
+    (especialmente importante en móvil)
+  [NUEVO] El sondeo de la clase sigue el mismo patrón: reintento automático,
+  indicador que se auto-oculta y timeout de 10s. La diferencia es que en clase,
+  sin conexión, no hay nada que hacer: se mantiene en pantalla la última escena
+  recibida y se avisa que no está sincronizada.
+
+7.5 Comportamiento conocido a revisar  [PENDIENTE]
+  - Con CO2 el backend devuelve correctamente 3 enlaces.
+  - Con H2O el backend devuelve isValid=true y fórmula "H2O", pero con
+    bonds: [] (vacío), por lo que no se dibuja ningún enlace. El SMILES que
+    devuelve es "[H+].[OH-]" (especies iónicas separadas). Parece un problema
+    del BACKEND al generar enlaces en estructuras iónicas, no del cliente.
+  - Pruebas sugeridas para acotar: O2, N2, Cl2, H2, CO, NH3, CH4, H2S, NaCl.
+  [NUEVO] NO BLOQUEA LA CLASE (corregido tras leer el backend, §9.5 de su
+  documento). El bug está en la inferencia de enlaces a partir de la geometría
+  que coloca el alumno. La escena de clase nunca pasa por ahí: se arma desde
+  SMILES del catálogo (el mismo camino de /by-smiles, que sí devuelve el agua
+  con sus dos enlaces O-H) o desde guiones con posiciones escritas a mano, y el
+  NaCl sale de un fragmento de red prearmado. Sí afecta a los universos, y
+  ensucia el diario: el agua queda guardada como "[H+].[OH-]".
+
+7.6 La clase NO usa detección  [NUEVO]
+  En la escena de clase el cliente no agrupa átomos ni llama a
+  /detection/molecule. Recibe la escena ya resuelta (átomos, enlaces y orden) y
+  solo la dibuja. Por eso conviene que el estado de la clase entregue las
+  moléculas con la MISMA forma que structure { atoms[], bonds[] } de
+  JournalMolecule (§11.2): así se reutiliza el dibujado tal cual.
+
+================================================================================
+8. BACKEND / API
+================================================================================
+
+Base URL (desarrollo local): http://127.0.0.1:8000/api
+Definida en: Assets/Scripts/Services/ApiManager.cs (constante BASE_URL)
+
+Para probar en MÓVIL físico:
+  - Cambiar BASE_URL a la IP LAN del PC, p. ej. http://192.168.x.x:8000/api
+  - Arrancar el backend escuchando en todas las interfaces:
+      python -m uvicorn app.app:app --reload --host 0.0.0.0
+  - PC y móvil en la misma red WiFi, y el firewall debe permitir el puerto 8000
+Para la VALIDACIÓN: URL de producción (AWS). Ver §2.
+
+8.1 Endpoints consumidos por la app
+  AUTENTICACIÓN Y VALIDACIÓN
+    POST   /authentication/validate/email
+    POST   /authentication/validate/password
+    POST   /authentication/validate/username
+    POST   /authentication/account ................ crear cuenta
+    PATCH  /authentication/password ............... cambiar contraseña (Bearer)
+    POST   /authentication/password/reset/request . pedir código
+    POST   /authentication/password/reset/verify .. verificar código
+    POST   /authentication/password/reset ......... aplicar nueva contraseña
+
+  SESIÓN
+    POST   /session/login
+    POST   /session/logout
+    POST   /session/refresh ....................... refrescar access token
+
+  USUARIO
+    GET    /users/profile/{publicId} .............. perfil (Bearer, owner)
+    DELETE /users/me .............................. eliminar cuenta (Bearer)
+
+  DIARIO Y ESTADÍSTICAS  (todos Bearer + owner)
+    GET    /journal/{userPublicId}
+    PATCH  /journal/{userPublicId}/time-played
+    PATCH  /journal/{userPublicId}/created-universes
+    PATCH  /journal/{userPublicId}/created-universes/decrement
+
+  DETECCIÓN
+    POST   /detection/molecule .................... invitado o logueado
+
+8.2 Endpoints de CLASES  [NUEVO — PROPUESTA, a confirmar con el backend]
+    POST   /classes ............................... crear clase (docente)
+    GET    /classes/mine .......................... clases del usuario
+    POST   /classes/{id}/students ................. generar N cuentas por código
+    POST   /classes/{id}/start .................... iniciar sesión de clase
+    POST   /classes/{id}/stop ..................... cerrar sesión de clase
+    GET    /classes/{id}/state?since={version} .... estado de la escena
+    POST   /classes/{id}/commands/interpret ....... texto → acciones (NO aplica)
+    POST   /classes/{id}/commands/apply ........... aplica acciones confirmadas
+    POST   /classes/{id}/predictions .............. respuesta del estudiante
+    GET    /classes/{id}/roster ................... conectados (docente)
+
+  Notas de contrato:
+    - /state con `since` devuelve el estado completo si la versión cambió, y una
+      respuesta mínima si no. Nunca devuelve "diferencias": el cliente siempre
+      dibuja estado completo, que es lo que hace funcionar al que entra tarde.
+    - /interpret y /apply están separados a propósito: la vista previa exige que
+      interpretar no tenga efecto.
+    - /apply valida contra la escena actual y aplica TODAS las acciones o
+      NINGUNA.
+    - Ningún endpoint de clase entrega contenido si la sesión no está iniciada.
+
+8.3 Métodos públicos de ApiManager
+  CreateAccount, Login, Logout, ValidateEmail, ValidatePassword,
+  ValidateUsername, GetProfile, DeleteAccount, ChangePassword,
+  RequestPasswordReset, VerifyPasswordResetCode, ResetPassword,
+  GetJournal, AddTimePlayed, AddCreatedUniverse, DecrementCreatedUniverse,
+  DetectMolecule
+  [NUEVO] Por agregar: CreateClass, GetMyClasses, CreateClassStudents,
+  StartClass, StopClass, GetClassState, InterpretCommand, ApplyCommand,
+  SendPrediction, GetClassRoster.
+
+================================================================================
+9. AUTENTICACIÓN
+================================================================================
+
+Modelo: access token (Bearer, ~30 min) + refresh token (deslizante, un solo uso).
+
+9.1 Envío
+  Todos los endpoints protegidos envían:  Authorization: Bearer <accessToken>
+  (Ya NO se usan los antiguos headers public_id / user_public_id.)
+
+9.2 Refresh automático con reintento
+  - SendAuthed() envuelve toda petición autenticada.
+  - Ante 401 ERR_TOKEN_EXPIRED: llama a POST /session/refresh, actualiza los
+    tokens y REINTENTA la petición una vez, de forma transparente.
+  - El refresh es SINGLE-FLIGHT: si varias peticiones caducan a la vez, solo se
+    hace un refresh y las demás esperan su resultado (el refresh token es de un
+    solo uso).
+  [NUEVO] El sondeo de clase es una petición autenticada cada 2–3 s durante una
+  hora: pasa por SendAuthed como todo lo demás. Verificar que un refresh a mitad
+  de clase no corte el sondeo ni expulse al estudiante.
+  [NUEVO] UN 429 NO ES SESIÓN MUERTA. La mañana del taller, 25 celulares con el
+  access token vencido refrescan a la vez desde la misma IP del colegio. Si el
+  refresh responde 429, esperar y reintentar; nunca mandar a LoginScene por
+  eso. Hoy §9.3 trata cualquier fallo del refresh como sesión muerta: hay que
+  distinguir 429 (y errores de red) de ERR_TOKEN_INVALID / ERR_TOKEN_REVOKED.
+  [NUEVO] El 429 ya trae la forma de todo error: {"detail": "ERR_RATE_LIMITED"}
+  (antes slowapi mandaba {"error": "Rate limit exceeded..."}, con otra clave, y
+  el cliente leía "detail" vacío). Distinguirlo por el código de estado 429 o
+  por ERR_RATE_LIMITED; las dos cosas sirven.
+
+9.3 Sesión muerta
+  - Ante ERR_TOKEN_INVALID / ERR_TOKEN_MISSING, o si el refresh falla:
+    se limpia SessionData y se navega a LoginScene (una sola vez, con guarda).
+  - 403 ERR_NOT_RESOURCE_OWNER solo se registra en log (indica bug de cliente).
+
+9.4 Invitado vs logueado en detección
+  - INVITADO: sin token y sin userPublicId en el cuerpo
+  - LOGUEADO: con Bearer y con userPublicId (que debe coincidir con el del token)
+  - Los errores de conexión (código 0 o 5xx) los trata BondManager como "offline"
+
+9.5 Persistencia de sesión
+  Services/SessionData.cs guarda en PlayerPrefs:
+    chemitech_session_userid / username / email / access / refresh /
+    tokentype / expires
+  IsLoggedIn = hay accessToken no vacío.
+  [NUEVO] Añadir el rol (estudiante / docente) para decidir qué vista mostrar
+  en Clases. El rol lo manda el backend en el login o en el perfil; el cliente
+  no lo infiere ni lo guarda como verdad propia: la autorización real la aplica
+  el servidor.
+
+================================================================================
+10. PERSISTENCIA LOCAL
+================================================================================
+
+  Services/DeviceStorage.cs ..... lectura/escritura de archivos JSON locales
+  Universe/UniverseStore.cs ..... CRUD de universos (Load, Save, Add, Update,
+                                  Remove) con detección de archivo corrupto
+  Services/SessionData.cs ....... tokens y datos de sesión (PlayerPrefs)
+  Services/AvatarStore.cs ....... avatar elegido por el usuario
+  Services/AccountPrefs.cs ...... preferencias por cuenta
+  Services/GraphicsPrefs.cs ..... calidad, efectos, brillo
+  Services/AudioPrefs.cs ........ volúmenes de música y efectos
+  PlayerPrefs "chemitech_tutorial_seen_{userId}" ... tutorial visto por cuenta
+
+  [NUEVO] La clase NO se persiste localmente: su estado vive en el servidor y es
+  efímero. Lo único que queda en el dispositivo es el universo que el estudiante
+  cree con "copiar a un universo nuevo".
+
+================================================================================
+11. MODELO DE DATOS
+================================================================================
+
+11.1 Universo (Universe/UniverseData.cs)
+  UniverseData:
+    id (string), name (string), iconIndex (int), colorIndex (int),
+    createdAtTicks (long), playSeconds (long),
+    atoms: List<AtomSave> { element, x, y, z },
+    bonds: List<BondSave> { a, b, order }
+  UniverseCollection: List<UniverseData>
+
+  Los bonds se guardan para NO volver a "descubrir" lo ya descubierto al
+  recargar el universo.
+
+11.2 Diario (Diary/JournalModels.cs)
+  JournalEntry:
+    canonicalSmiles, molecularFormula, isKnown, rediscoveryCount,
+    firstDiscoveredAt, lastDiscoveredAt, molecule
+  JournalMolecule:
+    canonicalSmiles, molecularFormula, inchikey, name (null en moléculas
+    exóticas), iupacName, description, category, isKnown, molarMass,
+    polarity, logP, aqueousSolubility, aqueousSolubilityLogS,
+    composition[] { element, count },
+    structure { atoms[], bonds[] }
+
+11.3 Respuesta de detección (ApiManager.DetectResponse)  [CAMBIADO]
+  message, isValid, invalidityReason,
+  bonds[] { beginAtomId, endAtomId, order },   <- NUEVO, primer nivel, SIEMPRE
+  molecule {
+    name, canonicalSmiles, molecularFormula, inchikey,
+    bonds[] { beginAtomId, endAtomId, order },
+    molarMass, polarity, logP, aqueousSolubility, aqueousSolubilityLogS,
+    isKnown, isNewDiscovery
+  }
+
+  [NUEVO] `bonds` de primer nivel = LO QUE SE DIBUJA, sea válida o no.
+    - Válida: los enlaces reales con su orden (igual que molecule.bonds).
+    - Inválida: lo que el alumno ya conectó, todo simple. Con la molécula a
+      medias el orden no está definido (dos C serán simple con 6 H, doble con
+      4, triple con 2): el orden real aparece al completarla.
+    - Nada unido (un átomo suelto): lista vacía.
+  Por qué: el alumno arma la molécula átomo por átomo y casi todos los pasos
+  intermedios son incompletos. Con isValid=false el cliente descartaba el
+  resultado entero, así que dos carbonos juntos no mostraban NADA (backend
+  §9.6). molecule.bonds se mantiene, para no romper nada.
+
+  Motivos de una inválida, para el aviso al alumno:
+    ERR_INVALID_VALENCE        todo quedó unido, pero a algún átomo le faltan o
+                               sobran enlaces (C–C sin H, CH3)
+    ERR_UNRESOLVED_STRUCTURE   hay un átomo que no encaja en ningún lado (un
+                               quinto H alrededor de un C)
+
+11.4 Contextos estáticos entre escenas
+  Game/PlayContext.cs ............... universo actualmente en juego
+  Universe/UniverseEditContext.cs ... universo que se está editando
+  Diary/DiaryDetailContext.cs ....... molécula a mostrar en el detalle
+  Services/RegistrationData.cs ...... datos del registro en curso
+  Services/PasswordResetData.cs ..... correo + código de recuperación
+  [NUEVO] Clases/ClassContext.cs .... clase y rol con que se entró a la escena
+
+11.5 Estado de la clase  [CAMBIADO: contrato apto para JsonUtility]
+  Es lo que el cliente recibe en cada sondeo y lo único que necesita para
+  dibujar. Contrato acordado con el backend (backend §20.5). La forma de átomos
+  y enlaces es LA MISMA que structure de /by-smiles, que el cliente ya dibuja;
+  lo propio de la clase se agrega encima.
+
+  El contrato está EN CÓDIGO en el backend
+  (app/classroom/router/dto/response/class_state_response.py) y un script lo
+  verifica contra las reglas de JsonUtility. Las clases C# se calcan de ahí,
+  campo por campo.
+
+  Por qué cambió: la forma anterior no se podía leer con JsonUtility.
+    - interaction / prediction / reveal eran "objeto o null": JsonUtility nunca
+      deja null un objeto, crea uno vacío, así que "!= null" era siempre cierto.
+    - negativeEnd y atomId podían venir null en un int: JsonUtility lee 0, y el
+      átomo 0 existe. El δ− o la anotación caían en el átomo 0.
+    - primitives iba a traer 4 formas distintas: JsonUtility no admite
+      polimorfismo y pierde los campos de las demás.
+    - "Sin cambios" traía solo {message, version}: sin mirar message, el
+      cliente leía "cero moléculas" y borraba la escena en cada sondeo.
+
+  ClassState (NINGÚN campo es opcional; NINGUNO viene null):
+    message (string) ............. OK_STATE_FOUND | OK_STATE_UNCHANGED
+    changed (bool) ............... false -> no redibujar, el resto es relleno
+    version (int) ................ sube 1 en cada cambio confirmado
+    status (string) .............. "waiting" | "running" | "ended"
+    molecules[] .................. { id, name, formula (ASCII), canonicalSmiles,
+                                     offset { x, y, z },
+                                     atoms[] { type, position { x, y, z },
+                                               en, charge },
+                                     bonds[] { beginAtomId, endAtomId, order,
+                                               kind, negativeEnd } }
+    attractions[] ................ { fromMoleculeId, fromAtomId,
+                                     toMoleculeId, toAtomId }
+    hasInteraction (bool)
+    interaction .................. { id, step, totalSteps, caption,
+                                     primitives[] }   (siempre presente)
+    hasPrediction (bool)
+    prediction ................... { id, question, options[] { id, text } }
+                                                      (siempre presente)
+    hasReveal (bool)
+    reveal ....................... { predictionId, correctOptionId }
+                                                      (siempre presente)
+    highlights[] ................. { moleculeId, atomIds[], bondIds[] }
+    overlays ..................... { labels, electronegativity, bondTypes,
+                                     structure2d } (bool cada uno)
+    annotations[] ................ { text, moleculeId, atomId }
+    camera ....................... { locked, yaw, pitch, distance }
+
+  StepPrimitive: UNA sola clase plana para las cuatro primitivas (§16.3)
+    { kind, fromMoleculeId, fromAtomId, toMoleculeId, toAtomId, order,
+      durationMs }
+      kind       usa                           significa
+      move       fromMoleculeId, fromAtomId    el átomo (o la molécula entera si
+                                               fromAtomId = -1) va a su posición
+                                               del ESTADO FINAL
+      transfer   from*, to*                    el electrón viaja de un átomo al
+                                               otro; al llegar se ven las cargas
+                                               del estado final
+      bond       from*, to*, order             el enlace queda con ese orden;
+                                               order = 0 lo quita
+      attract    from*, to*                    línea punteada que pulsa
+    from* y to* llevan molécula Y átomo: el transfer Na -> Cl y el attract H···O
+    entre dos aguas van de una molécula a OTRA. Por eso no alcanza un solo
+    moleculeId, como en la primera propuesta.
+    Sin coordenadas: el destino de un move es la posición del estado final. Si
+    la primitiva trajera x, y, z podría contradecir al estado.
+
+  ORDEN DE LECTURA (obligatorio):
+    1. changed == false     -> no redibujar nada.
+    2. status != "running"  -> pantalla de espera o de fin; el resto viene
+                               vacío a propósito.
+    3. running              -> dibujar; interaction, prediction y reveal SOLO si
+                               su has* es true. Nunca preguntar "== null".
+
+  Centinelas ("no aplica"), nunca null:
+    negativeEnd  -1   enlace no polar o iónico
+    atomId       -1   anotación anclada a la molécula entera
+    fromAtomId   -1   move de la molécula entera
+    moleculeId   ""   anotación anclada a la escena
+    charge 0 es neutro: es un dato real, no un "no aplica".
+
+  Notas:
+    - `type` del átomo es el elemento (como en /by-smiles). El tipo de ENLACE se
+      llama `kind` ("nonpolar" | "polar" | "ionic") para no confundirlos. Lo
+      calcula el BACKEND: la regla química vive en un solo sitio y coincide con
+      la hoja impresa del grupo de comparación.
+    - `negativeEnd` es el índice del átomo que lleva delta− en los enlaces
+      polares; -1 en los demás.
+    - `charge` y `attractions` son ESTADO, no animación: quien entra tarde tiene
+      que ver los iones y el puente de hidrógeno sin haber visto el transfer ni
+      el attract (regla de §16.3: cada paso define su estado final).
+    - Posiciones: cada molécula viene normalizada a [0,1] y centrada en 0.5,
+      como en /by-smiles; `offset` la ubica en la escena. Una sola escala de
+      mundo para toda la escena.
+    - La respuesta correcta de una predicción NO viene en `prediction`: llega en
+      `reveal` cuando el docente avanza.
+    - Sondeo: GET .../state?since={version}. Sin cambios y sin iniciar traen la
+      MISMA forma, vacía, con changed / status para distinguirlas.
+    - `formula` viaja SIEMPRE en ASCII (§2).
+    - La imagen 2D no viaja en el JSON: llega como URL y se descarga con
+      UnityWebRequestTexture a un RawImage, con caché por molécula.
+
+  Vista previa y aplicación de comandos (docente):
+    - /interpret devuelve { preview[] (frases), actionsJson (string), baseVersion,
+      reason }. El cliente muestra preview y NO parsea actionsJson: lo reenvía
+      a /apply tal cual. Las acciones son polimórficas (8 tipos, selectores de
+      4 formas); leerlas con JsonUtility perdería campos y se aplicaría algo
+      distinto de lo que el docente confirmó.
+    - /apply recibe { actionsJson, baseVersion, source, promptText }. Desde los
+      botones, actionsJson se escribe A MANO (p. ej. [{"action":"clear"}]):
+      JsonUtility.ToJson mandaría todos los campos con su valor por defecto, y
+      un "view" que solo enfoca viajaría con locked=false.
+
+11.6 Respuesta de predicción  [NUEVO]
+  PredictionAnswer: { classId, predictionId, optionId }
+  El servidor añade el código del estudiante desde el token; el cliente nunca lo
+  manda. Es dato descriptivo de la tesis, no puntaje: no se muestra ranking, ni
+  aciertos acumulados, ni comparación entre estudiantes.
+
+================================================================================
+12. SISTEMAS TRANSVERSALES
+================================================================================
+
+  AUDIO
+    Services/AudioManager.cs ....... reproductor central (música y SFX)
+    Services/ProceduralAudio.cs .... generación de sonidos por código
+    Services/UiClickSfx.cs ......... sonido de clic en botones
+    Services/UiSfxRole.cs .......... rol sonoro por tipo de botón
+    Sonidos destacados: clic UI, aparición de átomo, molécula formada,
+    fanfarria de descubrimiento nuevo.
+    [NUEVO] En clase, el audio va MUTEADO por defecto: 25 celulares sonando a
+    destiempo en un aula es ruido, y el docente necesita que lo escuchen a él.
+
+  GRÁFICOS
+    Services/GraphicsManager.cs .... aplica calidad, efectos y brillo
+    Game/ProceduralTextures.cs ..... texturas generadas por código
+
+  AVATAR
+    Services/AvatarCatalog.cs ...... catálogo de avatares disponibles
+    Services/AvatarStore.cs ........ avatar seleccionado (persistente)
+    Services/HeaderAvatar.cs ....... muestra el avatar en las cabeceras.
+                                     Convención: avatar de la cuenta si está
+                                     logueado; genérico solo para invitados.
+
+  ENTRADA MÓVIL
+    Services/MobileInputSettings.cs
+    Game/HoldButton.cs ............. botón que repite acción mientras se mantiene
+    Game/Billboard.cs .............. elementos 3D que miran siempre a la cámara
+    [NUEVO] Billboard sirve para las etiquetas de la capa de símbolos y para las
+    anotaciones ancladas a un átomo.
+
+================================================================================
+13. CONVENCIONES DE DESARROLLO (IMPORTANTE)
+================================================================================
+
+13.1 Builders de editor ADITIVOS
+  Las pantallas se construyen con herramientas de editor bajo el menú
+  "ChemiTech/...". Regla: NUNCA usar builders destructivos que recreen la
+  escena desde cero. Los builders deben ser idempotentes (buscar-o-crear).
+
+  Escenas AJUSTADAS A MANO — no reconstruir destructivamente:
+    - ZonaJuegoScene (su builder original BORRA el HUD)
+    - DiaryScene
+
+  Herramientas aditivas existentes para ZonaJuegoScene:
+    ChemiTech → Add → Tutorial (ZonaJuego) ...... TutorialTool.cs
+    ChemiTech → Add → Detection Indicator ....... DetectionIndicatorTool.cs
+    ChemiTech → Add → Discovery Modal ........... DiscoveryModalTool.cs
+    ChemiTech → Fix → Icon Glyphs (ZonaJuego) ... IconGlyphFixTool.cs
+
+  Otros builders: LoginSceneBuilder, MainMenuBuilder, RegisterEmailBuilder,
+  RegisterPasswordBuilder, RegisterUsernameBuilder, CuentaCreadaBuilder,
+  ForgotPassword{Email,Code,Reset,Success}Builder (+ ForgotPasswordUI compartido),
+  MisUniversosBuilder, CrearUniversoBuilder, EditarUniversoBuilder,
+  DiaryBuilder, MoleculeDetailBuilder, PerfilBuilder, SettingsBuilder,
+  GuestPromptBuilder.
+
+  [NUEVO] Builders por crear: MisClasesBuilder, ClaseEsperaBuilder,
+  ClaseEstudianteBuilder, ClaseDocenteBuilder. Como son escenas nuevas, sus
+  builders pueden ser completos, pero igual deben ser idempotentes desde el
+  primer día: van a ejecutarse muchas veces durante el ajuste fino. El botón
+  "Clases" de SampleScene se agrega con una herramienta ADITIVA
+  (ChemiTech → Add → Clases Button), no reconstruyendo el menú.
+
+13.2 Patrón de pantalla
+  Cada pantalla = Builder (editor, crea y cablea la UI) + Manager (runtime,
+  lógica) + Scene. El cableado de referencias se hace con SerializedObject
+  desde el builder, no arrastrando a mano en el inspector.
+
+13.3 Texto e iconos
+  Ver la restricción de fuente en §2. Resumen: iconos = Image + sprite;
+  nada de emojis ni glifos especiales en TMP; subíndices en ASCII. Esto incluye
+  delta+ / delta− de la capa de tipo de enlace: sprites, no texto.
+
+================================================================================
+14. ESTADO ACTUAL Y PENDIENTES CONOCIDOS
+================================================================================
+
+FUNCIONANDO
+  - Flujo completo de registro, login y recuperación de contraseña
+  - Autenticación con Bearer + refresh automático + expulsión al login
+  - Creación, edición, borrado y guardado de universos
+  - Colocación, movimiento y borrado de átomos en 3D
+  - Detección de moléculas contra el backend, con dibujado de enlaces
+  - Modo offline con reintento automático
+  - Diario y ficha de molécula con visor 3D
+  - Tutorial informativo de 7 pasos con reproducción por cuenta
+  - Ajustes de gráficos, audio y cuenta
+  - Perfil con selección de avatar
+
+PENDIENTE / A REVISAR
+  - [BACKEND][BLOQUEANTE] El límite de 10 peticiones por minuto POR IP deja a
+    un salón entero (una sola IP detrás del wifi del colegio) sin sondeo, sin
+    refresh y sin login. Se cambia a límites por usuario (backend §7.4, §20.8).
+  - [BACKEND] H2O devuelve bonds vacío en universos (§7.5). No afecta la clase.
+  - Al probar en móvil hay que revertir BASE_URL a 127.0.0.1 al terminar.
+  - Se retiró un slider de zoom experimental en la zona de juego (el control
+    competía con el gesto de rotar cámara). El método
+    OrbitCameraController.SetZoomDistance() quedó disponible pero sin uso; la
+    escena de clase sí lo va a usar.
+
+POR CONSTRUIR [NUEVO] — ver §17 para el orden
+  - Modo clase completo (4 escenas, sondeo, capas, animaciones, predicción)
+  - Ingreso por código en LoginScene
+  - Botón "Clases" en el menú principal
+  - Copiar la escena de la clase a un universo nuevo
+
+================================================================================
+15. OE4 — LA VALIDACIÓN (YA DEFINIDA)
+================================================================================
+
+Esta sección estaba [POR COMPLETAR]. Queda cerrada así, y la redacción
+definitiva es la de docs/contexto-proyecto.txt.
+
+ACLARACIÓN DE LA AMBIGÜEDAD DETECTADA
+  El enunciado que recibió Claude Code decía en una línea "facilitar la
+  comprensión" y en otra "validar que la aplicación facilite el interés". Fue un
+  lapsus al escribir. Lo correcto, aprobado por el asesor, es COMPRENSIÓN. El
+  interés quedó explícitamente FUERA del proyecto: no se mide, no se menciona y
+  no se usa como justificación de ninguna característica.
+
+OE4 vigente
+  "Validar que la aplicación facilite la comprensión de las interacciones
+   atómicas en estudiantes de 3er año de secundaria de un colegio de Chorrillos,
+   mediante pruebas pretest y postest en secciones con y sin la aplicación,
+   resultando en una ganancia al menos 25% mayor."
+
+QUÉ SE ENTIENDE POR COMPRENSIÓN
+  Aprendizaje conceptual inmediato sobre: por qué se unen los átomos y quién
+  atrae más los electrones, enlace iónico, enlace covalente, forma 3D y
+  polaridad, puentes de hidrógeno y disolución.
+
+RESPUESTAS A LAS PREGUNTAS ABIERTAS DEL DOCUMENTO ORIGINAL
+  [x] Dónde viven las pruebas: FUERA de la app, en papel, para los dos grupos.
+      Se evaluó hacerlas dentro y se descartó: si un grupo rinde en pantalla y
+      el otro en papel, el medio del test se vuelve otra variable y ensucia la
+      comparación. NO se implementan pantallas de test.
+  [x] Si se bloquea el acceso al juego hasta completar el pretest: no aplica.
+  [x] Qué datos registra la app para la tesis: código de estudiante, sección,
+      marcas de tiempo de inicio y cierre de sesión, comandos ejecutados por el
+      docente y respuestas de predicción. Son datos DESCRIPTIVOS: no forman
+      parte del cálculo del resultado, que sale de los tests en papel.
+  [x] Qué NO registra: nombres, apellidos, correos reales, teléfonos, contactos,
+      ubicación, fotos ni identificadores del dispositivo.
+  [x] Métricas de apoyo (tiempo jugado, moléculas descubiertas, tutorial): NO
+      alimentan la validación. Sirven, como mucho, de evidencia de que la
+      herramienta se usó.
+  [x] Identificación de participantes: seudonimización por código (3A-07). El
+      colegio es el único que conserva la correspondencia.
+  [x] Ética: carta al colegio, consentimiento de padres y asentimiento del
+      estudiante. Participación voluntaria; los tests no afectan notas.
+
+CÓMO ES EL DÍA DEL TALLER (lo que la app tiene que aguantar)
+  Una sesión de 60 minutos por sección, en la hora de tutoría:
+     0–5   entrega de códigos
+     5–17  pretest en papel
+    17–37  lección de 20 minutos EXACTOS
+    37–49  postest en papel
+    49–60  cierre
+  Durante los 20 minutos de lección, en la sección con app: un docente
+  conduciendo desde su dispositivo y ~25 celulares sondeando cada 2–3 s sobre la
+  red del colegio o un hotspot. La app instalada el día anterior, con la sección
+  de Clases VACÍA hasta que el docente inicia la sesión.
+
+  La otra sección recibe la misma lección con pizarra y una hoja impresa que
+  lleva las mismas fórmulas 2D y las mismas preguntas de predicción. Por eso las
+  imágenes 2D de la app y las de la hoja deben salir de la misma fuente.
+
+================================================================================
+16. MODO CLASE — PIZARRA VIRTUAL  [NUEVO]
+================================================================================
+
+16.1 Vocabulario cerrado de acciones
+  El docente escribe en sus palabras. El backend traduce ese texto, con un modelo
+  de lenguaje externo, a una lista de acciones de un vocabulario CERRADO:
+
+    show        colocar 1–3 moléculas en la escena
+    interaction reproducir una interacción del catálogo, paso a paso
+    highlight   resaltar átomos o enlaces
+    overlay     activar o desactivar capas de información
+    view        enfocar o fijar la cámara de todos
+    annotate    texto anclado en la escena
+    clear       limpiar la escena
+    unsupported no hay acción posible; devuelve el motivo
+
+  Reglas de comportamiento:
+    - El modelo TRADUCE, nunca ejecuta. Todo pasa por validación en el backend.
+    - El docente ve una vista previa en lenguaje simple y CONFIRMA.
+    - Si alguna acción de la lista no se puede aplicar, no se aplica ninguna.
+    - Los botones de acción rápida hacen lo mismo sin pasar por el modelo.
+    - El cliente NO habla con ningún proveedor de IA: solo con nuestro backend.
+
+16.2 Capas de información (overlay)
+    labels ............ símbolo del elemento sobre cada átomo (Billboard)
+    electronegativity . el número junto a cada átomo
+    bondTypes ......... color del enlace por su tipo + sprites delta+/delta−
+    structure2d ....... tarjeta con la fórmula estructural en 2D (imagen del
+                        backend; la misma que va en la hoja impresa)
+  Varias capas pueden estar activas a la vez. Ninguna modifica la molécula ni
+  las posiciones. El estudiante puede expandir o contraer la tarjeta 2D en su
+  dispositivo sin afectar a nadie.
+
+16.3 Animaciones: cuatro primitivas, no una animación por interacción
+  El frontend implementa CUATRO primitivas y las compone. Cada interacción es un
+  guion JSON que vive en el backend, así que agregar una interacción nueva no
+  toca Unity:
+
+    move ....... un átomo o molécula se desplaza de A a B en t segundos
+    transfer ... una esfera pequeña (el electrón) viaja de un átomo a otro; al
+                 llegar, ambos cambian a iones (etiqueta +/− y color)
+    bond ....... aparece o desaparece un enlace entre dos átomos
+    attract .... línea punteada que pulsa entre dos átomos
+    (caption es un campo opcional de cualquier paso, no una primitiva)
+  [CAMBIADO] En el JSON las cuatro viajan con UNA sola forma plana (StepPrimitive,
+  campo kind), porque JsonUtility no admite polimorfismo. Campos y centinelas
+  en §11.5.
+
+  REGLA CLAVE: cada paso define su ESTADO FINAL, y la animación es solo la
+  transición hacia él. Así, quien entra tarde o cuando el docente salta de paso,
+  dibuja el estado directo sin reproducir lo anterior.
+
+  Los electrones son utilería visual escrita en el guion, no datos del modelo
+  químico: el cliente no sabe nada de electrones y no tiene por qué saberlo.
+
+  Catálogo inicial (4 guiones): enlace iónico (NaCl), enlace covalente (H2),
+  puente de hidrógeno (dos aguas), disolución (NaCl en agua).
+
+  Sincronización: el estado lleva { interaction: id, step }. El docente avanza y
+  retrocede; cada celular reproduce ese paso localmente. No se sincronizan
+  fotogramas.
+
+16.4 Predicción antes de revelar
+  Antes de cada animación, el paso trae una pregunta con 3 opciones. El
+  estudiante elige en su celular; al avanzar el docente, ve la animación y una
+  línea con su elección y si era correcta. Si no respondió, la tarjeta se cierra
+  sin registrar nada y la animación corre igual.
+
+  IMPORTANTE, Y NO ES UN DETALLE DE UI: la sección sin aplicación recibe la
+  MISMA pregunta en su hoja impresa, antes de que el expositor dibuje el
+  resultado. Si solo el grupo con app predijera, la diferencia entre grupos se
+  explicaría por la pedagogía y no por el medio, y la validación entera se cae.
+
+16.5 Copiar a un universo nuevo
+  Botón en la escena de clase del estudiante. Crea SIEMPRE un universo nuevo
+  (no se pregunta a cuál), con la regla de nombres por defecto que ya usa el
+  frontend, copiando los átomos y enlaces tal como están en ese momento.
+  Reutiliza el camino existente: UniverseStore.Add + PATCH
+  /journal/{id}/created-universes, igual que CrearUniversoScene.
+  La copia es independiente: si el docente cambia la escena después, el universo
+  copiado no cambia. Con la escena vacía, avisa que no hay nada que copiar y no
+  crea nada.
+
+16.6 Cuentas y roles
+  Las cuentas de la validación se crean por adelantado, sin correos reales ni
+  nombres. El usuario del estudiante es su código de sección y orden de lista
+  (3A-07). El docente las genera desde su panel y entrega la lista al salón.
+  El estudiante entra con su código; ve solo su clase; no puede crear clases.
+
+16.7 Puntos con el backend
+  RESUELTOS (ver backend §20)
+  [x] Login por código: el cliente completa el correo interno; /session/login
+      no cambia (§5.2).
+  [x] Electronegatividad: viaja por átomo en la escena (`en`); el cliente no
+      guarda tabla.
+  [x] Imagen 2D: PNG en GET /molecules/structure-2d?smiles=, con caché HTTP.
+  [x] Contraseña inicial: legible, formato Palabra-1234; el docente la
+      reemplaza desde su panel.
+  [x] Roster: por sondeo reciente, en memoria del servidor.
+  ABIERTOS
+  [ ] Guion en el código ("3A-07") o guion bajo ("3A_07") (backend §20.3.a).
+  [ ] Subdominio real para los correos internos.
+  [ ] Intervalo de sondeo definitivo (2 o 3 s) y comportamiento con la app en
+      segundo plano.
+
+================================================================================
+17. PLAN DE IMPLEMENTACIÓN  [NUEVO]
+================================================================================
+
+Historias del Product Backlog: US036–US045, en dos épicas ("7. Clases" y
+"8. Pizarra virtual"), sprints 7 y 8. Orden sugerido, de lo que sostiene todo lo
+demás hacia lo prescindible:
+
+  FASE 0 — Desbloquear
+    - Backend: límites de peticiones por usuario en vez de por IP (backend §7.4).
+      Sin eso, un salón detrás de un solo wifi se bloquea a sí mismo.
+    - Cliente: distinguir 429 de sesión muerta en el refresh (§9.2).
+    - Extraer el dibujado de enlaces de BondManager a un componente reutilizable.
+
+  FASE 1 — Esqueleto de clases (US036, US037, US038)
+    - Rol en SessionData, botón "Clases", MisClasesScene, creación de clase con
+      códigos, ingreso por código, sala de espera, iniciar y cerrar sesión.
+    - Criterio de listo: un docente crea una clase, un estudiante entra con su
+      código y ve la sala de espera; al iniciar, ambos pasan a la escena.
+
+  FASE 2 — Escena compartida (US039, US040)
+    - Estado de clase versionado, sondeo, render de la escena, panel del
+      docente con botones de acción rápida, vista previa y confirmación.
+    - Criterio de listo: el docente pone agua y en 25 celulares aparece agua;
+      uno que entra tarde ve lo mismo.
+
+  FASE 3 — Lo que hace la clase comprensible (US041, US042)
+    - Exploración local (rotar, acercar, aislar, volver a la vista del docente),
+      vista fija, capas de información y tarjeta 2D.
+
+  FASE 4 — Interacciones (US043, US044)
+    - Las cuatro primitivas, los cuatro guiones, avance y retroceso por paso,
+      predicción con retroalimentación.
+
+  FASE 5 — Cierre (US045)
+    - Copiar a un universo nuevo.
+    - Ensayo completo de los 20 minutos con dos celulares y el guion en la mano.
+
+  ANTES DEL TALLER (checklist operativo)
+    [ ] APK compilado con la URL de producción, no 127.0.0.1
+    [ ] Backend desplegado y probado desde una red distinta a la de casa
+    [ ] Clases y códigos creados por adelantado
+    [ ] Verificado que la clase no muestra contenido antes de iniciar la sesión
+    [ ] Probado con el número real de dispositivos, o al menos 10
+    [ ] Plan B: la barra de botones funciona sin el servicio de interpretación
+    [ ] Hotspots de los celulares del equipo por si falla el WiFi del colegio
+
+================================================================================
+18. DECISIONES CERRADAS DEL MODO CLASE  [NUEVO]
+================================================================================
+No volver a proponerlas; cada una se evaluó y se descartó por una razón:
+
+  - Los tests van en PAPEL, fuera de la app, para ambos grupos.
+  - La escena de la clase es de SOLO LECTURA para el estudiante.
+  - "Copiar a un universo nuevo" crea siempre uno nuevo; no se pregunta a cuál.
+  - Sondeo (polling), no WebSockets.
+  - Sin acciones dirigidas a un estudiante concreto y sin cuestionarios dentro
+    de la app en esta versión.
+  - Sin gamificación: ni puntos, ni logros, ni ranking de predicciones.
+  - Sin chatbot: el intérprete traduce a un vocabulario cerrado y nada más.
+  - Sin realidad aumentada ni virtual.
+  - El GNN de solubilidad no participa en los comandos del docente.
+  - La lección dura 20 minutos exactos en ambos grupos.
+  - Nada en la app habla de "interés", "motivación" ni "vocación científica".
+
+================================================================================
+FIN DEL DOCUMENTO
+================================================================================

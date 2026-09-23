@@ -68,6 +68,7 @@ public class LoginManager : MonoBehaviour
             onSuccess: resp =>
             {
                 SessionData.SetTokens(resp.accessToken, resp.refreshToken, resp.tokenType, resp.expiresIn);
+                SessionData.SetRole(resp.role);
                 string userId = !string.IsNullOrEmpty(resp.userId) ? resp.userId : resp.userPublicId;
                 SessionData.SetSession(userId, "", email);
                 Debug.Log($"[Login] sesión iniciada · userId='{userId}'");
@@ -86,7 +87,11 @@ public class LoginManager : MonoBehaviour
         switch (detail)
         {
             case "ERR_INVALID_CREDENTIALS":
-                return "Correo o contraseña incorrectos.";
+                return "Correo o código incorrecto, o contraseña incorrecta.";
+            // 5 intentos por minuto por cuenta. Sin este mensaje, un alumno que se
+            // equivocó varias veces creería que su código está mal.
+            case "ERR_RATE_LIMITED":
+                return "Demasiados intentos. Espera un minuto y vuelve a intentar.";
             default:
                 return "No se pudo iniciar sesión. Intenta de nuevo.";
         }

@@ -1,0 +1,308 @@
+================================================================================
+CONTRATO DEL MODO CLASE — FASE 1  (para el cliente de Unity)
+ChemiTech backend · 2026-09-22 · IMPLEMENTADO Y PROBADO, no es una propuesta
+================================================================================
+
+Este archivo es autocontenido: se puede leer sin tener el resto de la
+documentacion. Reemplaza al §8.2 "PROPUESTA" de CONTEXTO_APLICACION.txt.
+
+Las formas de JSON de aqui abajo estan VOLCADAS DE LOS MODELOS REALES del
+backend, no escritas a mano: son exactamente lo que responde el servidor.
+Verificado ademas por dos pruebas:
+  python -m app.common.test.jsonutility_contract   (30 respuestas, sin hallazgos)
+  python -m app.classroom.test.access_control      (69 checks, BD real)
+
+
+================================================================================
+0. LO MINIMO QUE HAY QUE SABER
+================================================================================
+
+  - Todas las rutas de clase exigen  Authorization: Bearer <accessToken>.
+  - {id} en las URLs = el publicId de la clase (UUID). El id interno no existe
+    para el cliente.
+  - JSON camelCase. NINGUN campo sale null y NINGUNO falta: JsonUtility puede
+    leer cualquier respuesta sin comprobaciones.
+  - La clave del objeto de la clase es "classroom", NO "class": `class` es
+    palabra reservada en C# y no se puede declarar un campo con ese nombre.
+  - Errores: siempre { "detail": "ERR_..." }  (tambien el 429).
+  - El rol NO es un permiso: sirve para elegir pantalla. Cada endpoint vuelve a
+    comprobar en el servidor quien es quien.
+
+
+================================================================================
+1. EL ROL, Y EL LOGIN POR CODIGO
+================================================================================
+
+1.1 ROL
+  Campo "role", valores exactos: "teacher" | "student".
+  Viaja en /session/login, en /session/refresh y en /classes/mine.
+  NO esta en el perfil.
+  Va tambien en el refresh a proposito: una app que arranca con un refresh token
+  guardado recupera el rol sin volver a pedir credenciales, y si a alguien lo
+  hacen docente despues, el cambio llega en la siguiente renovacion.
+
+POST /session/login   {email, password}
+{
+  "message": "OK_LOGIN_SUCCESS",
+  "userId": "1958d770-e804-45d5-b050-82d315304e87",
+  "accessToken": "eyJhbGciOi...",
+  "refreshToken": "8f2c...",
+  "tokenType": "bearer",
+  "expiresIn": 1800,
+  "role": "student"
+}
+
+POST /session/refresh   {refreshToken}
+{
+  "message": "OK_TOKEN_REFRESHED",
+  "accessToken": "eyJhbGciOi...",
+  "tokenType": "bearer",
+  "expiresIn": 1800,
+  "role": "student"
+}
+
+1.2 LOGIN POR CODIGO  (lo resuelve el BACKEND)
+  El codigo del alumno es "3A_07": seccion + GUION BAJO + numero de lista de 2
+  cifras. Con guion bajo, no con guion "-" (el validador de username no lo
+  admite). Igual en la app, en el backend y en el papel que recibe el alumno.
+
+  El campo del login se manda TAL CUAL lo que escribio el alumno:
+      {"email": "3A_07", "password": "Luna-4827"}
+  Si el texto no trae "@", el servidor lo completa con el dominio interno. Dan
+  igual las mayusculas y los espacios alrededor: "3a_07", " 3A_07 ".
+
+  DOS REGLAS PARA EL CLIENTE
+    - NO validar formato de correo cuando el texto no tiene "@". "3A_07" no es
+      un correo y el backend lo acepta asi. Si se valida, el alumno no entra.
+    - NO completar el dominio en el cliente. El dominio vive en un solo lugar
+      (la configuracion del backend) y puede cambiar. Si el cliente ya lo
+      completa, sigue funcionando, pero es un segundo lugar que mantener.
+  Etiqueta sugerida del campo: "Correo o codigo".
+
+  "¿Olvidaste tu contraseña?" NO sirve para estas cuentas: el backend nunca
+  manda correo a una cuenta por codigo (responde el mismo mensaje generico de
+  siempre y no envia nada). Al alumno le repone la contraseña el docente.
+
+  Errores: los de siempre. 401 ERR_INVALID_CREDENTIALS si el codigo o la
+  contraseña no coinciden (no dice cual de los dos). El login esta limitado a
+  5 intentos por minuto POR CUENTA: si el alumno se equivoca 5 veces, el 6º
+  intento es 429 ERR_RATE_LIMITED; esperar, no es sesion muerta.
+
+
+================================================================================
+2. ENDPOINTS DE LA FASE 1
+================================================================================
+
+  DOCENTE (ademas, dueño de esa clase)
+    POST   /classes                                  crear clase + cuentas
+    POST   /classes/{id}/students                    agregar N cuentas
+    POST   /classes/{id}/students/{code}/password    reponer una contraseña
+    POST   /classes/{id}/start                       iniciar
+    POST   /classes/{id}/stop                        terminar
+  DOCENTE DUEÑO O ALUMNO MIEMBRO
+    GET    /classes/mine                             las clases del que pregunta
+    GET    /classes/{id}/state?since={version}       el sondeo
+
+  Fases siguientes (todavia NO existen): /commands/interpret, /commands/apply,
+  /predictions, /roster, /molecules/structure-2d.
+
+
+--------------------------------------------------------------------------------
+2.1 POST /classes        {name, section, studentCount}  -> 201
+--------------------------------------------------------------------------------
+Crea la clase Y las cuentas de los alumnos en UNA llamada. Todo o nada: si un
+codigo ya existe, no se crea ni la clase ni ninguna cuenta.
+
+{
+  "message": "OK_CLASS_CREATED",
+  "classroom": {
+    "publicId": "7f3a1c9e-2b40-4d51-9a6f-0c8d5e1b2a34",
+    "name": "Química 3A",
+    "section": "3A",
+    "status": "waiting",
+    "studentCount": 25
+  },
+  "students": [
+    { "code": "3A_01", "password": "Luna-4827" },
+    { "code": "3A_02", "password": "Cobre-1903" }
+  ]
+}
+
+REGLAS DEL FORMULARIO (el backend las vuelve a validar y responde el codigo)
+  name          1 a 60 caracteres          ERR_CLASS_NAME_REQUIRED
+                                           ERR_CLASS_NAME_TOO_LONG
+  section       2 a 10 letras o numeros,   ERR_SECTION_INVALID
+                sin "-" ni espacios; el backend la guarda en MAYUSCULAS
+  studentCount  1 a 50 en esta llamada     ERR_STUDENT_COUNT_INVALID
+                (99 como maximo por clase)
+
+>>> LAS CONTRASEÑAS SALEN UNA SOLA VEZ, aqui. El backend solo guarda el hash y
+    no puede volver a mostrarlas. La pantalla tiene que dejarlas ver y copiar
+    comodamente (el docente las pasa a papel) y avisar antes de cerrarse. Si se
+    pierden, la unica salida es reponerlas alumno por alumno (2.3).
+
+409 ERR_CLASS_CODES_TAKEN: esa seccion ya tiene cuentas creadas en OTRA clase.
+    Los codigos son unicos en todo el sistema. Mensaje sugerido: "Esa seccion ya
+    tiene cuentas creadas; usa otra (por ejemplo 3A2)". No se creo nada.
+
+
+--------------------------------------------------------------------------------
+2.2 POST /classes/{id}/students        {count}  -> 201
+--------------------------------------------------------------------------------
+Para el que llega tarde. Continua la numeracion (3A_26, 3A_27...) y responde con
+LA MISMA forma de 2.1: "students" trae SOLO las cuentas nuevas, y "classroom"
+trae el studentCount ya actualizado. message = "OK_STUDENTS_CREATED".
+409 ERR_CLASS_FULL si se pasaria de 99 alumnos.
+
+
+--------------------------------------------------------------------------------
+2.3 POST /classes/{id}/students/{code}/password    (sin cuerpo)  -> 200
+--------------------------------------------------------------------------------
+El alumno olvido su contraseña en plena clase. {code} es su codigo ("3A_07").
+
+{
+  "message": "OK_PASSWORD_REPLACED",
+  "student": { "code": "3A_07", "password": "Rio-0412" }
+}
+
+Cierra las sesiones abiertas de ese alumno: tiene que volver a entrar con la
+nueva. 404 ERR_STUDENT_NOT_FOUND si el codigo no es de esa clase.
+
+
+--------------------------------------------------------------------------------
+2.4 POST /classes/{id}/start   y   /stop    (sin cuerpo)  -> 200
+--------------------------------------------------------------------------------
+{
+  "message": "OK_CLASS_STARTED",     (o "OK_CLASS_STOPPED")
+  "status": "running",               waiting | running | ended
+  "version": 1
+}
+
+El estado SOLO avanza:  waiting -> running -> ended.
+  - Repetir start (o stop) NO es error: responde 200 y la version no sube. Un
+    doble toque o un reintento por red no tiene por que asustar al docente.
+  - 409 ERR_CLASS_ALREADY_ENDED: iniciar una clase ya terminada. No se puede
+    reabrir.
+  - 409 ERR_CLASS_NOT_RUNNING: terminar una clase que nunca empezo.
+
+>>> TERMINAR ES DEFINITIVO. Pedir confirmacion antes de llamar a /stop.
+
+
+--------------------------------------------------------------------------------
+2.5 GET /classes/mine  -> 200
+--------------------------------------------------------------------------------
+UNA sola forma para los dos roles (no hay respuesta distinta por rol: eso seria
+polimorfismo y JsonUtility no lo soporta).
+
+{
+  "message": "OK_CLASSES_FOUND",
+  "role": "student",
+  "classes": [
+    {
+      "publicId": "7f3a1c9e-2b40-4d51-9a6f-0c8d5e1b2a34",
+      "name": "Química 3A",
+      "section": "3A",
+      "status": "running",
+      "studentCount": 25,
+      "teacherName": "profe_quimica",
+      "code": "3A_07"
+    }
+  ]
+}
+
+  role "teacher" -> las clases que creo; "code" viene vacio ("").
+  role "student" -> las clases donde es miembro; "code" es SU codigo.
+  Una cuenta normal de la app (ni docente ni alumno de ninguna clase) responde
+  role "student" con "classes": []  -> estado vacio de la pantalla.
+  Orden: la mas reciente primero.
+
+
+--------------------------------------------------------------------------------
+2.6 GET /classes/{id}/state?since={version}  -> 200
+--------------------------------------------------------------------------------
+El sondeo de la sala de espera (y, en la Fase 2, de la escena).
+
+  since = la ultima version que recibiste. Si es la misma que tiene el servidor:
+          message "OK_STATE_UNCHANGED" y "changed": false.
+          Si cambio (o no mandas since): "OK_STATE_FOUND" y "changed": true.
+  since ausente, vacio o no numerico = -1: siempre estado completo. Un since
+  roto NUNCA da 400: el alumno no se puede quedar sin pantalla por eso.
+
+ORDEN DE LECTURA (obligatorio)
+  1. changed == false      -> no redibujar nada; el resto del cuerpo es relleno.
+  2. status != "running"   -> sala de espera o pantalla de fin.
+  3. status == "running"   -> dibujar (Fase 2).
+
+EN LA FASE 1 NO VIENE CONTENIDO NUNCA, en ningun status: la escena llega en la
+Fase 2. Pero la FORMA ya es la definitiva, asi que las clases de C# se pueden
+escribir hoy y no cambian:
+
+{
+  "message": "OK_STATE_FOUND",
+  "changed": true,
+  "version": 1,
+  "status": "running",
+  "molecules": [],
+  "attractions": [],
+  "hasInteraction": false,
+  "interaction": { "id": "", "step": 0, "totalSteps": 0, "caption": "",
+                   "primitives": [] },
+  "hasPrediction": false,
+  "prediction": { "id": "", "question": "", "options": [] },
+  "hasReveal": false,
+  "reveal": { "predictionId": "", "correctOptionId": "" },
+  "highlights": [],
+  "overlays": { "labels": false, "electronegativity": false,
+                "bondTypes": false, "structure2D": false },
+  "annotations": [],
+  "camera": { "locked": false, "yaw": 35.0, "pitch": 28.0, "distance": 16.0 }
+}
+
+  OJO con "structure2D": la D va en MAYUSCULA en el JSON (el generador de
+  camelCase la pone despues del digito). Algunos documentos viejos escriben
+  "structure2d"; manda esto. JsonUtility exige el nombre exacto, y si no
+  coincide lee false sin avisar.
+
+  Limite: 60 sondeos por minuto POR ALUMNO. Sondear cada 2-3 s son 20-30, sobra
+  margen para reintentos. Es la MISMA URL para todo el salon y aun asi cada
+  alumno tiene su propio contador: 25 celulares detras del wifi del colegio no
+  se bloquean entre ellos (probado).
+
+
+================================================================================
+3. ERRORES DE CLASE
+================================================================================
+
+  401 ERR_TOKEN_MISSING / ERR_TOKEN_INVALID / ERR_TOKEN_EXPIRED
+      Lo de siempre: ERR_TOKEN_EXPIRED se renueva y se reintenta.
+  403 ERR_NOT_TEACHER ......... la cuenta no es docente
+  403 ERR_NOT_CLASS_OWNER ..... es docente, pero esa clase es de otro
+  403 ERR_NOT_CLASS_MEMBER .... el alumno no esta en esa clase (el docente
+                                dueño SI puede leer el estado de su clase)
+  404 ERR_CLASS_NOT_FOUND ..... no existe esa clase
+  404 ERR_STUDENT_NOT_FOUND ... ese codigo no es de esa clase
+  409 ERR_CLASS_CODES_TAKEN / ERR_CLASS_FULL /
+      ERR_CLASS_ALREADY_ENDED / ERR_CLASS_NOT_RUNNING
+  400 ERR_CLASS_NAME_REQUIRED / ERR_CLASS_NAME_TOO_LONG /
+      ERR_SECTION_INVALID / ERR_STUDENT_COUNT_INVALID
+  400 INVALID_UUID ............ el {id} no tiene forma de UUID.
+      OJO: este codigo NO lleva el prefijo ERR_ (es anterior a la convencion y
+      lo comparten rutas que el cliente ya usa). Distinguirlo por el estado 400.
+  429 ERR_RATE_LIMITED
+
+  NINGUN 403 de clase es sesion muerta. La sesion es valida; lo que falta es
+  permiso para ESA clase. Mostrar el aviso y volver a la lista de clases, NO
+  mandar al login.
+
+
+================================================================================
+4. LO QUE EL SERVIDOR GARANTIZA (y no hay que reimplementar en el cliente)
+================================================================================
+
+  - Sin contenido antes de iniciar: con la clase en "waiting" (o "ended"), el
+    estado llega vacio SIEMPRE, decidido en el servidor. La pantalla vacia del
+    cliente no era suficiente para la validacion; esto si.
+  - El rol y los permisos salen del token y de la base, nunca de lo que diga el
+    cliente. Mandar el publicId de otra clase no sirve de nada.
+  - Los codigos son unicos en todo el sistema y la creacion es atomica.
+  - Al reponer una contraseña, las sesiones abiertas de ese alumno se revocan.
