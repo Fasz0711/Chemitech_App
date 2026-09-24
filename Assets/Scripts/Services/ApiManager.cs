@@ -317,6 +317,40 @@ public class ApiManager : MonoBehaviour
             onError));
     }
 
+    /// <summary>El docente conduce la escena. 'actionsJson' es un string OPACO: se manda
+    /// tal cual y el cliente nunca lo parsea (el vocabulario es polimórfico y JsonUtility
+    /// perdería campos en silencio).
+    ///
+    /// La respuesta es un estado COMPLETO, igual que el sondeo: hay que pintarlo al
+    /// instante y guardar SU versión. Si se espera al siguiente sondeo para actualizarla,
+    /// dos botones seguidos chocan con 409 contra la acción anterior del propio docente.</summary>
+    public void ApplyCommand(string classId, string actionsJson, int baseVersion,
+                             Action<ClassStateResponse> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new ApplyCommandRequest
+        {
+            actionsJson = actionsJson,
+            baseVersion = baseVersion,
+            source      = "button",   // "prompt" llega con el intérprete (Fase 3)
+            promptText  = "",
+        });
+        Debug.Log($"[API] POST {BASE_URL}/classes/{classId}/commands/apply - {actionsJson}");
+
+        StartCoroutine(PostAuthed($"/classes/{classId}/commands/apply", body,
+            json => onSuccess?.Invoke(JsonUtility.FromJson<ClassStateResponse>(json)),
+            onError));
+    }
+
+    /// <summary>Quién está conectado. La presencia vive en memoria del servidor: si el
+    /// backend reinicia, se reconstruye sola en un par de sondeos.</summary>
+    public void GetClassRoster(string classId,
+                               Action<RosterResponse> onSuccess, Action<int, string> onError)
+    {
+        StartCoroutine(GetAuthed($"/classes/{classId}/roster",
+            json => onSuccess?.Invoke(JsonUtility.FromJson<RosterResponse>(json)),
+            onError));
+    }
+
     // ── Core HTTP ─────────────────────────────────────────────────────────────
 
     // Variante que entrega el campo "message" ya parseado.
@@ -610,6 +644,13 @@ public class ApiManager : MonoBehaviour
     [Serializable] class LogoutRequest     { public string refreshToken; }
     [Serializable] class CreateClassRequest { public string name; public string section; public int studentCount; }
     [Serializable] class AddStudentsRequest { public int count; }
+    [Serializable] class ApplyCommandRequest
+    {
+        public string actionsJson;   // JSON dentro de un string; JsonUtility lo escapa solo
+        public int    baseVersion;
+        public string source;
+        public string promptText;
+    }
     [Serializable] class RefreshRequest    { public string refreshToken; }
     [Serializable] class ChangePasswordRequest { public string currentPassword; public string newPassword; }
     [Serializable] class ResetVerifyRequest     { public string email; public string code; }

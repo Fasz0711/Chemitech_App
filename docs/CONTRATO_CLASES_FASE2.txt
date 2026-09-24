@@ -1,0 +1,303 @@
+================================================================================
+CONTRATO DEL MODO CLASE — FASE 2: LA ESCENA COMPARTIDA  (para el cliente Unity)
+ChemiTech backend · 2026-09-23 · IMPLEMENTADO Y PROBADO
+================================================================================
+
+Autocontenido: se puede leer sin el resto de la documentación. Continúa
+CONTRATO_CLASES_FASE1.txt (clases, cuentas por código, login, start/stop), que
+sigue vigente sin cambios.
+
+Los JSON de aquí abajo están VOLCADOS DEL SERVIDOR REAL, no escritos a mano.
+Verificado por: app.classroom.test.classroom_flows (76 checks, motor puro),
+app.classroom.test.scene_chemistry (41, química), app.classroom.test.
+access_control (99, por HTTP contra la base real) y scripts.simulate_class
+(ensayo con 25 alumnos sondeando).
+
+LO NUEVO DE ESTA FASE, EN UNA LÍNEA CADA UNO
+  - GET  /classes/{id}/state          ahora trae CONTENIDO cuando la clase corre
+  - POST /classes/{id}/commands/apply el docente conduce la escena (botones)
+  - GET  /classes/{id}/roster         quién está conectado
+  - dos campos nuevos en la escena: "scale" por molécula y el foco de cámara
+
+
+================================================================================
+1. CÓMO SE DIBUJA UNA ESCENA  (lo más importante de este documento)
+================================================================================
+
+Cada molécula viaja con sus posiciones NORMALIZADAS a [0,1] —igual que
+structure de /by-smiles, así reutilizas tu dibujado— más dos datos para
+colocarla en el mundo:
+
+    scale    su tamaño REAL en ångströms
+    offset   dónde va su centro, también en ångströms
+
+El cliente reconstruye:
+
+    posiciónEnAngstroms = (posición - 0.5) * scale + offset
+    posiciónEnMundo     = posiciónEnAngstroms * escalaDeMundo
+
+donde escalaDeMundo es UNA sola para toda la escena (la eliges tú para que
+entre en pantalla). Todo lo que viaja está en la misma unidad.
+
+  POR QUÉ: sin "scale", un fragmento de red de NaCl y una molécula de agua
+  ocuparían el mismo volumen en pantalla. Es químicamente falso, justo en la
+  lección sobre estructura, y proyectado para 25 alumnos. Con los valores
+  reales, la sal se ve 3.7 veces más grande que el agua (5.64 Å contra 1.53 Å).
+
+  DOS TRAMPAS, las dos por cómo lee JsonUtility:
+   1. "scale" NUNCA es 0 ni falta. Si tu clase de C# no declara el campo, lo
+      leerá como 0 y la molécula entera COLAPSA A UN PUNTO. Agrégalo.
+   2. EL RADIO DE LAS ESFERAS NO SE MULTIPLICA POR "scale". El scale corrige
+      POSICIONES; el tamaño de un átomo es una constante por elemento. Si
+      escalas también las esferas, los átomos de la molécula grande se ven más
+      gordos: otra mentira, y más difícil de notar.
+
+  Los ids de molécula ("m1", "m2") LOS PONE EL SERVIDOR y son estables mientras
+  la molécula siga en escena. El resto del estado los referencia.
+
+
+================================================================================
+2. LA FORMA COMPLETA DEL ESTADO
+================================================================================
+
+GET /classes/{id}/state?since={version}     (docente dueño o alumno miembro)
+
+Mismo sobre que en la Fase 1 (message, changed, version, status, y los bloques
+has*), pero ahora "molecules" y "highlights" pueden traer contenido. Ejemplo
+REAL de una escena con agua + sal y los oxígenos resaltados:
+
+{
+  "message": "OK_STATE_FOUND",
+  "changed": true,
+  "version": 4,
+  "status": "running",
+  "molecules": [
+    {
+      "id": "m1",
+      "name": "Agua",
+      "formula": "H2O",
+      "canonicalSmiles": "O",
+      "scale": 1.5266622209638339,
+      "offset": { "x": -3.57, "y": 0.0, "z": 0.0 },
+      "atoms": [
+        { "type": "O", "position": {"x": 0.5074, "y": 0.7001, "z": 0.5}, "en": 3.44, "charge": 0 },
+        { "type": "H", "position": {"x": 0.0,    "y": 0.3188, "z": 0.5}, "en": 2.2,  "charge": 0 },
+        { "type": "H", "position": {"x": 1.0,    "y": 0.2999, "z": 0.5}, "en": 2.2,  "charge": 0 }
+      ],
+      "bonds": [
+        { "beginAtomId": 0, "endAtomId": 1, "order": 1, "kind": "polar", "negativeEnd": 0 },
+        { "beginAtomId": 0, "endAtomId": 2, "order": 1, "kind": "polar", "negativeEnd": 0 }
+      ]
+    },
+    {
+      "id": "m2",
+      "name": "Cloruro de sodio",
+      "formula": "ClNa",
+      "canonicalSmiles": "[Cl-].[Na+]",
+      "scale": 5.64,
+      "offset": { "x": 1.5133, "y": 0.0, "z": 0.0 },
+      "atoms": [ 27 iones: "Na" con charge 1 y "Cl" con charge -1, alternados ],
+      "bonds": [ 54 aristas, todas con kind "ionic" y negativeEnd -1 ]
+    }
+  ],
+  "attractions": [],
+  "hasInteraction": false,
+  "interaction": { "id": "", "step": 0, "totalSteps": 0, "caption": "", "primitives": [] },
+  "hasPrediction": false,
+  "prediction": { "id": "", "question": "", "options": [] },
+  "hasReveal": false,
+  "reveal": { "predictionId": "", "correctOptionId": "" },
+  "highlights": [ { "moleculeId": "m1", "atomIds": [0], "bondIds": [] } ],
+  "overlays": { "labels": false, "electronegativity": false,
+                "bondTypes": false, "structure2D": false },
+  "annotations": [],
+  "camera": { "locked": false, "yaw": 35.0, "pitch": 28.0, "distance": 16.0,
+              "focusMoleculeId": "", "focusAtomId": -1 }
+}
+
+QUÉ SIGNIFICA CADA COSA NUEVA
+  atoms[].en        electronegatividad de Pauling. Es el dato de la capa de
+                    electronegatividad (Fase 4); ya viaja para que cuando la
+                    enciendas no tengas que esperar otra versión del backend.
+  atoms[].charge    carga: +1 en el Na, -1 en el Cl, 0 = neutro (dato real, sin
+                    centinela).
+  bonds[].kind      "nonpolar" | "polar" | "ionic".
+  bonds[].negativeEnd  índice DEL ÁTOMO que lleva δ−, dentro de ESA molécula.
+                    -1 si el enlace no es polar. Nunca null: con null,
+                    JsonUtility leería 0 y pondría el δ− en el átomo 0.
+  highlights[]      moleculeId + atomIds (índices en atoms de esa molécula) +
+                    bondIds (índices en bonds). Lista vacía = nada resaltado.
+  annotations[]     text + moleculeId ("" = anclada a la escena) + atomId
+                    (-1 = a la molécula entera).
+  camera.focus*     a qué mira la cámara cuando el docente enfoca algo. Puedes
+                    IGNORARLO por ahora; viaja desde ya para no cambiar el
+                    contrato en la Fase 3.
+
+ORDEN DE LECTURA (obligatorio, no cambió)
+  1. changed == false      -> no redibujes nada; el resto del cuerpo es relleno.
+  2. status != "running"   -> sala de espera o pantalla de fin. Con la clase en
+                              "waiting" o "ended" el contenido llega VACÍO
+                              SIEMPRE, decidido en el servidor.
+  3. status == "running"   -> dibuja.
+
+TOPES: 4 moléculas en escena, 10 anotaciones. Más que eso lo rechaza el
+servidor con su código (sección 5), nunca a medias.
+
+
+================================================================================
+3. CONDUCIR LA ESCENA: POST /classes/{id}/commands/apply
+================================================================================
+
+Solo el docente DUEÑO. Cuerpo (el mismo que ya estaba acordado):
+
+    { "actionsJson": "<string opaco>", "baseVersion": 4,
+      "source": "button", "promptText": "" }
+
+  baseVersion  la última versión que tienes. Si la escena cambió desde
+               entonces: 409 ERR_STALE_SCENE.
+  source       "button" en esta fase. "prompt" llega con el intérprete (Fase 3).
+  promptText   "" con los botones.
+
+>>> LA RESPUESTA ES UN ESTADO COMPLETO, con la MISMA forma de la sección 2 y
+    message "OK_COMMAND_APPLIED". Dos consecuencias para ti:
+      - pintas el resultado al instante, sin esperar el siguiente sondeo;
+      - y GUARDAS LA VERSIÓN QUE VIENE EN ESA RESPUESTA. Si esperas al sondeo
+        para actualizarla, dos botones seguidos chocan contra tu propia acción
+        anterior con 409 ERR_STALE_SCENE.
+    Es la misma clase de C# y el mismo camino de dibujado que el sondeo.
+
+LOS actionsJson EXACTOS DE TUS BOTONES  (escritos a mano, NUNCA con
+JsonUtility.ToJson, que emitiría todos los campos con su valor por defecto):
+
+  Mostrar agua       [{"action":"show","molecules":["agua"],"replace":true}]
+  Mostrar sal        [{"action":"show","molecules":["sal"],"replace":true}]
+  Mostrar CO2        [{"action":"show","molecules":["co2"],"replace":true}]
+  Agregar sal        [{"action":"show","molecules":["sal"],"replace":false}]
+  Resaltar O         [{"action":"highlight","selector":{"by":"element","value":"O"}}]
+  Resaltar SUMANDO   [{"action":"highlight","selector":{"by":"element","value":"Cl"},"append":true}]
+  Quitar resaltado   [{"action":"highlight"}]
+  Fijar vista        [{"action":"view","locked":true}]
+  Liberar vista      [{"action":"view","locked":false}]
+  Limpiar            [{"action":"clear"}]
+  Capa (Fase 4)      [{"action":"overlay","layer":"labels","visible":true}]
+
+  Dos acciones de un tirón es una lista de dos objetos; se aplican en orden y
+  siguen siendo TODAS O NINGUNA.
+
+  NOMBRES QUE ENTIENDE "show": agua/h2o, sal/sal comun/sal de mesa/cloruro de
+  sodio/nacl, dioxido de carbono/co2/gas carbonico, amoniaco/nh3, metano/ch4,
+  oxigeno/o2; además cualquier nombre del catálogo (etanol, benceno...). Las
+  tildes y las mayúsculas dan igual.
+
+  SELECTORES (los 4): {"by":"element","value":"O"}
+                      {"by":"moleculeId","value":"m1"}
+                      {"by":"bondBetween","value":"O,H"}
+                      {"by":"bondOrder","value":"2"}
+
+  TUS BOTONES DE RESALTAR, GENERADOS DEL ESTADO: como ya tienes la escena,
+  ofrece "Resaltar O" solo si hay oxígenos. Así ningún botón puede dar
+  ERR_SCENE_REFERENCE.
+
+QUÉ HACE CADA ACCIÓN, EN DETALLE
+  show replace=true    reemplaza la escena entera y renumera desde m1. Se van
+                       los resaltados, las atracciones, las anotaciones
+                       ANCLADAS a moléculas y el foco de cámara (sus ids ya no
+                       existen). Las anotaciones ancladas a la ESCENA quedan.
+  show replace=false   agrega; las que ya estaban CONSERVAN su id (y por lo
+                       tanto sus resaltados y anotaciones).
+  clear                vacía el contenido pero CONSERVA la cámara (incluido si
+                       está fijada) y las capas encendidas: limpiar la pizarra
+                       no deshace cómo dejaste la vista.
+  highlight            reemplaza los resaltados. Sin selector, los quita.
+                       CON "append": true, SUMA al que ya había en vez de
+                       reemplazarlo: es lo que permite tener el sodio y el
+                       cloro marcados a la vez ("el sodio entrega su electrón
+                       al cloro"), que con un solo selector no se puede porque
+                       son elementos distintos. Sumar lo mismo dos veces no
+                       duplica nada, y "quitar resaltado" (sin selector) vacía
+                       también lo acumulado.
+                       PARA TI NO CAMBIA NADA: sigues dibujando la lista
+                       "highlights" que te llega, venga de uno o de tres
+                       comandos. Si quieres un botón "sumar", es el mismo de
+                       resaltar con "append": true.
+  view                 locked y focus son independientes.
+  annotate             {"action":"annotate","text":"...","anchor":{...}} — sin
+                       anchor, queda anclada a la escena.
+
+
+================================================================================
+4. GET /classes/{id}/roster      (solo el docente dueño)
+================================================================================
+
+{
+  "message": "OK_ROSTER_FOUND",
+  "connected": 2,
+  "total": 3,
+  "students": [
+    { "code": "3A_01", "online": true,  "lastSeenSeconds": 3 },
+    { "code": "3A_02", "online": true,  "lastSeenSeconds": 1 },
+    { "code": "3A_03", "online": false, "lastSeenSeconds": -1 }
+  ]
+}
+
+  Un alumno cuenta como conectado si sondeó hace menos de 15 s.
+  lastSeenSeconds -1 = NUNCA sondeó. No es 0: 0 significa "hace un instante".
+  La presencia vive en memoria del servidor: si el backend reinicia, se
+  reconstruye sola en un par de sondeos (no es un error si aparece en 0 un
+  momento).
+
+
+================================================================================
+5. ERRORES NUEVOS  (ninguno deja la escena a medias)
+================================================================================
+
+  409 ERR_STALE_SCENE ........ tu baseVersion quedó vieja. Vuelve a sondear y
+                               reintenta con la versión nueva.
+  409 ERR_SCENE_FULL ......... más de 4 moléculas (o más de 10 anotaciones).
+  409 ERR_CLASS_ALREADY_ENDED  la clase terminó: ya no se aplican comandos.
+  422 ERR_INVALID_ACTION ..... el actionsJson no es una lista de acciones
+                               válidas (o el texto de una anotación está vacío).
+  422 ERR_SCENE_REFERENCE .... la acción menciona algo que no está en la escena
+                               (resaltar oxígenos sin oxígenos).
+  422 ERR_UNKNOWN_MOLECULE ... "show" de algo que no se pudo resolver.
+  422 ERR_MOLECULE_TOO_BIG ... más de 30 átomos pesados.
+
+  Y los de siempre: 401 sin token, 403 ERR_NOT_TEACHER /
+  ERR_NOT_CLASS_OWNER / ERR_NOT_CLASS_MEMBER, 404 ERR_CLASS_NOT_FOUND,
+  429 ERR_RATE_LIMITED.
+
+  CUANDO SALE CUALQUIERA DE ESTOS, LA VERSIÓN NO SUBIÓ Y LA ESCENA NO CAMBIÓ.
+  Puedes mostrar el aviso y seguir con la versión que ya tenías.
+
+
+================================================================================
+6. SONDEO: LO QUE MEDIMOS Y LO QUE TE PEDIMOS
+================================================================================
+
+Ensayo real con 25 alumnos sondeando cada 3 s (scripts.simulate_class):
+    423 sondeos, 7 por segundo, 0 errores, 0 rechazos
+    latencia  p50 396 ms   p95 1201 ms
+
+  >>> PONLE UN JITTER DE ±0.5 s AL INTERVALO. Los 25 celulares sondean
+      sincronizados, todos en el mismo tic de 3 s, y esa ráfaga es la que
+      levanta el p95. Repartirlos cuesta una línea y es la mejora más barata
+      que hay disponible. (Ya haces algo así en el backoff del refresh.)
+
+  Límites vigentes: sondeo 60/min por alumno, comandos 20/min por docente,
+  roster 30/min. Con 3 s + jitter estás en ~20/min: sobra margen para
+  reintentos.
+
+  El servidor responde el sondeo desde una caché en memoria: una respuesta "sin
+  cambios" no consulta la base. No hace falta que ahorres peticiones por tu
+  lado más allá del jitter y de pausar en segundo plano.
+
+
+================================================================================
+7. LO QUE TODAVÍA NO EXISTE  (para que no lo esperes)
+================================================================================
+  - /commands/interpret (lenguaje natural + vista previa) ......... Fase 3
+  - la capa 2D y GET /molecules/structure-2d ...................... Fase 4
+  - guiones de interacciones (hasInteraction, primitivas) ......... Fase 5
+  - predicciones y reveal (hasPrediction, hasReveal) .............. Fase 5
+  Esos bloques ya viajan en el estado, siempre vacíos y con su has* en false:
+  la forma no va a cambiar cuando se implementen.

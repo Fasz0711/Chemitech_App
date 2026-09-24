@@ -85,4 +85,22 @@ public class ClassStateResponse
     public bool   changed;
     public int    version;
     public string status;    // "waiting" | "running" | "ended"
+
+    // ── Contenido de la escena (vacío mientras la clase no esté "running") ──
+    public SceneMoleculeDTO[] molecules;
+    public AttractionDTO[]    attractions;
+    public HighlightDTO[]     highlights;
+    public OverlaysDTO        overlays;
+    public AnnotationDTO[]    annotations;
+    public CameraDTO          camera;
+
+    // Objetos opcionales: van siempre presentes y se preguntan por su booleano.
+    // Nunca comprobar "!= null": JsonUtility jamás deja null un objeto, crea uno
+    // vacío, así que esa comprobación sería siempre cierta.
+    public bool           hasInteraction;
+    public InteractionDTO interaction;
+    public bool           hasPrediction;
+    public PredictionDTO  prediction;
+    public bool           hasReveal;
+    public RevealDTO      reveal;
 }

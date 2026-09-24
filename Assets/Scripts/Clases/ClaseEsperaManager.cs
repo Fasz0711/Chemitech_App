@@ -60,10 +60,11 @@ public class ClaseEsperaManager : MonoBehaviour
 
     IEnumerator PollLoop()
     {
-        var wait = new WaitForSeconds(pollSeconds);
-
+        // Jitter: sin él los 25 celulares sondean en el mismo tic y esa ráfaga es la
+        // que dispara la latencia. Repartirlos cuesta una línea (medido por el backend).
         while (!leaving)
         {
+            var wait = new WaitForSeconds(pollSeconds + Random.Range(-0.5f, 0.5f));
             if (!polling) Poll();
             yield return wait;
         }
@@ -130,16 +131,18 @@ public class ClaseEsperaManager : MonoBehaviour
 
     void EnterClass()
     {
-        leaving = true;
-
-        // La escena de la clase llega en la Fase 2. Hasta entonces se avisa aquí en vez
-        // de saltar a una escena que no está en Build Settings (eso sería un error duro).
+        // La escena de la clase llega en la Fase 2. Hasta entonces nos quedamos aquí en
+        // vez de saltar a una escena que no está en Build Settings (sería un error duro).
         if (!string.IsNullOrEmpty(escenaClase) && Application.CanStreamedLevelBeLoaded(escenaClase))
         {
+            leaving = true;   // nos vamos: ya no hace falta seguir sondeando
             SceneManager.LoadScene(escenaClase);
             return;
         }
 
+        // OJO: aquí NO se detiene el sondeo. Si se detuviera, el alumno se quedaría
+        // mirando "la clase empezó" para siempre y no se enteraría de que el docente
+        // la terminó. El bucle sigue hasta que llegue 'ended'.
         if (message) message.text = MSG_STARTED;
     }
 

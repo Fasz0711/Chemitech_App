@@ -77,6 +77,16 @@ public class OrbitCameraController : MonoBehaviour
         desDist = Mathf.Clamp(distance, minDist, maxDist);
     }
 
+    /// <summary>Fija la orientación completa. Lo usa la escena de clase para "seguir la
+    /// vista del docente" y para el botón de volver a ella: el suavizado de LateUpdate
+    /// hace que el salto se vea como un movimiento, no como un corte.</summary>
+    public void SetView(float yaw, float pitch, float distance)
+    {
+        desYaw   = yaw;
+        desPitch = Mathf.Clamp(pitch, minPitch, maxPitch);
+        desDist  = Mathf.Clamp(distance, minDist, maxDist);
+    }
+
     /// <summary>sign &gt; 0 sube la cámara, &lt; 0 la baja (mueve el punto objetivo en Y).</summary>
     public void MoveVertical(float sign)
     {

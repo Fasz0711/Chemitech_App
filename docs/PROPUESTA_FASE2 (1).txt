@@ -1,0 +1,494 @@
+================================================================================
+FASE 2 — LA ESCENA COMPARTIDA: PROPUESTA DE DISEÑO
+ChemiTech · backend · 2026-09-23
+================================================================================
+
+REVISADA POR EL FRONTEND EL 2026-09-23 Y ACORDADA. Lo acordado está en la
+sección 0; el resto del documento ya incorpora los cambios.
+
+ESTO ERA UNA PROPUESTA, NO UN CONTRATO CERRADO. La Fase 1 ya está implementada y
+probada; esto es lo que propongo para la Fase 2, para que el frontend lo revise
+ANTES de que se escriba el código. Donde digo "propongo" se puede discutir;
+donde digo "no se negocia" es porque ya nos costó caro una vez.
+
+Qué entra en la Fase 2 (US039, US040):
+  el documento de escena versionado, aplicar comandos desde los BOTONES del
+  docente (sin intérprete), el sondeo barato y el roster de conectados.
+Qué NO entra:
+  el intérprete de lenguaje natural (Fase 3), las capas y la imagen 2D
+  (Fase 4), los guiones de interacciones y las predicciones (Fase 5).
+
+La clase tiene que funcionar entera SIN el intérprete. Si el proveedor de IA
+falla el día del taller, el docente conduce con botones y la sesión sigue. Por
+eso los botones van primero y el intérprete después: al revés, un fallo del
+proveedor se lleva puesta la validación.
+
+
+================================================================================
+0. ESTADO DE LAS DECISIONES  (tras la revisión del frontend, 2026-09-23)
+================================================================================
+
+ACORDADO Y CERRADO
+  - resolve/apply partidos en dos (3), apply devuelve el estado completo (7.1),
+    en/kind/negativeEnd desde la Fase 2 (6), fragmento de red para NaCl (5).
+  - ESCALA REAL ENTRE MOLÉCULAS: cada molécula viaja normalizada a [0,1] MÁS un
+    "scale" con su tamaño real en Å. Pedido por el frontend y aceptado; ver 5.1.
+  - Tope de moléculas en escena: 4 (no 3). El frontend lo pidió mirando la
+    Fase 5: "disolución de NaCl" con un ion y una sola agua no se lee como
+    disolución; con un ion y tres aguas, sí. Subirlo ahora cuesta cero.
+  - Sondeo: 3 s, con pausa en segundo plano. Tope de tamaño: 30 átomos pesados.
+  - Aplicar con la clase en "waiting": SÍ. Conservar la escena al terminar: SÍ.
+  - Identidad sin base en el sondeo: NO. Se mide primero (9). El frontend fue
+    más lejos: prefiere subir el intervalo antes que aflojar la identidad.
+  - overlay: el COMANDO entra en la Fase 2, el BOTÓN no. El backend lo acepta y
+    lo guarda; el cliente no ofrece un botón que cambia el estado sin que se vea
+    nada hasta que exista su dibujado (Fase 4). Corregido en 12.6.
+
+BOTONES DE LA FASE 2 (los define el frontend)
+    Mostrar agua · Mostrar sal · Mostrar CO2 · Limpiar · Fijar/Liberar vista
+  Más los de resaltar, generados dinámicamente a partir del estado que ya tiene
+  el cliente: ofrece "Resaltar O" solo si hay oxígenos en escena. Así ningún
+  botón puede producir ERR_SCENE_REFERENCE.
+
+PENDIENTE, Y NO LO DECIDE NINGUNO DE LOS DOS CLAUDE CODE
+  - UMBRALES DE ELECTRONEGATIVIDAD: los que use el libro de 3ro del colegio.
+    La app tiene que coincidir con lo que el alumno tiene en el cuaderno,
+    porque el postest mide justamente eso. Provisional hasta que se confirme:
+    0.4 / 1.7 con la excepción de los no metales (6).
+  - ALIAS EN ESPAÑOL: los nombres que el docente va a escribir de verdad.
+    Provisional: agua, sal / sal común / cloruro de sodio, CO2 / dióxido de
+    carbono, amoníaco / amoniaco.
+  Los dos viven en un settings aparte: cambiarlos es editar un archivo, no
+  tocar la lógica.
+
+
+================================================================================
+1. PRINCIPIOS QUE NO SE NEGOCIAN
+================================================================================
+
+  a) EL ALUMNO RECIBE SIEMPRE ESTADO COMPLETO, nunca diferencias. Es lo que
+     hace funcionar al que entra tarde, al que se queda sin señal 30 segundos y
+     al que bloquea la pantalla. Un protocolo de diferencias obliga a
+     reconstruir historia en 25 celulares; un estado completo son unos pocos KB.
+
+  b) SIN CONTENIDO ANTES DE INICIAR. Con la clase en "waiting" o "ended", el
+     estado sale vacío, decidido en el SERVIDOR. Ya está así en la Fase 1 y no
+     cambia: es un requisito de la validación, no una decisión estética.
+
+  c) TODAS LAS ACCIONES O NINGUNA. Un comando que toca tres cosas y falla en la
+     tercera no puede dejar la escena a medias: 25 pantallas quedarían mostrando
+     algo que el docente no pidió.
+
+  d) EL CLIENTE NUNCA PARSEA LAS ACCIONES. Viajan como string opaco
+     (actionsJson). El vocabulario es polimórfico y JsonUtility perdería campos
+     en silencio. El cliente muestra frases y reenvía el string tal cual.
+
+  e) EL SONDEO TIENE QUE SER BARATO. ~10 peticiones por segundo por salón
+     durante 20 minutos. Una respuesta "sin cambios" no debería tocar la base.
+
+
+================================================================================
+2. EL DOCUMENTO DE ESCENA: QUÉ SE GUARDA Y EN QUÉ FORMA
+================================================================================
+
+PROPUESTA: classroom_scenes.state guarda EXACTAMENTE la forma que el cliente
+recibe (los campos de ClassStateResponse salvo message/changed/version/status,
+que se calculan). No hay un "modelo interno" distinto del modelo de cable.
+
+  A favor: el sondeo es volcar el JSONB tal cual, sin reconstruir ni revalidar
+  nada 10 veces por segundo; y no existe la clase de error donde el modelo
+  interno y el de cable se separan sin que nadie lo note.
+  En contra: si mañana cambia el contrato, las escenas guardadas quedan viejas.
+  Mitigación: el documento lleva "schemaVersion". Si no coincide con la del
+  servidor, la escena se sirve VACÍA y el docente vuelve a aplicar. Las clases
+  son de una sesión y se purgan; no vale la pena una migración para esto.
+
+  Lo que NO se guarda en el documento: nada del alumno. La escena es una sola
+  para todo el salón. Lo que cada alumno hace por su cuenta (aislar una
+  molécula, expandir una tarjeta) es local y no viaja al servidor.
+
+
+================================================================================
+3. LA PIEZA CENTRAL: RESOLVER PRIMERO, APLICAR DESPUÉS
+================================================================================
+
+El diseño original decía "apply_action(state, action) -> state, función pura,
+sin BD, así se prueba con scripts simples". Estoy de acuerdo con la intención,
+pero la acción "show" necesita el catálogo (BD) y RDKit (geometría 3D), así que
+tal cual no puede ser pura. PROPONGO PARTIRLO EN DOS:
+
+  1. RESOLVER   resolve(actions, db) -> acciones resueltas
+     Aquí y solo aquí se toca la base y RDKit. Un "show" sale de esta fase con
+     las moléculas YA armadas (átomos, posiciones, enlaces, cargas,
+     electronegatividad). Si algo no se puede resolver, se aborta acá: no se
+     escribió nada todavía.
+
+  2. APLICAR    apply_action(scene, accion_resuelta) -> scene
+     Pura de verdad: sin BD, sin RDKit, sin reloj, sin azar. Recibe el
+     documento y devuelve uno nuevo. Se prueba con un script suelto, sin
+     servidor ni base, que es justo lo que queríamos.
+
+  El endpoint hace: resolver todo -> copiar la escena -> aplicar todas las
+  acciones sobre la copia -> si alguna falla, se tira la copia entera -> si
+  todas pasan, se guarda y la versión sube en 1.
+
+  Ganancia concreta: las pruebas de la lógica de escena (que es donde van a
+  estar los errores) corren en milisegundos y sin depender de Aiven.
+
+
+================================================================================
+4. EL VOCABULARIO DE LA FASE 2
+================================================================================
+
+Unión discriminada por "action", validada con Pydantic. Vive SOLO en el
+servidor: el cliente nunca la parsea, así que puede ser todo lo polimórfica que
+convenga.
+
+  show       {molecules: [nombre|smiles] (1 a 3), layout, replace}
+  highlight  {selector, append}   append suma al resaltado en vez de
+                                  reemplazarlo (lo pidió el guion: "el sodio
+                                  entrega su electrón al cloro" necesita los
+                                  dos marcados a la vez)
+  overlay    {layer: labels|electronegativity|bondTypes|structure2D, visible}
+  view       {focus?: selector, locked?: bool}
+  annotate   {text, anchor?: selector}
+  clear      {}
+  interaction  -> Fase 5 (guiones)
+  unsupported  -> Fase 3 (lo produce el intérprete, no los botones)
+
+SELECTOR (el "a qué me refiero"), 4 formas:
+  {by: "element", value: "O"}              todos los oxígenos de la escena
+  {by: "moleculeId", value: "m1"}          una molécula entera
+  {by: "bondBetween", value: "O,H"}        los enlaces entre esos elementos
+  {by: "bondOrder", value: "2"}            los enlaces dobles
+
+LO QUE MANDA EL CLIENTE DESDE LOS BOTONES (escrito a mano, sin
+JsonUtility.ToJson, que emitiría todos los campos con su valor por defecto):
+
+  Mostrar agua:      [{"action":"show","molecules":["agua"],"replace":true}]
+  Agregar sal:       [{"action":"show","molecules":["sal"],"replace":false}]
+  Resaltar oxígenos: [{"action":"highlight","selector":{"by":"element","value":"O"}}]
+  Capa de etiquetas: [{"action":"overlay","layer":"labels","visible":true}]
+  Fijar la vista:    [{"action":"view","locked":true}]
+  Limpiar:           [{"action":"clear"}]
+
+  Varias acciones en un solo comando es una lista de más de un objeto. Se
+  aplican EN ORDEN y siguen siendo todas-o-ninguna.
+
+
+================================================================================
+5. CÓMO SE RESUELVE UNA MOLÉCULA EN "show"
+================================================================================
+
+  1. ALIAS DE LA LECCIÓN (tabla corta en el código, sin tildes ni mayúsculas):
+     "agua" -> H2O; "sal", "sal comun", "cloruro de sodio" -> NaCl;
+     "amoniaco" -> NH3; "dioxido de carbono", "co2" -> CO2; etc.
+  2. CATÁLOGO por common_name normalizado (las 17 moléculas ya sembradas).
+  3. SMILES explícito: solo si viene del intérprete (Fase 3). RDKit lo valida,
+     se exige que todos sus elementos estén entre los 24 del featurizer y que
+     no pase del tope de tamaño.
+  4. Si nada resuelve: ERR_UNKNOWN_MOLECULE y no se aplica nada.
+
+  COVALENTES: el mismo camino que /detection/by-smiles, reutilizando
+  MoleculeStructureService (hidrógenos explícitos + geometría 3D real +
+  normalización uniforme a [0,1]). El cliente ya sabe dibujar exactamente eso.
+
+  IÓNICAS (NaCl y parecidas): NO salen de un SMILES. "[Na+].[Cl-]" son dos
+  iones sueltos, sin enlace ni geometría: el embedding 3D no da nada
+  dibujable. Se usa un FRAGMENTO DE RED PREARMADO guardado en
+  molecules.structure_data (la columna existe y hoy no se usa), cargado por
+  scripts.seed_molecules. Tarea de la Fase 2: escribir ese fragmento (un cubo
+  pequeño alternando Na+ y Cl-, con las "aristas" como enlaces iónicos).
+
+  VARIAS MOLÉCULAS EN ESCENA: ver 5.1. Tope: 4 moléculas.
+
+5.1 LA ESCALA ENTRE MOLÉCULAS  [CAMBIO PEDIDO POR EL FRONTEND, ACEPTADO]
+
+  El problema: normalizar cada molécula a [0,1] y ya, hace que un fragmento de
+  red de NaCl y una molécula de agua ocupen el MISMO volumen en pantalla. Con
+  una molécula a la vez (el visor del diario) da igual; con tres juntas es
+  químicamente falso, en una lección cuyo objetivo es entender la estructura, y
+  proyectado para 25 alumnos.
+
+  La solución, con el cambio mínimo posible en el contrato:
+    - cada molécula sigue viniendo normalizada a [0,1] (se reutiliza
+      MoleculeStructureService tal cual, sin tocar /by-smiles);
+    - y se agrega "scale": el tamaño REAL de esa molécula en ångströms, que es
+      exactamente el divisor que se usó para normalizarla (su extensión máxima).
+
+  El cliente reconstruye:
+      posiciónEnÅ   = (posiciónNormalizada - 0.5) * scale + offset
+      posiciónMundo = posiciónEnÅ * escalaDeMundo        (UNA para toda la escena)
+
+  Todo lo que viaja queda en la misma unidad: "scale" y "offset" en ångströms.
+  El backend calcula los offsets sabiendo el tamaño real de cada molécula, y
+  las separa con un margen proporcional, no con un 1.5 fijo.
+
+  DOS TRAMPAS QUE CONVIENE DECIR ANTES DE QUE MUERDAN
+    - "scale" NO PUEDE SER 0 NI FALTAR: JsonUtility lee 0 en un float ausente y
+      la molécula entera colapsaría a un punto. Viaja siempre, y su valor por
+      defecto en el modelo es 1.0, nunca 0. Si el cliente no agrega el campo a
+      su clase de C#, lo leerá como 0: hay que agregarlo en la misma tanda.
+    - EL RADIO DE LAS ESFERAS NO SE MULTIPLICA POR "scale". El scale corrige las
+      POSICIONES; el tamaño de un átomo es una constante por elemento. Si se
+      escalan también las esferas, los átomos de la molécula grande se verían
+      más gordos, que es otra mentira, encima más difícil de notar.
+
+  LOS IDS ("m1", "m2") LOS ASIGNA EL SERVIDOR y son estables mientras la
+  molécula siga en la escena. highlight, annotate y las primitivas los
+  referencian. Un "show" con replace=true reinicia la numeración.
+
+
+================================================================================
+6. PROPONGO ADELANTAR ALGO DE LA FASE 4: en / kind / negativeEnd
+================================================================================
+
+El plan original deja la electronegatividad y el tipo de enlace para la Fase 4.
+PROPONGO CALCULARLOS DESDE LA FASE 2, aunque el cliente todavía no dibuje las
+capas.
+
+  Motivo: son una tabla de Pauling de 24 elementos y una regla escolar de tres
+  líneas, calculadas UNA vez al aplicar el comando. Si no se llenan, los campos
+  viajan en 0 y "" — y JsonUtility no distingue "todavía no implementado" de
+  "electronegatividad cero". El día que el frontend encienda la capa, la vería
+  funcionando mal en vez de vacía.
+
+  Regla (ajustable al libro del colegio):
+    diferencia < 0.4         -> "nonpolar"
+    0.4 <= diferencia <= 1.7 -> "polar"
+    diferencia > 1.7         -> "ionic"
+    EXCEPCIÓN: si ninguno de los dos átomos es metal, el máximo es "polar"
+    (sin esto, H-F (1.78) saldría iónico, y no lo es).
+  negativeEnd = índice del átomo más electronegativo del enlace; NO_ATOM (-1)
+  si el enlace no es polar. charge = la carga formal que da RDKit.
+
+  Lo que SÍ se queda en la Fase 4: que el cliente dibuje las capas y la imagen
+  2D del backend. Acá solo viaja el dato.
+
+
+================================================================================
+7. ENDPOINTS NUEVOS
+================================================================================
+
+7.1 POST /classes/{id}/commands/apply        (docente dueño)
+    Cuerpo: {actionsJson, baseVersion, source, promptText}  (ya está en código)
+
+    PROPONGO QUE DEVUELVA LA MISMA FORMA QUE EL SONDEO: un ClassStateResponse
+    completo, con message "OK_COMMAND_APPLIED" y la escena YA aplicada.
+      - El cliente del docente pinta el resultado inmediatamente, sin esperar
+        al siguiente sondeo: la pizarra se siente instantánea.
+      - El cliente del docente actualiza su "última versión" con la que vino en
+        ESTA respuesta. Sin eso, dos botones seguidos dan 409 ERR_STALE_SCENE
+        contra su propia acción anterior, que sería enloquecedor.
+      - Y el frontend reutiliza una sola clase de C# y un solo camino de
+        dibujado para el sondeo y para el apply.
+
+7.2 GET /classes/{id}/roster                 (docente dueño)
+    {message, connected, total, students:[{code, online, lastSeenSeconds}]}
+    Presencia EN MEMORIA: se actualiza con cada sondeo del alumno. No se
+    escribe en la base: serían ~10 escrituras por segundo a Aiven solo para
+    saber quién está conectado. Si el proceso reinicia, se reconstruye sola en
+    un par de sondeos. "online" propuesto: sondeó hace menos de 15 s.
+
+7.3 GET /classes/{id}/state                  (sin cambios de forma)
+    Lo mismo de la Fase 1, pero ahora con contenido cuando la clase corre.
+
+Límites: /commands/* 20 por minuto por docente; /roster 30 por minuto.
+
+
+================================================================================
+8. VERSIÓN, CARRERAS Y baseVersion
+================================================================================
+
+  - apply exige baseVersion == versión actual. Si no: 409 ERR_STALE_SCENE, y el
+    cliente vuelve a sondear (y, en la Fase 3, a interpretar).
+  - Se bloquea la fila de la clase mientras se aplica (igual que start/stop en
+    la Fase 1), así dos comandos simultáneos no suben la versión dos veces.
+  - Cada apply exitoso inserta una fila en classroom_commands (source,
+    promptText, acciones aplicadas, versionAfter). Solo lo APLICADO: las
+    interpretaciones descartadas no dejan rastro. Es el "registro de comandos
+    del expositor" del plan de validación.
+
+  PROPONGO PERMITIR APLICAR CON LA CLASE EN "waiting". El docente prepara la
+  primera molécula antes de que entren los alumnos, y al iniciar todos la ven
+  de golpe. No hay riesgo de exposición previa: con la clase en waiting el
+  estado se sirve vacío igual. Con la clase "ended": 409, ya se acabó.
+
+
+================================================================================
+9. RENDIMIENTO DEL SONDEO (la parte que puede arruinar el taller)
+================================================================================
+
+  CACHÉ EN MEMORIA, clave = id de clase:
+    version, status, el JSON YA SERIALIZADO del estado, y el conjunto de
+    miembros. Se invalida en apply, start y stop. Es consistente porque hay UN
+    solo worker (está puesto a propósito en el systemd, por memoria).
+
+  Con eso, un sondeo "sin cambios" no toca la base... salvo por un detalle que
+  conviene decir en voz alta: get_current_user hace UNA consulta por petición
+  para resolver al usuario del token. A 10 por segundo son 10 consultas por
+  segundo a Aiven solo para el sondeo.
+
+  DOS CAMINOS, y propongo el primero:
+    A. Dejarlo así, MEDIRLO con un ensayo de carga, y solo si los números lo
+       piden, pasar al B. Es una consulta indexada por public_id; puede que no
+       moleste. No optimizar a ciegas.
+    B. Para /state únicamente, resolver la identidad SIN base: el token está
+       firmado y trae el public_id, y la membresía ya está en la caché. Cero
+       consultas por sondeo. Precio: un alumno cuya cuenta se borró seguiría
+       leyendo el estado hasta que venza su token (30 min como máximo) o se
+       refresque la caché. Para una pantalla de solo lectura de una clase de la
+       que ya es miembro, me parece un precio aceptable; para cualquier otra
+       ruta, no.
+
+  MEDIDO (2026-09-23, 25 alumnos sondeando cada 3 s, servidor en la PC de
+  Rubén contra Aiven, scripts.simulate_class):
+      423 sondeos, 7 por segundo, 0 errores, 0 rechazos
+      latencia  p50 396 ms   p95 1201 ms
+  Y UN HALLAZGO QUE NO ERA DE RENDIMIENTO SINO UN FALLO: con el pozo de
+  conexiones de fábrica (5 + 10 por instancia) y el tope de Aiven en 20 (3
+  reservadas), los 25 alumnos entrando a la vez agotaron los slots y 3 de 25
+  logins murieron con "remaining connection slots are reserved for roles with
+  the SUPERUSER attribute". Con el pozo acotado a 10 por instancia (ver
+  app/database/database.py), 25 de 25. La base es COMPARTIDA con Fabrizio: dos
+  backends con el pozo de fábrica ya se pasan del presupuesto.
+
+  QUÉ EXPLICA EL p95 DE 1.2 s: el sondeo ya no consulta la escena, pero
+  get_current_user sigue haciendo UNA consulta por petición, y los 25 celulares
+  sondean SINCRONIZADOS (todos en el mismo tic de 3 s). La ráfaga de 25 encola
+  detrás de las 10 conexiones.
+  DOS COSAS ANTES DE TOCAR LA IDENTIDAD, las dos más baratas y sin costo de
+  seguridad:
+    a) que el cliente sondee con un jitter de +-0.5 s, para que 25 celulares no
+       caigan en el mismo instante (el frontend ya hace algo así en el refresh);
+    b) volver a medir DESDE EC2: casi todo el tiempo es la ida y vuelta a
+       Aiven, y desde el despliegue esa latencia es otra.
+  La identidad sin base sigue SIN hacerse, como se acordó.
+
+  Otra decisión de forma: la respuesta "sin cambios" es un cuerpo constante
+  (unos cientos de bytes).
+
+
+================================================================================
+10. ERRORES NUEVOS
+================================================================================
+  409 ERR_STALE_SCENE ........ la escena cambió desde la vista previa
+  409 ERR_CLASS_NOT_RUNNING .. (ya existe) aplicar con la clase terminada
+  422 ERR_INVALID_ACTION ..... el actionsJson no es una lista de acciones
+                               válidas del vocabulario
+  422 ERR_SCENE_REFERENCE .... la acción menciona algo que no está en la escena
+                               (resaltar oxígenos sin oxígenos)
+  422 ERR_UNKNOWN_MOLECULE ... "show" de algo que no se pudo resolver
+  422 ERR_MOLECULE_TOO_BIG ... pasa del tope de átomos pesados
+  409 ERR_SCENE_FULL ......... más moléculas de las permitidas
+
+  Ninguno deja la escena a medias: cuando cualquiera de estos sale, no se
+  escribió nada y la versión no subió.
+
+
+================================================================================
+11. PRUEBAS QUE ACOMPAÑAN A LA FASE 2
+================================================================================
+  python -m app.classroom.test.classroom_flows     (nuevo, SIN BD ni servidor)
+      apply_action puro: show con 1 y con 3 moléculas, replace true/false,
+      highlight que no encuentra nada (y que la escena queda intacta),
+      todas-o-ninguna con una lista donde falla la segunda acción, clear,
+      overlay, view, annotate anclada a la escena y a un átomo, y que los ids
+      de molécula se mantienen estables.
+  app.classroom.test.access_control                (extender)
+      apply y roster: sin token, alumno, otro docente, docente dueño.
+  python -m app.common.test.jsonutility_contract   (ya cubre las rutas nuevas
+      solas al agregarlas al router)
+  scripts.simulate_class --students 25 --minutes 5 (nuevo, mini versión)
+      El ensayo de carga completo es de la Fase 6, pero una versión corta acá
+      es lo único que responde la pregunta del punto 9.
+
+
+================================================================================
+12. LO QUE NECESITO DEL FRONTEND (y lo que el frontend necesita saber)
+================================================================================
+
+  1. El apply devuelve el estado completo: pintarlo de una vez y GUARDAR la
+     versión que vino en esa respuesta.
+  2. Los botones arman el actionsJson A MANO, con las cadenas del punto 4.
+     Nada de JsonUtility.ToJson para las acciones.
+  3. Los ids de molécula los pone el servidor. El cliente no los inventa ni los
+     reordena.
+  4. Posiciones normalizadas a [0,1] por molécula + "scale" (tamaño real en Å)
+     + "offset" (en Å). Una sola escala de MUNDO para toda la escena. Ver 5.1,
+     incluidas las dos trampas (scale nunca 0; el radio de las esferas no se
+     multiplica por scale).
+  5. Confirmar el intervalo de sondeo (punto 13).
+  6. [RESUELTO] Botones de la Fase 2: mostrar agua / sal / CO2, limpiar, fijar
+     o liberar vista, y los de resaltar generados a partir del estado. El
+     comando overlay existe desde ahora, pero su botón llega con su dibujado en
+     la Fase 4: un botón que cambia el estado sin que se vea nada es peor que
+     no tenerlo.
+
+
+================================================================================
+13. DECISIONES ABIERTAS (acá es donde quiero la opinión del otro lado)
+================================================================================
+
+  TODAS CERRADAS salvo dos, que no le tocan a ningún Claude Code. Ver la
+  sección 0 para el detalle:
+    a) sondeo 3 s   b) 30 átomos pesados   c) 4 moléculas   f) sí, en waiting
+    g) no, medir primero                   h) sí, conservarla
+  ABIERTAS, para el autor de la tesis:
+    d) UMBRALES DE ELECTRONEGATIVIDAD (los del libro del colegio)
+    e) ALIAS EN ESPAÑOL de la lección
+  Se implementa con los valores provisionales de la sección 0, en un settings
+  aparte, y se ajusta cuando lleguen. No bloquean nada.
+
+
+================================================================================
+14. ORDEN DE TRABAJO PROPUESTO Y CRITERIO DE "LISTO"
+================================================================================
+
+  1. [HECHO 2026-09-23] Modelo del documento de escena + schemaVersion +
+     lectura/escritura en classroom_scenes, y /state sirviéndolo cuando la
+     clase corre. app/classroom/services/scene/scene_document.py.
+  2. [HECHO 2026-09-23] apply_action puro con clear / overlay / view /
+     annotate / highlight y los 4 selectores, más parse_actions.
+     scene_actions.py (vocabulario) + scene_engine.py (motor puro) +
+     app.classroom.test.classroom_flows (76 checks, sin BD ni servidor).
+     Decisiones tomadas al implementar, todas probadas:
+       - clear vacía el CONTENIDO y conserva la cámara y las capas: limpiar la
+         pizarra no debe deshacer cómo el docente dejó la vista.
+       - highlight SIN selector quita los resaltados. Así el botón "Resaltar O"
+         puede apagarse sin inventar una acción nueva ni tener que limpiar todo.
+       - Al reemplazar la escena se tira lo que apuntaba a las moléculas viejas
+         (resaltados, atracciones, anotaciones ancladas y el foco de cámara):
+         un id colgado hace que el cliente resalte o anote en el vacío. Las
+         anotaciones ancladas a la ESCENA sobreviven.
+       - Los ids de molécula los asigna el MOTOR, no la resolución: es el único
+         que sabe qué hay ya en escena. Al agregar, los existentes conservan el
+         suyo.
+       - apply_action copia antes de tocar nada: el documento de entrada no se
+         modifica NUNCA. Sin eso, "todas o ninguna" sería mentira aunque el
+         resto pareciera funcionar, y está comprobado en el test.
+  3. [HECHO 2026-09-23] Resolución de moléculas: molecule_resolver.py (alias,
+     catálogo por nombre sin tildes, SMILES), chemistry_settings.py (Pauling,
+     regla del tipo de enlace, alias), y el fragmento de red 3x3x3 de NaCl
+     sembrado en molecules.structure_data. Con en / kind / negativeEnd, scale
+     real y offsets proporcionales. Prueba: app.classroom.test.scene_chemistry
+     (41 checks; necesita el catálogo, no el servidor).
+     UMBRALES: no hay acceso al libro del colegio, así que se usan los
+     escolares (0.4 / 1.7 con la excepción de los no metales) y ESE es el
+     criterio declarado del proyecto. El postest en papel tiene que calificar
+     con los mismos cortes.
+  4. [HECHO 2026-09-23] POST /classes/{id}/commands/apply con baseVersion,
+     bloqueo de la fila, registro en classroom_commands (tabla nueva) y
+     respuesta = estado completo. Probado de punta a punta en
+     app.classroom.test.access_control (99 checks).
+  5. [HECHO 2026-09-23] classroom_cache.py: instantánea por clase (versión,
+     estado, documento ya parseado y membresía) más la presencia. Con acierto
+     de caché, un sondeo NO hace ninguna consulta propia. Se invalida en start,
+     stop, apply y al agregar alumnos, y además caduca por TTL.
+     GET /classes/{id}/roster sale de esa presencia: cero escrituras.
+     Ensayo: python -m scripts.simulate_class --email <docente> --students 25
+
+  CRITERIO DE LISTO (el mismo que puso el frontend, y me parece el correcto):
+  el docente aprieta "mostrar agua" y en 25 celulares aparece agua; uno que
+  entra tarde ve exactamente lo mismo; el docente aprieta "limpiar" y
+  desaparece en todos.

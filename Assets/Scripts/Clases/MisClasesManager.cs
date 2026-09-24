@@ -62,6 +62,7 @@ public class MisClasesManager : MonoBehaviour
     [Header("Escenas")]
     [SerializeField] private string escenaMenu   = "SampleScene";
     [SerializeField] private string escenaEspera = "ClaseEsperaScene";
+    [SerializeField] private string escenaClaseDocente = "ClaseDocenteScene";
 
     readonly List<GameObject> spawnedCards = new List<GameObject>();
     bool      isTeacher;
@@ -172,7 +173,8 @@ public class MisClasesManager : MonoBehaviour
 
         if (btnEnter)
         {
-            // El docente todavía no tiene a dónde entrar: su escena llega en la Fase 2.
+            // Entrar es del alumno; el docente usa Conducir, que abre la misma escena
+            // con el panel de conducción.
             btnEnter.gameObject.SetActive(!isTeacher);
             btnEnter.interactable = !ended;
             btnEnter.onClick.AddListener(() => EnterClass(id, name, ended));
@@ -188,6 +190,16 @@ public class MisClasesManager : MonoBehaviour
         {
             btnStop.gameObject.SetActive(isTeacher && running);
             btnStop.onClick.AddListener(() => AskStop(id, name));
+        }
+
+        var btnConducir = FindButton(card, "BtnConducir");
+        if (btnConducir)
+        {
+            // Conducir sirve también con la clase sin iniciar: el docente prepara la
+            // primera molécula antes de que entren los alumnos, y al iniciar la ven de
+            // golpe. Con la clase terminada ya no hay nada que conducir.
+            btnConducir.gameObject.SetActive(isTeacher && !ended);
+            btnConducir.onClick.AddListener(() => Conduct(id, name));
         }
     }
 
@@ -208,6 +220,12 @@ public class MisClasesManager : MonoBehaviour
 
         ClassContext.Set(id, name);
         SceneManager.LoadScene(escenaEspera);
+    }
+
+    void Conduct(string id, string name)
+    {
+        ClassContext.Set(id, name);
+        SceneManager.LoadScene(escenaClaseDocente);
     }
 
     // ── Docente: iniciar / terminar ────────────────────────────────────────────

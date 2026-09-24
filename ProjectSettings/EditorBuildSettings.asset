@@ -68,5 +68,11 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/ClaseEsperaScene.unity
     guid: 1bb975ed0f598e048bf3d4dc935c58f5
+  - enabled: 1
+    path: Assets/Scenes/ClaseEstudianteScene.unity
+    guid: d0c20fcdd80cebb46b92176cc179070d
+  - enabled: 1
+    path: Assets/Scenes/ClaseDocenteScene.unity
+    guid: d17d432b386702b4b9476340b5239495
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
