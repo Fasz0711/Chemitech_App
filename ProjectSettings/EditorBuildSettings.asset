@@ -65,5 +65,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/MisClasesScene.unity
     guid: e7c57b1aea9884641a186b5c1afb0454
+  - enabled: 1
+    path: Assets/Scenes/ClaseEsperaScene.unity
+    guid: 1bb975ed0f598e048bf3d4dc935c58f5
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}

@@ -15,6 +15,7 @@ public class MainMenuManager : MonoBehaviour
     [SerializeField] private Button btnJugar;
     [SerializeField] private Button btnDiario;
     [SerializeField] private Button btnAjustes;
+    [SerializeField] private Button btnClases;
 
     [Header("Botón Sesión (esquina inferior derecha)")]
     [SerializeField] private Button btnIniciarSesion;
@@ -35,6 +36,7 @@ public class MainMenuManager : MonoBehaviour
     [SerializeField] private string escenaAjustes = "SettingsScene";
     [SerializeField] private string escenaLogin = "LoginScene";
     [SerializeField] private string escenaPerfil = "PerfilScene"; // destino al tocar con sesión iniciada (pendiente)
+    [SerializeField] private string escenaClases = "MisClasesScene";
 
     // Texto por defecto cuando NO hay sesión iniciada.
     private const string TEXTO_INICIAR_SESION = "Iniciar Sesión";
@@ -51,6 +53,18 @@ public class MainMenuManager : MonoBehaviour
         btnDiario.onClick.AddListener(OnDiarioClicked);
         btnAjustes.onClick.AddListener(OnAjustesClicked);
         btnIniciarSesion.onClick.AddListener(OnIniciarSesionClicked);
+
+        // El botón de Clases se muestra a TODO el que tenga sesión, sin preguntarle al
+        // backend. Si su visibilidad dependiera de /classes/mine, una red lenta, un 429 o
+        // un token vencido lo harían desaparecer y el alumno se quedaría sin camino a su
+        // clase justo la mañana del taller. Una lista vacía es recuperable y se explica
+        // sola; un botón ausente es un callejón sin salida, e indistinguible de la falta
+        // de clases cuando lo reportan por chat.
+        if (btnClases)
+        {
+            btnClases.gameObject.SetActive(SessionData.IsLoggedIn);
+            btnClases.onClick.AddListener(OnClasesClicked);
+        }
 
         // Mostrar el nombre del usuario si hay sesión iniciada
         RefreshSessionLabel();
@@ -145,6 +159,12 @@ public class MainMenuManager : MonoBehaviour
     {
         PlayButtonSound();
         SceneManager.LoadScene(escenaAjustes);
+    }
+
+    private void OnClasesClicked()
+    {
+        PlayButtonSound();
+        SceneManager.LoadScene(escenaClases);
     }
 
     private void OnIniciarSesionClicked()
