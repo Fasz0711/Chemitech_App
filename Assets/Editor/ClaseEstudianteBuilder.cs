@@ -130,7 +130,19 @@ public static class ClaseEstudianteBuilder
         badge.SetActive(false);
 
         var btnVolver = MakeButton(root, "BtnVolverVista", "Volver a la vista del docente", PURPLE,
-                                   new Vector2(0.5f, 0f), new Vector2(0f, 80f), new Vector2(560f, 62f), 24f);
+                                   new Vector2(0.5f, 0f), new Vector2(-300f, 80f), new Vector2(520f, 62f), 23f);
+
+        var btnCopiar = MakeButton(root, "BtnCopiar", "Copiar a un universo", CYAN,
+                                   new Vector2(0.5f, 0f), new Vector2(300f, 80f), new Vector2(440f, 62f), 23f);
+
+        var notice = MakeEmpty(root, "Notice");
+        SetRT(notice, new Vector2(0.5f, 0f), new Vector2(0f, 180f), new Vector2(1000f, 72f));
+        var nImg = notice.AddComponent<Image>();
+        nImg.sprite = rounded; nImg.type = Image.Type.Sliced; nImg.color = Hex("2E7D5B");
+        var noticeText = MakeText(notice.transform, "NoticeText", "",
+                                  new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(960f, 64f),
+                                  22f, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
+        notice.SetActive(false);
 
         // Pista de escena vacía: el docente todavía no puso nada
         var emptyHint = MakeEmpty(root, "EmptyHint");
@@ -158,6 +170,9 @@ public static class ClaseEstudianteBuilder
         SetRef(so, "btnVolverVista", btnVolver);
         SetRef(so, "btnSalir",       btnSalir);
         SetRef(so, "emptyHint",      emptyHint);
+        SetRef(so, "btnCopiar",      btnCopiar);
+        SetRef(so, "noticeRoot",     notice);
+        SetRef(so, "noticeText",     noticeText);
         so.ApplyModifiedProperties();
 
         EditorSceneManager.MarkSceneDirty(scene);

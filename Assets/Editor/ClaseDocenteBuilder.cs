@@ -165,16 +165,22 @@ public static class ClaseDocenteBuilder
         barImg.raycastTarget = false;
 
         var btnAgua    = MakeButton(bar.transform, "BtnAgua", "Agua", CYAN,
-                                    new Vector2(0.5f, 0.5f), new Vector2(-620f, 0f), new Vector2(230f, 68f), 24f);
+                                    new Vector2(0.5f, 0.5f), new Vector2(-740f, 0f), new Vector2(200f, 68f), 24f);
         var btnSal     = MakeButton(bar.transform, "BtnSal", "Sal", CYAN,
-                                    new Vector2(0.5f, 0.5f), new Vector2(-370f, 0f), new Vector2(230f, 68f), 24f);
+                                    new Vector2(0.5f, 0.5f), new Vector2(-530f, 0f), new Vector2(200f, 68f), 24f);
         var btnCO2     = MakeButton(bar.transform, "BtnCO2", "CO2", CYAN,
-                                    new Vector2(0.5f, 0.5f), new Vector2(-120f, 0f), new Vector2(230f, 68f), 24f);
+                                    new Vector2(0.5f, 0.5f), new Vector2(-320f, 0f), new Vector2(200f, 68f), 24f);
+
+        // Cambia si los botones de arriba reemplazan la escena o suman a ella.
+        var btnModo    = MakeButton(bar.transform, "BtnModoAgregar", "Modo: reemplazar", AMBER,
+                                    new Vector2(0.5f, 0.5f), new Vector2(-60f, 0f), new Vector2(300f, 68f), 22f);
+        var lblModo    = btnModo.GetComponentInChildren<TextMeshProUGUI>(true);
+
         var btnFijar   = MakeButton(bar.transform, "BtnFijarVista", "Fijar vista", PURPLE,
-                                    new Vector2(0.5f, 0.5f), new Vector2(160f, 0f), new Vector2(280f, 68f), 24f);
+                                    new Vector2(0.5f, 0.5f), new Vector2(260f, 0f), new Vector2(260f, 68f), 24f);
         var lblFijar   = btnFijar.GetComponentInChildren<TextMeshProUGUI>(true);
         var btnLimpiar = MakeButton(bar.transform, "BtnLimpiar", "Limpiar", RED,
-                                    new Vector2(0.5f, 0.5f), new Vector2(470f, 0f), new Vector2(230f, 68f), 24f);
+                                    new Vector2(0.5f, 0.5f), new Vector2(540f, 0f), new Vector2(200f, 68f), 24f);
 
         // ── Modal de terminar ─────────────────────────────────────────────────
         var stopModal = MakeEmpty(root, "StopModal"); Stretch(stopModal);
@@ -231,6 +237,8 @@ public static class ClaseDocenteBuilder
         SetRef(so, "btnLimpiar",              btnLimpiar);
         SetRef(so, "btnFijarVista",           btnFijar);
         SetRef(so, "lblFijarVista",           lblFijar);
+        SetRef(so, "btnModoAgregar",          btnModo);
+        SetRef(so, "lblModoAgregar",          lblModo);
         SetRef(so, "highlightBar",            hlBar.GetComponent<RectTransform>());
         SetRef(so, "highlightButtonTemplate", hlTemplate.gameObject);
         SetRef(so, "btnQuitarResaltado",      btnQuitar);

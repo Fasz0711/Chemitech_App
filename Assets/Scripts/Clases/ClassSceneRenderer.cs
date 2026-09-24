@@ -22,6 +22,10 @@ public class ClassSceneRenderer
     readonly List<GameObject>        spawned = new List<GameObject>();
     readonly List<(int a, int b, int order)> bonds = new List<(int, int, int)>();
 
+    // "m1" -> primer id global de sus átomos. Los highlights vienen con índices LOCALES
+    // a su molécula, así que sin este mapa no se sabe a qué esfera se refieren.
+    readonly Dictionary<string, int> moleculeBase = new Dictionary<string, int>();
+
     readonly BondRenderer bondRenderer;
 
     static readonly Color FALLBACK_COLOR = new Color(0.72f, 0.75f, 0.82f);
@@ -51,6 +55,8 @@ public class ClassSceneRenderer
         foreach (var m in molecules)
         {
             if (m == null || m.atoms == null) continue;
+
+            if (!string.IsNullOrEmpty(m.id)) moleculeBase[m.id] = baseId;
 
             Vector3 offset = m.offset != null ? m.offset.ToVector3() : Vector3.zero;
 
@@ -89,6 +95,31 @@ public class ClassSceneRenderer
         bondRenderer.SetBonds(bonds);
     }
 
+    /// <summary>Enciende el resaltado de los átomos que indica el estado.
+    ///
+    /// Apaga todo y vuelve a encender: el servidor manda el conjunto COMPLETO de
+    /// resaltados, así que recalcular desde cero es siempre correcto y evita arrastrar
+    /// los de un comando anterior.
+    ///
+    /// Los bondIds todavía no se dibujan: los botones de la Fase 2 solo generan
+    /// selectores por elemento, que producen átomos. Cuando el intérprete (Fase 3)
+    /// pueda pedir "los enlaces O-H", hay que resaltarlos aquí también.</summary>
+    public void ApplyHighlights(HighlightDTO[] highlights)
+    {
+        foreach (var atom in byId.Values) if (atom) atom.SetSelected(false);
+        if (highlights == null) return;
+
+        foreach (var h in highlights)
+        {
+            if (h == null || h.atomIds == null || string.IsNullOrEmpty(h.moleculeId)) continue;
+            if (!moleculeBase.TryGetValue(h.moleculeId, out int baseId)) continue;
+
+            foreach (int localId in h.atomIds)
+                if (byId.TryGetValue(baseId + localId, out var atom) && atom)
+                    atom.SetSelected(true);
+        }
+    }
+
     /// <summary>Orienta los enlaces según la cámara. Llamar cada frame.</summary>
     public void UpdateVisuals() => bondRenderer.UpdateVisuals();
 
@@ -97,6 +128,7 @@ public class ClassSceneRenderer
         bondRenderer.Clear();
         bonds.Clear();
         byId.Clear();
+        moleculeBase.Clear();
 
         foreach (var go in spawned) if (go) Object.Destroy(go);
         spawned.Clear();

@@ -38,6 +38,8 @@ public class ClaseDocenteManager : MonoBehaviour
     [SerializeField] private Button btnLimpiar;
     [SerializeField] private Button btnFijarVista;
     [SerializeField] private TextMeshProUGUI lblFijarVista;
+    [SerializeField] private Button btnModoAgregar;
+    [SerializeField] private TextMeshProUGUI lblModoAgregar;
 
     [Header("Resaltado (botones generados del estado)")]
     [SerializeField] private RectTransform highlightBar;
@@ -70,9 +72,10 @@ public class ClaseDocenteManager : MonoBehaviour
     // Comandos exactos del contrato. Se escriben A MANO: JsonUtility.ToJson emitiría
     // todos los campos con su valor por defecto y un "view" que solo enfoca viajaría
     // con locked=false.
-    const string CMD_AGUA     = @"[{""action"":""show"",""molecules"":[""agua""],""replace"":true}]";
-    const string CMD_SAL      = @"[{""action"":""show"",""molecules"":[""sal""],""replace"":true}]";
-    const string CMD_CO2      = @"[{""action"":""show"",""molecules"":[""co2""],""replace"":true}]";
+    // replace=true cambia la escena entera; replace=false suma. Hace falta poder sumar:
+    // la disolución de la lección es sal Y agua a la vez, no una u otra.
+    const string SHOW_FMT =
+        @"[{{""action"":""show"",""molecules"":[""{0}""],""replace"":{1}}}]";
     const string CMD_LIMPIAR  = @"[{""action"":""clear""}]";
     const string CMD_FIJAR    = @"[{""action"":""view"",""locked"":true}]";
     const string CMD_LIBERAR  = @"[{""action"":""view"",""locked"":false}]";
@@ -87,6 +90,7 @@ public class ClaseDocenteManager : MonoBehaviour
 
     int       currentVersion = -1;
     bool      busy;
+    bool      addMode;      // los botones de molécula suman en vez de reemplazar
     bool      leaving;
     bool      cameraLocked;
     string    classStatus = "waiting";
@@ -95,9 +99,10 @@ public class ClaseDocenteManager : MonoBehaviour
     void Start()
     {
         if (btnSalir)            btnSalir.onClick.AddListener(Leave);
-        if (btnAgua)             btnAgua.onClick.AddListener(() => Apply(CMD_AGUA));
-        if (btnSal)              btnSal.onClick.AddListener(() => Apply(CMD_SAL));
-        if (btnCO2)              btnCO2.onClick.AddListener(() => Apply(CMD_CO2));
+        if (btnAgua)             btnAgua.onClick.AddListener(() => Show("agua"));
+        if (btnSal)              btnSal.onClick.AddListener(() => Show("sal"));
+        if (btnCO2)              btnCO2.onClick.AddListener(() => Show("co2"));
+        if (btnModoAgregar)      btnModoAgregar.onClick.AddListener(ToggleAddMode);
         if (btnLimpiar)          btnLimpiar.onClick.AddListener(() => Apply(CMD_LIMPIAR));
         if (btnQuitarResaltado)  btnQuitarResaltado.onClick.AddListener(() => Apply(CMD_SIN_RESALTADO));
         if (btnFijarVista)       btnFijarVista.onClick.AddListener(ToggleView);
@@ -111,6 +116,7 @@ public class ClaseDocenteManager : MonoBehaviour
         HideNotice();
 
         if (className) className.text = ClassContext.HasClass ? ClassContext.ClassName : "Clase";
+        RefreshAddModeLabel();
 
         if (!sceneRoot) sceneRoot = transform;
         sceneRenderer = new ClassSceneRenderer(sceneRoot, atomMaterial, bondMaterial,
@@ -174,6 +180,7 @@ public class ClaseDocenteManager : MonoBehaviour
         classStatus    = state.status;
 
         sceneRenderer.Render(state.molecules);
+        sceneRenderer.ApplyHighlights(state.highlights);
 
         bool empty = state.molecules == null || state.molecules.Length == 0;
         if (emptyHint) emptyHint.SetActive(empty);
@@ -243,6 +250,22 @@ public class ClaseDocenteManager : MonoBehaviour
     }
 
     void ToggleView() => Apply(cameraLocked ? CMD_LIBERAR : CMD_FIJAR);
+
+    void Show(string alias)
+        => Apply(string.Format(SHOW_FMT, alias, addMode ? "false" : "true"));
+
+    /// <summary>Con el modo agregar encendido, los botones de molécula SUMAN a la escena
+    /// en vez de reemplazarla. Es lo que permite montar "sal disuelta en agua".</summary>
+    void ToggleAddMode()
+    {
+        addMode = !addMode;
+        RefreshAddModeLabel();
+    }
+
+    void RefreshAddModeLabel()
+    {
+        if (lblModoAgregar) lblModoAgregar.text = addMode ? "Modo: agregar" : "Modo: reemplazar";
+    }
 
     // ── Sesión de clase ────────────────────────────────────────────────────────
     void StartClass()
