@@ -10,13 +10,14 @@ sigue vigente sin cambios.
 Los JSON de aquí abajo están VOLCADOS DEL SERVIDOR REAL, no escritos a mano.
 Verificado por: app.classroom.test.classroom_flows (76 checks, motor puro),
 app.classroom.test.scene_chemistry (41, química), app.classroom.test.
-access_control (99, por HTTP contra la base real) y scripts.simulate_class
+access_control (126, por HTTP contra la base real) y scripts.simulate_class
 (ensayo con 25 alumnos sondeando).
 
 LO NUEVO DE ESTA FASE, EN UNA LÍNEA CADA UNO
   - GET  /classes/{id}/state          ahora trae CONTENIDO cuando la clase corre
   - POST /classes/{id}/commands/apply el docente conduce la escena (botones)
   - GET  /classes/{id}/roster         quién está conectado
+  - POST /classes/{id}/commands/interpret  la vista previa (Fase 3a, ver 3.1)
   - dos campos nuevos en la escena: "scale" por molécula y el foco de cámara
 
 
@@ -226,6 +227,100 @@ QUÉ HACE CADA ACCIÓN, EN DETALLE
 
 
 ================================================================================
+3.1 LA VISTA PREVIA: POST /classes/{id}/commands/interpret   [FASE 3a]
+================================================================================
+
+Solo el docente DUEÑO. Traduce lo que escribió a acciones y devuelve frases para
+que las confirme. NO APLICA NADA.
+
+    envías:   { "prompt": "muestra el agua y la sal", "baseVersion": 8 }
+
+    recibes:  { "message": "OK_COMMAND_INTERPRETED",
+                "preview": ["Mostrar Agua y Cloruro de sodio (reemplaza lo que
+                             hay en pantalla)"],
+                "actionsJson": "[{\"action\":\"show\", ...}]",
+                "baseVersion": 8,
+                "reason": "" }
+
+EL CICLO COMPLETO, que es lo único que tienes que programar:
+  1. el docente escribe y llamas a /interpret;
+  2. muestras `preview` (una frase por acción, en orden) con Confirmar y
+     Descartar. NO PARSEAS `actionsJson`: es opaco;
+  3. si confirma, mandas ESE MISMO string a /commands/apply, tal cual, byte a
+     byte, con el `baseVersion` que vino en la respuesta;
+  4. /apply responde el estado completo, como siempre.
+  Si descarta, no llamas a nada: interpretar no dejó rastro.
+
+"NO ENTENDÍ" NO ES UN ERROR: llega 200 con message OK_COMMAND_UNSUPPORTED,
+`preview` y `actionsJson` vacíos, y el motivo en `reason`, escrito para que el
+docente lo lea y sepa qué cambiar:
+    "No reconozco esa molécula. Prueba con agua, sal, CO2 o amoníaco."
+    "Entendí que quieres resaltar, pero no qué: prueba «resalta los oxígenos»."
+    "Eso no está en la escena en este momento."
+  Muéstralo tal cual y deja el campo de texto como estaba, para que corrija sin
+  volver a escribir todo. Es el único texto del API pensado para leerse; el
+  resto siguen siendo códigos OK_/ERR_.
+
+DETALLES QUE TE AHORRAN SORPRESAS
+  - INTERPRETAR NUNCA DA 409. Se interpreta contra la escena de AHORA y la
+    respuesta trae su `baseVersion`: usa ese, no el que mandaste. El 409
+    ERR_STALE_SCENE sigue siendo cosa de /apply, si la escena cambió entre la
+    vista previa y la confirmación.
+  - La vista previa ya hizo el ENSAYO EN SECO: si la instrucción iba a fallar
+    (resaltar algo que no está, una molécula que no existe), te llega como
+    UNSUPPORTED con su motivo ANTES de que el docente confirme.
+  - Las frases describen lo que DE VERDAD va a pasar, no lo que el docente
+    escribió: si dijo "sal", la frase dice "Cloruro de sodio". Esa es toda la
+    gracia de la vista previa.
+  - Con la clase terminada: 409 ERR_CLASS_ALREADY_ENDED, igual que /apply.
+  - Límite: 20 por minuto por docente (contador propio, separado de /apply).
+
+EL 503 ERR_INTERPRETER_UNAVAILABLE  [FASE 3b]
+  Detrás del endpoint hay ahora un modelo de lenguaje, para lo que las reglas
+  no cubren. Cuando el proveedor no responde (caído, sin cuota, sin red) y las
+  reglas tampoco entendieron, llega 503 ERR_INTERPRETER_UNAVAILABLE.
+    - NO es sesión muerta ni un error de tu parte: mostrar algo como "el
+      asistente no está disponible; usa los botones o dilo de otra forma" y
+      dejar el texto escrito para que el docente reintente.
+    - MEDIDO, y conviene que lo sepas: el nivel gratuito de Gemini devuelve 503
+      "high demand" de forma intermitente. El backend ya reintenta una vez solo
+      por eso. Por eso los BOTONES siguen siendo el camino principal y la clase
+      tiene que poder darse entera sin escribir una sola instrucción.
+    - Sin clave configurada NO hay 503: se responde con las reglas, y lo que no
+      entienden llega como OK_COMMAND_UNSUPPORTED de siempre.
+  LATENCIA: lo que resuelven las reglas contesta en milisegundos; lo que va al
+  modelo tarda entre 1.5 y 5 segundos. Poné un indicador de "pensando" y no
+  bloquees la pantalla: el docente está frente a 25 alumnos.
+
+QUÉ ENTIENDE HOY (reglas locales, instantáneas y sin salir del servidor)
+  mostrar    "muestra el agua", "pon la sal", "saca el CO2",
+             "muestra agua y sal", "agrega la sal" (agregar no reemplaza)
+  resaltar   "resalta los oxígenos", "marca los hidrógenos", "señala el sodio",
+             "resalta el agua" (la molécula entera),
+             "resalta los enlaces entre oxígeno e hidrógeno",
+             "resalta los dobles enlaces",
+             "resalta también el cloro" (suma al resaltado anterior),
+             "quita el resaltado"
+  capas      "muestra las etiquetas", "quita las etiquetas",
+             "enciende la electronegatividad", "muestra los tipos de enlace"
+  vista      "fija la vista", "libera la vista", "enfoca los oxígenos"
+  anotar     anota "el oxígeno atrae más"   (el texto va entre comillas)
+  limpiar    "limpia la pizarra", "borra todo", "empecemos de cero"
+
+  Una frase = una acción; no se parte por "y" (si no, "muestra agua y sal" se
+  rompería). Para encadenar, el docente manda dos instrucciones.
+
+  Y lo que NO está en esa lista lo intenta el modelo de lenguaje: "necesito
+  que aparezca el agua en pantalla", "dejemos la pizarra en blanco",
+  "enséñales el dióxido de carbono". Lo que el modelo propone pasa por la
+  MISMA validación que tu actionsJson y por el mismo ensayo en seco, así que
+  nunca puede aplicar algo fuera del vocabulario ni imposible en la escena.
+
+  >>> LOS BOTONES SIGUEN SIENDO EL CAMINO PRINCIPAL. El campo de texto es un
+      atajo, no un reemplazo: la clase tiene que poder darse entera sin él.
+
+
+================================================================================
 4. GET /classes/{id}/roster      (solo el docente dueño)
 ================================================================================
 
@@ -295,7 +390,9 @@ Ensayo real con 25 alumnos sondeando cada 3 s (scripts.simulate_class):
 ================================================================================
 7. LO QUE TODAVÍA NO EXISTE  (para que no lo esperes)
 ================================================================================
-  - /commands/interpret (lenguaje natural + vista previa) ......... Fase 3
+  - /commands/interpret YA EXISTE (Fase 3a, ver 3.1). Lo que falta es que
+    detrás haya un modelo de lenguaje para lo que las reglas no cubren (3b);
+    el contrato del endpoint NO cambia cuando eso llegue.
   - la capa 2D y GET /molecules/structure-2d ...................... Fase 4
   - guiones de interacciones (hasInteraction, primitivas) ......... Fase 5
   - predicciones y reveal (hasPrediction, hasReveal) .............. Fase 5

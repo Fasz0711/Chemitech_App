@@ -1,0 +1,249 @@
+================================================================================
+GUION DE LA LECCIÓN — LISTAS PARA EL BACKEND
+ChemiTech · 2026-09-24
+================================================================================
+
+Salen del guion de 20 minutos (guion-leccion-20min.docx) y responden al
+checklist de la sección 7 de GUIA_GUION_LECCION.txt, en el mismo orden.
+
+Resumen de una línea: el guion usa TRES moléculas, todas ya en el catálogo; no
+necesita ninguna molécula nueva, ni covalente ni iónica; el máximo en pantalla
+es 3; y no se apoya en ninguna animación.
+
+
+================================================================================
+a) MOLÉCULAS, CON EL NOMBRE EXACTO QUE VA A DECIR EL DOCENTE
+================================================================================
+
+  oxígeno (O2)      se pide como  "el oxígeno"      ← ver el aviso de abajo
+  agua (H2O)        se pide como  "el agua" / "otra agua"
+  sal de mesa       se pide como  "la sal"
+
+  APODOS NUEVOS QUE AGREGAR: ninguno. El guion no dice "alcohol", "vinagre" ni
+  nada que esté fuera del catálogo.
+
+  MOLÉCULAS NUEVAS QUE CONSTRUIR: ninguna. En particular, NO hace falta ninguna
+  red iónica nueva: la única iónica del guion es la sal, que ya está.
+
+  >>> AVISO SOBRE LA PALABRA "OXÍGENO"
+      Es a la vez el nombre de una molécula (O2) y el de un elemento. En el
+      guion aparecen las dos cosas, con dos minutos de diferencia:
+          "muestra el oxígeno"     ->  la molécula O2
+          "resalta los oxígenos"   ->  los átomos de O de la escena
+      Si el intérprete no distingue esos dos casos, avisen: se cambia la
+      primera frase por "muestra el O2" y el problema desaparece. Es la única
+      ambigüedad de vocabulario que tiene el guion.
+
+
+================================================================================
+b) FRASES EXACTAS QUE SE VAN A ESCRIBIR EN EL CAMPO DE TEXTO
+================================================================================
+
+En el orden del guion. Son 23: 16 de acción y 7 anotaciones. Van tal cual al
+banco de app.classroom.test.interpreter.
+
+  TRAMO 1
+   1. muestra el oxígeno
+   2. anota "unidos quedan más estables"
+  TRAMO 2
+   3. resalta los dobles enlaces
+   4. anota "los dos jalan igual: comparten por igual"
+  TRAMO 3
+   5. muestra el agua
+   6. resalta los oxígenos
+   7. resalta los enlaces entre oxígeno e hidrógeno
+   8. anota "el oxígeno jala más: ese lado queda un poco negativo"
+  TRAMO 4
+   9. fija la vista
+  10. libera la vista
+  11. anota "los dos hidrógenos van del mismo lado"
+  TRAMO 5
+  12. agrega la sal
+  13. resalta la sal
+  14. resalta el sodio
+  15. resalta también el cloro
+  16. anota "el sodio entrega su electrón al cloro"
+  17. quita el resaltado
+  TRAMO 6
+  18. limpia la pizarra
+  19. muestra el agua
+  20. agrega otra agua
+  21. resalta los hidrógenos
+  22. resalta también los oxígenos
+  23. anota "la atracción es entre dos moléculas, no dentro de una"
+  TRAMO 7
+  24. agrega la sal
+  25. resalta el sodio
+  26. resalta también el cloro
+  27. anota "el agua rodea a los iones y los separa"
+
+  (Las frases 19, 24, 25 y 26 se repiten; el banco debería medirlas una vez.)
+
+  SOBRE LAS ANOTACIONES: las siete están en texto normal con tildes, sin
+  símbolos griegos ni flechas, porque la fuente del cliente no los dibuja. La
+  más larga tiene 58 caracteres, muy por debajo del tope de 120. Por eso el
+  guion dice "queda un poco negativo" en vez de usar el signo delta.
+
+
+================================================================================
+c) MOMENTOS CON DOS COSAS RESALTADAS A LA VEZ
+================================================================================
+
+Son tres, y los tres son el mismo patrón: resaltar y después SUMAR.
+
+  1. TRAMO 5 — "el sodio ENTREGA su electrón al cloro"
+     resalta el sodio  →  resalta también el cloro
+  2. TRAMO 6 — "el lado positivo de una atrae al lado negativo de la otra"
+     resalta los hidrógenos  →  resalta también los oxígenos
+  3. TRAMO 7 — "el agua rodea a los iones"
+     resalta el sodio  →  resalta también el cloro
+
+  Los tres son el corazón pedagógico de su tramo: si el resaltado acumulado no
+  funciona, esos tres momentos pierden la mitad de su sentido.
+
+
+================================================================================
+d) MOMENTOS QUE DEPENDERÍAN DE ANIMACIONES O DE PREGUNTAS EN LA APP
+================================================================================
+
+Ninguno bloquea el guion: los cinco están resueltos hoy con voz y resaltados.
+Si la Fase 5 llega a tiempo, estos son los lugares donde entra; si no llega, la
+clase se dicta igual.
+
+  ANIMACIÓN (Fase 5)
+  1. Tramo 5: el electrón que salta del sodio al cloro.
+     Hoy: los dos elementos marcados a la vez + la frase "el sodio ENTREGA su
+     electrón al cloro" + la anotación.
+  2. Tramo 6: la atracción entre las dos moléculas de agua.
+     Hoy: hidrógenos y oxígenos marcados a la vez + la anotación.
+  3. Tramo 7: las moléculas de agua separando a los iones de la red.
+     Hoy: los iones marcados dentro de la red + la explicación hablada.
+
+  PREGUNTA DENTRO DE LA APP (Fase 5)
+  4. Tramo 4: "si los hidrógenos estuvieran en lados opuestos, ¿seguiría
+     teniendo dos lados distintos?"
+  5. Tramo 6: "al hervir, ¿qué se rompe?"
+     Hoy: las dos se hacen en voz alta. IMPORTANTE: así se hacen también en la
+     sección sin app, que es lo que mantiene iguales las dos clases. Si algún
+     día las preguntas entran a la app, hay que ponerlas en la hoja impresa del
+     grupo de control el mismo día, o la comparación deja de medir el medio.
+
+
+================================================================================
+e) MÁXIMO DE MOLÉCULAS EN PANTALLA A LA VEZ
+================================================================================
+
+  3, en el tramo 7: agua + agua + sal.
+  El tope de 4 alcanza de sobra. El guion nunca junta más de tres.
+
+  Escena por escena:
+    Tramo 1-2   1  (oxígeno)
+    Tramo 3-4   1  (agua, reemplaza al oxígeno)
+    Tramo 5     2  (agua + sal)
+    Tramo 6     2  (agua + agua, después de limpiar)
+    Tramo 7     3  (agua + agua + sal)
+
+
+================================================================================
+f) CORTES DE ELECTRONEGATIVIDAD: CONFIRMADO
+================================================================================
+
+El guion enseña exactamente los cortes de la sección 4 de la guía, con estas
+palabras:
+
+    menos de 0.4              ->  NO POLAR
+    de 0.4 a 1.7              ->  POLAR
+    más de 1.7, con un metal  ->  IÓNICO
+
+Los tres números que el docente dice en voz alta y escribe en la pizarra del
+aula son los de la guía:
+
+    O–O   3.44 − 3.44 = 0      ->  no polar   (tramo 2)
+    O–H   3.44 − 2.20 = 1.24   ->  polar      (tramo 3)
+    Na–Cl 3.16 − 0.93 = 2.23   ->  iónico     (tramo 5)
+
+SOBRE EL POSTEST: ninguna de las 15 preguntas pide calcular una diferencia ni
+clasificar un enlace por su número, así que no hay forma de que la clave
+contradiga a la app. Las preguntas van sobre lo que se vio: quién jala más,
+quién entrega y quién recibe, la forma del agua, entre qué cosas ocurre el
+puente de hidrógeno y qué le hace el agua a la sal.
+
+Si en el taller aparece un libro del colegio con otros cortes, no hay que tocar
+el postest: solo el archivo de la app y las tres frases del guion.
+
+
+================================================================================
+g) CUATRO COSAS QUE HAY QUE CONFIRMAR ANTES DEL TALLER
+================================================================================
+
+Son preguntas al backend, no decisiones nuestras. La primera es la única que
+puede romper un tramo entero.
+
+  1. ¿"agrega otra agua" coloca una SEGUNDA molécula de agua en la escena, o la
+     rechaza por repetida / reemplaza a la primera?
+     Todo el tramo 6 (puente de hidrógeno) depende de tener dos aguas a la vez,
+     y es el tramo que sostiene dos preguntas del postest.
+     Si no se puede: el reemplazo sería agua + amoníaco, que también forma
+     puente de hidrógeno y ya está en el catálogo, pero eso obliga a cambiar
+     dos preguntas del postest. Avisar con tiempo.
+
+  2. ¿El resaltado por elemento funciona sobre la red de sal? Los sodios y los
+     cloros son iones de una red, no átomos de una molécula. Tramos 5 y 7.
+
+  3. ¿"resalta la sal" (molécula entera) funciona con la red de 27 iones?
+     Tramo 5.
+
+  4. ¿"resalta los dobles enlaces" marca el enlace del O2? Tramo 2.
+
+
+================================================================================
+RESPUESTA DEL BACKEND  (2026-09-24)
+================================================================================
+
+LAS 23 FRASES: LAS 23 FUNCIONAN, y ninguna necesita al modelo de lenguaje: las
+resuelven las reglas locales, o sea que son instantáneas y no dependen de
+internet. Están incorporadas al banco de pruebas
+(app.classroom.test.interpreter, sección 0), así que si algo las rompe en el
+futuro, se sabe antes del taller y no durante.
+
+Dos cosas del guion encontraron errores reales, que ya están corregidos:
+  - "resalta la sal" no funcionaba: las reglas buscaban la molécula por su
+    nombre de catálogo ("Cloruro de sodio") y no por el apodo con que el
+    docente la pide. Ahora el intérprete sabe qué nombres apuntan a qué
+    molécula de la escena, apodos incluidos.
+  - "resalta el cloruro de sodio" marcaba solo los SODIOS, porque el elemento
+    le ganaba al nombre de la molécula. Ahora gana la coincidencia más larga.
+
+LAS CUATRO PREGUNTAS DEL PUNTO (g), probadas contra el sistema real:
+
+  1. "agrega otra agua" -> SÍ pone una SEGUNDA agua.
+     Verificado: la escena queda con m1:Agua y m2:Agua. El tramo 6 se puede
+     dictar como está escrito; NO hace falta cambiarlo por amoníaco ni tocar
+     las dos preguntas del postest.
+
+  2. El resaltado por elemento SÍ funciona sobre la red de sal.
+     Verificado: "resalta el sodio" marca 14 iones; "resalta también el cloro"
+     suma los 13 restantes y quedan los 27 marcados a la vez. Los tramos 5 y 7
+     funcionan tal cual, con el resaltado acumulado que pedían.
+
+  3. "resalta la sal" SÍ marca la red entera.
+     Verificado: 27 iones y 54 aristas de una sola vez.
+
+  4. "resalta los dobles enlaces" SÍ marca el enlace del O2.
+     Verificado: marca el enlace 0 de la molécula, que es el doble.
+
+SOBRE LA AMBIGÜEDAD DE "OXÍGENO": NO hay que cambiar nada.
+  "muestra el oxígeno"   -> la molécula O2
+  "resalta los oxígenos" -> los átomos de O de la escena
+  Las dos salen bien porque lo que decide es el VERBO, no la palabra: "muestra"
+  pide una molécula y "resalta" pide algo dentro de la escena. Las dos frases
+  están en el banco, una al lado de la otra, para que siga siendo así.
+
+LO QUE EL BACKEND CONFIRMA DE SU LADO
+  - Tres moléculas del catálogo, ninguna nueva que construir: correcto.
+  - Máximo 3 en pantalla contra un tope de 4: entra de sobra.
+  - Los tres momentos de resaltado acumulado: funcionan (punto 2).
+  - Ningún tramo depende de animaciones: entonces la Fase 5 no bloquea el
+    taller, que era el riesgo que había que descartar.
+  - Los cortes de electronegatividad del guion son exactamente los que la app
+    calcula y muestra.

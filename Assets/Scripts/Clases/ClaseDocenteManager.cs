@@ -46,6 +46,16 @@ public class ClaseDocenteManager : MonoBehaviour
     [SerializeField] private GameObject    highlightButtonTemplate;
     [SerializeField] private Button        btnQuitarResaltado;
 
+    [Header("Instrucción en lenguaje natural")]
+    [SerializeField] private TMP_InputField  inputPrompt;
+    [SerializeField] private Button          btnEnviarPrompt;
+
+    [Header("Vista previa")]
+    [SerializeField] private GameObject      previewPanel;
+    [SerializeField] private TextMeshProUGUI previewText;
+    [SerializeField] private Button          btnPreviewConfirm;
+    [SerializeField] private Button          btnPreviewDiscard;
+
     [Header("Sesión de clase")]
     [SerializeField] private Button          btnIniciar;
     [SerializeField] private Button          btnTerminar;
@@ -84,6 +94,7 @@ public class ClaseDocenteManager : MonoBehaviour
         @"[{{""action"":""highlight"",""selector"":{{""by"":""element"",""value"":""{0}""}}}}]";
 
     const float NOTICE_SECONDS = 3.5f;
+    static readonly string NEWLINE = System.Environment.NewLine;
 
     ClassSceneRenderer sceneRenderer;
     readonly List<GameObject> highlightButtons = new List<GameObject>();
@@ -91,6 +102,13 @@ public class ClaseDocenteManager : MonoBehaviour
     int       currentVersion = -1;
     bool      busy;
     bool      addMode;      // los botones de molécula suman en vez de reemplazar
+
+    // Lo que devolvió el intérprete y está esperando confirmación. El actionsJson se
+    // guarda SIN parsear: se reenvía tal cual, que es lo único que garantiza que se
+    // aplique exactamente lo que el docente vio en la vista previa.
+    string pendingActions = "";
+    string pendingPrompt  = "";
+    int    pendingBaseVersion;
     bool      leaving;
     bool      cameraLocked;
     string    classStatus = "waiting";
@@ -103,6 +121,10 @@ public class ClaseDocenteManager : MonoBehaviour
         if (btnSal)              btnSal.onClick.AddListener(() => Show("sal"));
         if (btnCO2)              btnCO2.onClick.AddListener(() => Show("co2"));
         if (btnModoAgregar)      btnModoAgregar.onClick.AddListener(ToggleAddMode);
+        if (btnEnviarPrompt)     btnEnviarPrompt.onClick.AddListener(SendPrompt);
+        if (btnPreviewConfirm)   btnPreviewConfirm.onClick.AddListener(ConfirmPreview);
+        if (btnPreviewDiscard)   btnPreviewDiscard.onClick.AddListener(DiscardPreview);
+        if (inputPrompt)         inputPrompt.onSubmit.AddListener(_ => SendPrompt());
         if (btnLimpiar)          btnLimpiar.onClick.AddListener(() => Apply(CMD_LIMPIAR));
         if (btnQuitarResaltado)  btnQuitarResaltado.onClick.AddListener(() => Apply(CMD_SIN_RESALTADO));
         if (btnFijarVista)       btnFijarVista.onClick.AddListener(ToggleView);
@@ -113,6 +135,7 @@ public class ClaseDocenteManager : MonoBehaviour
 
         if (highlightButtonTemplate) highlightButtonTemplate.SetActive(false);
         if (stopModal) stopModal.SetActive(false);
+        DiscardPreview();
         HideNotice();
 
         if (className) className.text = ClassContext.HasClass ? ClassContext.ClassName : "Clase";
@@ -247,6 +270,108 @@ public class ClaseDocenteManager : MonoBehaviour
         }
 
         if (btnQuitarResaltado) btnQuitarResaltado.gameObject.SetActive(elements.Count > 0);
+    }
+
+    // ── Instrucción en lenguaje natural ────────────────────────────────────────
+
+    /// <summary>Manda lo escrito al intérprete. NO cambia nada: solo trae la traducción
+    /// para que el docente la revise. Nada llega a los alumnos hasta que confirme.</summary>
+    void SendPrompt()
+    {
+        if (busy) return;
+
+        string text = inputPrompt ? inputPrompt.text.Trim() : "";
+        if (string.IsNullOrEmpty(text)) return;
+
+        busy = true;
+
+        ApiManager.Instance.InterpretCommand(ClassContext.ClassId, text, currentVersion,
+            onSuccess: resp =>
+            {
+                busy = false;
+                if (resp == null) { ShowNotice("No se pudo interpretar la instrucción."); return; }
+
+                // Sin acciones = no se entendió. El motivo viene del servidor, que sabe por
+                // qué: mejor decírselo al docente que un "no funcionó" genérico.
+                if (string.IsNullOrEmpty(resp.actionsJson))
+                {
+                    ShowNotice(string.IsNullOrEmpty(resp.reason)
+                        ? "No se pudo interpretar la instrucción."
+                        : resp.reason);
+                    return;
+                }
+
+                pendingActions     = resp.actionsJson;
+                pendingPrompt      = text;
+                pendingBaseVersion = resp.baseVersion;
+                ShowPreview(resp.preview);
+            },
+            onError: (code, detail) =>
+            {
+                busy = false;
+
+                // Sin intérprete la clase NO se detiene: los botones hacen lo mismo sin
+                // pasar por el proveedor. Por eso el aviso dice qué hacer, no solo qué falló.
+                if (code == 503)
+                {
+                    ShowNotice("Servicio de interpretación no disponible. Usa los botones.");
+                    return;
+                }
+                ShowNotice(MapError(code, detail));
+            });
+    }
+
+    void ShowPreview(string[] lines)
+    {
+        if (previewText)
+            previewText.text = (lines == null || lines.Length == 0)
+                ? "(sin descripción)"
+                : string.Join(NEWLINE, lines);
+
+        if (previewPanel) previewPanel.SetActive(true);
+    }
+
+    /// <summary>Aplica lo que el docente acaba de aprobar. Se manda el actionsJson TAL
+    /// CUAL vino, y con la baseVersion de la interpretación: si la escena cambió entre
+    /// ver la vista previa y confirmar, el servidor responde 409 y no aplica nada.</summary>
+    void ConfirmPreview()
+    {
+        if (busy || string.IsNullOrEmpty(pendingActions)) return;
+
+        string actions = pendingActions;
+        string prompt  = pendingPrompt;
+        int    baseV   = pendingBaseVersion;
+        DiscardPreview();
+
+        busy = true;
+        ApiManager.Instance.ApplyCommand(ClassContext.ClassId, actions, baseV,
+            onSuccess: state =>
+            {
+                busy = false;
+                if (inputPrompt) inputPrompt.text = "";
+                if (state != null) Paint(state);
+            },
+            onError: (code, detail) =>
+            {
+                busy = false;
+                if (detail == "ERR_STALE_SCENE")
+                {
+                    ShowNotice("La escena cambió. Se recargó: vuelve a escribirlo.");
+                    LoadState();
+                    return;
+                }
+                ShowNotice(MapError(code, detail));
+            },
+            source: "prompt", promptText: prompt);
+    }
+
+    /// <summary>Descarta la traducción. Como interpretar no tuvo efecto, no hay nada que
+    /// deshacer: basta con olvidarla.</summary>
+    void DiscardPreview()
+    {
+        pendingActions = "";
+        pendingPrompt  = "";
+        if (previewPanel) previewPanel.SetActive(false);
     }
 
     void ToggleView() => Apply(cameraLocked ? CMD_LIBERAR : CMD_FIJAR);

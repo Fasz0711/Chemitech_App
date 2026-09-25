@@ -26,6 +26,12 @@ public class ClassSceneRenderer
     // a su molécula, así que sin este mapa no se sabe a qué esfera se refieren.
     readonly Dictionary<string, int> moleculeBase = new Dictionary<string, int>();
 
+    // Al revés: id global de átomo -> molécula a la que pertenece. Lo usa el aislamiento,
+    // que parte de tocar un átomo y necesita saber qué molécula dejar encendida.
+    readonly Dictionary<int, string> atomMolecule = new Dictionary<int, string>();
+
+    string isolated = "";
+
     readonly BondRenderer bondRenderer;
 
     static readonly Color FALLBACK_COLOR = new Color(0.72f, 0.75f, 0.82f);
@@ -57,6 +63,7 @@ public class ClassSceneRenderer
             if (m == null || m.atoms == null) continue;
 
             if (!string.IsNullOrEmpty(m.id)) moleculeBase[m.id] = baseId;
+            for (int k = 0; k < m.atoms.Length; k++) atomMolecule[baseId + k] = m.id;
 
             Vector3 offset = m.offset != null ? m.offset.ToVector3() : Vector3.zero;
 
@@ -120,6 +127,30 @@ public class ClassSceneRenderer
         }
     }
 
+    /// <summary>Molécula a la que pertenece un átomo, o "" si no se conoce.</summary>
+    public string MoleculeOf(int atomId)
+        => atomMolecule.TryGetValue(atomId, out var id) ? id : "";
+
+    public string IsolatedMolecule => isolated;
+
+    /// <summary>Deja encendida una molécula y atenúa el resto. Pasar "" lo restablece.
+    ///
+    /// Es LOCAL: no viaja al servidor ni afecta a los demás alumnos. Se pierde al
+    /// redibujar, que es lo correcto: si el docente cambió la escena, los ids de antes
+    /// puede que ya no existan.</summary>
+    public void SetIsolated(string moleculeId)
+    {
+        isolated = moleculeId ?? "";
+        bool isolating = !string.IsNullOrEmpty(isolated);
+
+        foreach (var kv in byId)
+        {
+            if (!kv.Value) continue;
+            bool dim = isolating && MoleculeOf(kv.Key) != isolated;
+            kv.Value.SetDimmed(dim);
+        }
+    }
+
     /// <summary>Orienta los enlaces según la cámara. Llamar cada frame.</summary>
     public void UpdateVisuals() => bondRenderer.UpdateVisuals();
 
@@ -129,6 +160,8 @@ public class ClassSceneRenderer
         bonds.Clear();
         byId.Clear();
         moleculeBase.Clear();
+        atomMolecule.Clear();
+        isolated = "";
 
         foreach (var go in spawned) if (go) Object.Destroy(go);
         spawned.Clear();
@@ -144,7 +177,8 @@ public class ClassSceneRenderer
     {
         var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         go.name = $"Atom_{element}_{id}";
-        var col = go.GetComponent<Collider>(); if (col) Object.Destroy(col);
+        // El collider SE QUEDA: es lo que permite tocar un átomo para aislar su molécula.
+        // (Los cilindros de los enlaces sí pierden el suyo, en BondRenderer.)
         go.transform.SetParent(root, false);
         go.transform.localPosition = position;
         go.transform.localScale    = Vector3.one * atomSize;

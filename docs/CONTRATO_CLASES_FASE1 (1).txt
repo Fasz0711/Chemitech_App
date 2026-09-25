@@ -98,13 +98,16 @@ POST /session/refresh   {refreshToken}
     POST   /classes/{id}/students                    agregar N cuentas
     POST   /classes/{id}/students/{code}/password    reponer una contraseña
     POST   /classes/{id}/start                       iniciar
-    POST   /classes/{id}/stop                        terminar
+    POST   /classes/{id}/stop                        terminar (y borrar, si se
+                                                     manda {"deleteClass":true})
+    DELETE /classes/{id}                             borrar la clase
   DOCENTE DUEÑO O ALUMNO MIEMBRO
     GET    /classes/mine                             las clases del que pregunta
     GET    /classes/{id}/state?since={version}       el sondeo
 
-  Fases siguientes (todavia NO existen): /commands/interpret, /commands/apply,
-  /predictions, /roster, /molecules/structure-2d.
+  /commands/apply y /roster YA existen (Fase 2): su contrato esta en
+  CONTRATO_CLASES_FASE2.txt. Todavia NO existen: /commands/interpret (Fase 3),
+  /molecules/structure-2d (Fase 4) y /predictions (Fase 5).
 
 
 --------------------------------------------------------------------------------
@@ -170,13 +173,18 @@ nueva. 404 ERR_STUDENT_NOT_FOUND si el codigo no es de esa clase.
 
 
 --------------------------------------------------------------------------------
-2.4 POST /classes/{id}/start   y   /stop    (sin cuerpo)  -> 200
+2.4 POST /classes/{id}/start   y   /stop,   DELETE /classes/{id}   -> 200
 --------------------------------------------------------------------------------
 {
-  "message": "OK_CLASS_STARTED",     (o "OK_CLASS_STOPPED")
+  "message": "OK_CLASS_STARTED",     (o "OK_CLASS_STOPPED", "OK_CLASS_DELETED")
   "status": "running",               waiting | running | ended
-  "version": 1
+  "version": 1,
+  "deletedStudents": 0               cuentas borradas; 0 salvo al borrar
 }
+
+LAS TRES RUTAS DEVUELVEN LA MISMA FORMA: una sola clase de C# y un solo camino
+en el cliente. Lo que distingue el caso es "message", no la forma (una respuesta
+que cambia de forma segun un flag es polimorfismo, y JsonUtility no lo lee).
 
 El estado SOLO avanza:  waiting -> running -> ended.
   - Repetir start (o stop) NO es error: responde 200 y la version no sube. Un
@@ -186,6 +194,30 @@ El estado SOLO avanza:  waiting -> running -> ended.
   - 409 ERR_CLASS_NOT_RUNNING: terminar una clase que nunca empezo.
 
 >>> TERMINAR ES DEFINITIVO. Pedir confirmacion antes de llamar a /stop.
+
+BORRAR UNA CLASE
+  DELETE /classes/{id}       sin cuerpo
+  POST   /classes/{id}/stop  con cuerpo OPCIONAL {"deleteClass": true}
+                             -> la termina y la borra en la misma llamada
+
+  El cuerpo del stop es opcional de verdad: sin el, se comporta como siempre, y
+  el cliente que ya existe no cambia. Con deleteClass el estado da igual: se
+  borra incluso una clase que nunca empezo (sin el flag, eso habria sido 409).
+
+  >>> ES IRREVERSIBLE Y SE LLEVA MAS DE LO QUE PARECE: la clase, su escena, el
+      registro de comandos del docente y TODAS las cuentas por codigo de sus
+      alumnos. Confirmar con el numero a la vista ("se borraran 25 cuentas");
+      "deletedStudents" de la respuesta dice cuantas se borraron.
+  >>> UNA CLASE EN CURSO NO SE BORRA: 409 ERR_CLASS_IS_RUNNING. A media sesion
+      dejaria a 25 alumnos con el sondeo roto y sin explicacion. Terminarla
+      primero, o usar /stop con deleteClass.
+  >>> A LOS ALUMNOS SE LES CAE LA SESION, y no como te imaginas: su cuenta
+      desaparece con la clase, asi que su siguiente peticion NO es un 404 de
+      clase, es 401 ERR_TOKEN_INVALID, y tu manejo de sesion muerta los manda
+      al login. Es correcto (la cuenta ya no existe), pero conviene que la
+      pantalla de clase lo cuente como "la clase termino" y no como un fallo.
+  Los codigos quedan libres: despues de borrar, esa misma seccion se puede
+  volver a usar.
 
 
 --------------------------------------------------------------------------------

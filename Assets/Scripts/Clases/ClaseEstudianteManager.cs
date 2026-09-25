@@ -19,6 +19,7 @@ public class ClaseEstudianteManager : MonoBehaviour
 {
     [Header("Cámara")]
     [SerializeField] private OrbitCameraController cam;
+    [SerializeField] private ClassTapCatcher       tapCatcher;
 
     [Header("Mundo")]
     [SerializeField] private Transform sceneRoot;       // padre de átomos y enlaces
@@ -77,6 +78,7 @@ public class ClaseEstudianteManager : MonoBehaviour
         if (btnSalir)        btnSalir.onClick.AddListener(Leave);
         if (btnVolverVista)  btnVolverVista.onClick.AddListener(SnapToTeacherView);
         if (btnCopiar)       btnCopiar.onClick.AddListener(CopyToUniverse);
+        if (tapCatcher)      tapCatcher.Tapped += HandleTap;
 
         if (className) className.text = ClassContext.HasClass ? ClassContext.ClassName : "Clase";
         SetSync(true);
@@ -100,7 +102,39 @@ public class ClaseEstudianteManager : MonoBehaviour
         if (cameraLocked && cam) cam.SetView(docYaw, docPitch, docDistance);
     }
 
-    void OnDestroy() => sceneRenderer?.Dispose();
+    void OnDestroy()
+    {
+        if (tapCatcher) tapCatcher.Tapped -= HandleTap;
+        sceneRenderer?.Dispose();
+    }
+
+    // ── Aislar una molécula (local) ────────────────────────────────────────────
+
+    /// <summary>Tocar una molécula la deja encendida y atenúa las demás; tocarla otra vez
+    /// restablece, igual que tocar el vacío. Es SOLO de este alumno: no viaja al servidor
+    /// ni cambia lo que ven los demás.</summary>
+    void HandleTap(Vector2 screenPosition)
+    {
+        if (sceneRenderer == null) return;
+
+        var camera = cam ? cam.GetComponent<Camera>() : Camera.main;
+        if (!camera) return;
+
+        // Tocar el vacío quita el aislamiento: es la salida más natural y evita que un
+        // alumno se quede atascado viendo una sola molécula sin saber cómo volver.
+        if (!Physics.Raycast(camera.ScreenPointToRay(screenPosition), out var hit))
+        {
+            sceneRenderer.SetIsolated("");
+            return;
+        }
+
+        var atom = hit.collider ? hit.collider.GetComponent<Atom3D>() : null;
+        if (atom == null) { sceneRenderer.SetIsolated(""); return; }
+
+        string molecule = sceneRenderer.MoleculeOf(atom.id);
+        bool alreadyIsolated = sceneRenderer.IsolatedMolecule == molecule;
+        sceneRenderer.SetIsolated(alreadyIsolated ? "" : molecule);
+    }
 
     // Con la pantalla bloqueada o la app de fondo no hay nadie mirando: seguir sondeando
     // solo gastaría batería y datos, y son 25 celulares a la vez.

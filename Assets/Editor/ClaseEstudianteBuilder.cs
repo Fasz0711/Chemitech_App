@@ -97,6 +97,8 @@ public static class ClaseEstudianteBuilder
         var cImg = catcher.AddComponent<Image>(); cImg.color = new Color(0f, 0f, 0f, 0f);
         var drag = catcher.AddComponent<DragRotateCatcher>();
         drag.cam = orbit;
+        // Convive con el anterior: arrastrar rota, tocar aísla.
+        var tap = catcher.AddComponent<ClassTapCatcher>();
 
         // ── HUD ───────────────────────────────────────────────────────────────
         var header = MakeEmpty(root, "Header");
@@ -161,6 +163,7 @@ public static class ClaseEstudianteBuilder
 
         var so = new SerializedObject(mgr);
         SetRef(so, "cam",            orbit);
+        SetRef(so, "tapCatcher",     tap);
         SetRef(so, "sceneRoot",      sceneRoot.transform);
         SetRef(so, "atomMaterial",   atomMat);
         SetRef(so, "bondMaterial",   bondMat);

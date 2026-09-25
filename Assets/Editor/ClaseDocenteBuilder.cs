@@ -30,6 +30,7 @@ public static class ClaseDocenteBuilder
     static readonly Color RED    = Hex("E74C3C");
     static readonly Color AMBER  = Hex("F5A623");
     static readonly Color DIM    = Hex("A2A2A2");
+    static readonly Color ACCENT_TEXT = Hex("BFE9F2");
 
     static TMP_FontAsset fnt;
     static Sprite        rounded;
@@ -182,6 +183,40 @@ public static class ClaseDocenteBuilder
         var btnLimpiar = MakeButton(bar.transform, "BtnLimpiar", "Limpiar", RED,
                                     new Vector2(0.5f, 0.5f), new Vector2(540f, 0f), new Vector2(200f, 68f), 24f);
 
+        // ── Instrucción en lenguaje natural ───────────────────────────────────
+        var promptRow = MakeEmpty(root, "PromptRow");
+        var prRT = promptRow.GetComponent<RectTransform>();
+        prRT.anchorMin = new Vector2(0f, 0f); prRT.anchorMax = new Vector2(1f, 0f);
+        prRT.pivot = new Vector2(0.5f, 0f);
+        prRT.offsetMin = new Vector2(150f, 214f); prRT.offsetMax = new Vector2(-150f, 286f);
+
+        var inputPrompt = MakeInput(promptRow.transform, "InputPrompt",
+                                    "Escribe una instrucción: \"muestra una molécula de agua\"",
+                                    new Vector2(0f, 0.5f), new Vector2(0f, 0f), new Vector2(0f, 0f),
+                                    stretchRight: 250f);
+        var btnEnviar = MakeButton(promptRow.transform, "BtnEnviarPrompt", "Enviar", CYAN,
+                                   new Vector2(1f, 0.5f), new Vector2(-115f, 0f), new Vector2(220f, 66f), 24f);
+
+        // ── Vista previa: nada llega a los alumnos hasta confirmar ────────────
+        var preview = MakeEmpty(root, "PreviewPanel");
+        SetRT(preview, new Vector2(0.5f, 0.5f), new Vector2(0f, -40f), new Vector2(1000f, 420f));
+        var pvImg = preview.AddComponent<Image>();
+        pvImg.sprite = rounded; pvImg.type = Image.Type.Sliced; pvImg.color = MODAL;
+
+        MakeText(preview.transform, "Title", "Esto es lo que va a pasar",
+                 new Vector2(0.5f, 1f), new Vector2(0f, -46f), new Vector2(900f, 50f),
+                 30f, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
+
+        var previewText = MakeText(preview.transform, "PreviewText", "",
+                                   new Vector2(0.5f, 0.5f), new Vector2(0f, 10f), new Vector2(900f, 200f),
+                                   24f, ACCENT_TEXT, TextAlignmentOptions.Center, FontStyles.Normal);
+
+        var btnDiscard = MakeButton(preview.transform, "BtnPreviewDiscard", "Descartar", PURPLE,
+                                    new Vector2(0.5f, 0f), new Vector2(-190f, 56f), new Vector2(320f, 66f), 25f);
+        var btnConfirm = MakeButton(preview.transform, "BtnPreviewConfirm", "Confirmar", GREEN,
+                                    new Vector2(0.5f, 0f), new Vector2(190f, 56f), new Vector2(320f, 66f), 25f);
+        preview.SetActive(false);
+
         // ── Modal de terminar ─────────────────────────────────────────────────
         var stopModal = MakeEmpty(root, "StopModal"); Stretch(stopModal);
         var dim = stopModal.AddComponent<Image>(); dim.color = new Color(0f, 0f, 0f, 0.72f);
@@ -247,6 +282,12 @@ public static class ClaseDocenteBuilder
         SetRef(so, "stopModal",               stopModal);
         SetRef(so, "btnStopConfirm",          btnStopConfirm);
         SetRef(so, "btnStopCancel",           btnStopCancel);
+        SetRef(so, "inputPrompt",             inputPrompt);
+        SetRef(so, "btnEnviarPrompt",         btnEnviar);
+        SetRef(so, "previewPanel",            preview);
+        SetRef(so, "previewText",             previewText);
+        SetRef(so, "btnPreviewConfirm",       btnConfirm);
+        SetRef(so, "btnPreviewDiscard",       btnDiscard);
         SetRef(so, "noticeRoot",              notice);
         SetRef(so, "noticeText",              noticeText);
         so.ApplyModifiedProperties();
@@ -296,6 +337,52 @@ public static class ClaseDocenteBuilder
         tmp.overflowMode = TextOverflowModes.Overflow;
         tmp.raycastTarget = false;
         return tmp;
+    }
+
+    /// <summary>Campo de texto. 'stretchRight' deja ese hueco a la derecha para el botón
+    /// de enviar, en vez de fijar un ancho que se rompería al cambiar la resolución.</summary>
+    static TMP_InputField MakeInput(Transform parent, string name, string placeholder,
+                                    Vector2 anchor, Vector2 pos, Vector2 size,
+                                    float stretchRight = 0f)
+    {
+        var go = MakeEmpty(parent, name);
+        if (stretchRight > 0f)
+        {
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero; rt.offsetMax = new Vector2(-stretchRight, 0f);
+        }
+        else SetRT(go, anchor, pos, size);
+
+        var img = go.AddComponent<Image>();
+        img.sprite = rounded; img.type = Image.Type.Sliced; img.color = Hex("141738");
+
+        var input = go.AddComponent<TMP_InputField>();
+
+        var area = MakeEmpty(go.transform, "Text Area");
+        var aRT = area.GetComponent<RectTransform>();
+        aRT.anchorMin = Vector2.zero; aRT.anchorMax = Vector2.one;
+        aRT.offsetMin = new Vector2(20f, 6f); aRT.offsetMax = new Vector2(-20f, -6f);
+        area.AddComponent<RectMask2D>();
+
+        var phGo = MakeEmpty(area.transform, "Placeholder"); Stretch(phGo);
+        var ph = phGo.AddComponent<TextMeshProUGUI>();
+        ph.text = placeholder; ph.font = fnt; ph.fontSize = 22f;
+        ph.color = new Color(1f, 1f, 1f, 0.35f);
+        ph.alignment = TextAlignmentOptions.Left; ph.raycastTarget = false;
+
+        var txtGo = MakeEmpty(area.transform, "Text"); Stretch(txtGo);
+        var txt = txtGo.AddComponent<TextMeshProUGUI>();
+        txt.text = ""; txt.font = fnt; txt.fontSize = 22f;
+        txt.color = Color.white; txt.alignment = TextAlignmentOptions.Left;
+        txt.raycastTarget = false;
+
+        input.textViewport  = aRT;
+        input.textComponent = txt;
+        input.placeholder   = ph;
+        input.targetGraphic = img;
+        input.lineType      = TMP_InputField.LineType.SingleLine;
+        return input;
     }
 
     static Material GetOrCreateMat(string path, Color color, float metallic, float smoothness)

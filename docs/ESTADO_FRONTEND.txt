@@ -1,0 +1,274 @@
+================================================================================
+ESTADO DEL FRONTEND — MODO CLASE
+ChemiTech · cliente Unity · actualizado 2026-09-24
+================================================================================
+
+PARA QUÉ ES ESTE ARCHIVO
+  Lo escribió Claude Code (frontend) antes de que se comprimiera la conversación.
+  Recoge lo que NO está en ningún contrato: qué se construyó, por qué se decidió
+  cada cosa y qué falta. Los contratos del backend siguen siendo la verdad sobre
+  el protocolo; esto es la verdad sobre el cliente.
+
+  Si estás retomando el hilo: lee §1 (dónde estamos), §4 (decisiones, que es lo
+  que no se puede reconstruir leyendo el código) y §6 (lo que falta).
+
+DOCUMENTOS HERMANOS
+  docs/CONTEXTO_APLICACION_NUEVO.txt ... la app entera y el plan de fases (§17)
+  docs/CONTRATO_CLASES_FASE1 (1).txt ... clases, cuentas por código, login
+  docs/CONTRATO_CLASES_FASE2 (1).txt ... escena, comandos, roster
+  docs/PROPUESTA_FASE2 (1).txt ......... el diseño acordado y sus porqués
+  docs/guion-listas-para-backend.txt ... [SIN LEER TODAVÍA por el frontend]
+
+
+================================================================================
+1. DÓNDE ESTAMOS
+================================================================================
+
+  FASE 0 — Desbloquear ......................................... COMPLETA
+    Backend: límites por usuario en vez de por IP.
+    Cliente: 429 distinguido de sesión muerta + BondRenderer extraído.
+
+  FASE 1 — Esqueleto de clases ................................. COMPLETA Y PROBADA
+    Rol, ClassContext, DTOs, 7 endpoints, login por código, MisClasesScene,
+    botón "Clases", ClaseEsperaScene.
+
+  FASE 2 — Escena compartida ................................... COMPLETA, SIN PROBAR
+    Render con escala real, sondeo con jitter, comandos por botones, roster,
+    resaltados, modo agregar.
+
+  FASE 3 — cliente ............................................. COMPLETA, SIN PROBAR
+    Aislar molécula, copiar a un universo, vista previa del intérprete.
+    (La vista previa está escrita contra un endpoint que AÚN NO EXISTE: el
+     backend está en "3a", un intérprete local de reglas sin IA.)
+
+  FASE 4 — capas de información ................................ NO EMPEZADA
+  FASE 5 — interacciones y predicción .......................... NO EMPEZADA
+
+  OJO CON LA NUMERACIÓN: hay dos en circulación.
+    Plan original (§17 del contexto): 3 = exploración local + capas,
+                                      4 = interacciones, 5 = copiar a universo.
+    Numeración del backend (la que usamos): 3 = intérprete, 4 = capas,
+                                            5 = interacciones + predicción.
+    Se adoptó la del backend porque el intérprete es lo único que depende de un
+    proveedor externo y conviene descubrir pronto si falla.
+
+
+================================================================================
+2. ARCHIVOS DEL CLIENTE (modo clase)
+================================================================================
+
+RUNTIME — Assets/Scripts/Clases/
+  ClassContext.cs .......... clase y nombre con que se entró; no se persiste
+  ClassModels.cs ........... DTOs de administración + ClassStateResponse
+  ClassSceneModels.cs ...... DTOs del contenido de la escena (contrato completo,
+                             incluidos los de Fase 4 y 5 que aún no se dibujan)
+  ClassSceneRenderer.cs .... dibuja la escena; clase plana, la comparten alumno y
+                             docente. Aislamiento y resaltados viven aquí.
+  ClassTapCatcher.cs ....... distingue toque de arrastre (para aislar)
+  MisClasesManager.cs ...... lista de clases, dos caras por rol, crear clase
+  ClaseEsperaManager.cs .... sala de espera, sondeo hasta "running"
+  ClaseEstudianteManager.cs  escena en solo lectura + copiar a universo + aislar
+  ClaseDocenteManager.cs ... pizarra: botones, vista previa, roster, sesión
+
+EDITOR — Assets/Editor/
+  ClaseEsperaBuilder.cs ...... ChemiTech → Build Clase Espera Scene
+  ClaseEstudianteBuilder.cs .. ChemiTech → Build Clase Estudiante Scene
+  ClaseDocenteBuilder.cs ..... ChemiTech → Build Clase Docente Scene
+  MisClasesBuilder.cs ........ ChemiTech → Build Mis Clases Scene   [NO RE-CORRER]
+  ClasesButtonTool.cs ........ ChemiTech → Add → Clases Button (aditiva)
+  ConducirButtonTool.cs ...... ChemiTech → Add → Conducir Button (aditiva)
+  LoginCodeFieldTool.cs ...... ChemiTech → Fix → Login por código (aditiva)
+
+TOCADOS FUERA DE CLASES
+  Services/ApiManager.cs ..... 10 métodos de clase + refresh con 429 + bonds
+  Services/SessionData.cs .... Role, IsTeacher, ROLE_STUDENT/ROLE_TEACHER
+  Login/LoginManager.cs ...... guarda el rol; mensajes de código y de 429
+  MainMenu/MainMenuManager.cs  botón "Clases"
+  Game/Atom3D.cs ............. SetDimmed() para el aislamiento
+  Game/BondRenderer.cs ....... EXTRAÍDO de BondManager en la Fase 0
+  Game/BondManager.cs ........ usa BondRenderer; dibuja moléculas incompletas
+  Game/OrbitCameraController.cs  SetView() para seguir la vista del docente
+
+ESCENAS NUEVAS
+  MisClasesScene, ClaseEsperaScene, ClaseEstudianteScene, ClaseDocenteScene
+  TODAS deben estar en File → Build Settings → Add Open Scenes.
+
+
+================================================================================
+3. LO QUE HAY QUE CORRER EN UNITY (si algo no aparece)
+================================================================================
+
+  ChemiTech → Build Clase Espera Scene
+  ChemiTech → Build Clase Estudiante Scene
+  ChemiTech → Build Clase Docente Scene
+  ChemiTech → Add → Clases Button       (con SampleScene abierta)
+  ChemiTech → Add → Conducir Button     (con MisClasesScene abierta)
+  ChemiTech → Fix → Login por código    (con LoginScene abierta)
+
+  Y añadir las 4 escenas a Build Settings. Sin eso:
+    - la sala de espera no puede saltar a la escena de clase
+      (usa Application.CanStreamedLevelBeLoaded y se queda en "la clase empezó")
+
+
+================================================================================
+4. DECISIONES Y SU PORQUÉ  (lo que no se reconstruye leyendo el código)
+================================================================================
+
+4.1 EL DOCENTE NO SONDEA EL ESTADO EN BUCLE
+  Carga una vez al entrar; /commands/apply le devuelve el estado completo, que
+  pinta al instante. Solo recarga ante 409 ERR_STALE_SCENE. Es el único que puede
+  cambiar la escena, así que sondear sería gastar una petición cada 3 s durante 20
+  minutos para nada. Lo que SÍ sondea es el roster, que cambia por su cuenta.
+
+4.2 GUARDAR LA VERSIÓN QUE DEVUELVE apply
+  Si se esperara al siguiente sondeo para actualizarla, dos botones seguidos
+  chocarían con 409 contra la acción anterior del propio docente.
+
+4.3 EL actionsJson NUNCA SE PARSEA
+  Ni el de los botones ni el del intérprete. Los comandos son constantes verbatim
+  escritas a mano; JsonUtility.ToJson emitiría todos los campos con su valor por
+  defecto (un "view" que solo enfoca viajaría con locked=false). Y el del
+  intérprete se guarda y reenvía tal cual: leerlo perdería campos en silencio y se
+  aplicaría algo distinto de lo que el docente confirmó en la vista previa.
+
+4.4 LA ESCALA REAL ENTRE MOLÉCULAS (lo pidió el frontend, el backend lo aceptó)
+  Cada molécula llega normalizada a [0,1] MÁS un "scale" con su tamaño real en Å.
+  Sin eso, un cristal de sal y una molécula de agua ocuparían el mismo volumen:
+  químicamente falso en una lección sobre estructura.
+  FÓRMULA EXACTA (del contrato §1):
+      posiciónÅ    = (posición - 0.5) * scale + offset
+      posiciónMundo = posiciónÅ * escalaDeMundo
+  El -0.5 NO es opcional: sin él la molécula cuelga de una esquina de su offset.
+  Y el RADIO DE LAS ESFERAS NO se multiplica por scale (engordaría los átomos de
+  la molécula grande). worldScale es UNA sola para toda la escena.
+
+4.5 IDS GLOBALES DE ÁTOMO
+  Los beginAtomId/endAtomId del JSON son LOCALES a cada molécula. Con varias en
+  escena se pisarían, así que el renderer asigna ids globales y guarda dos mapas:
+  moleculeId -> primer id global, y id global -> moleculeId (para el aislamiento).
+
+4.6 JITTER DE ±0.5 s EN EL SONDEO
+  Lo pidió el backend con datos de su ensayo: 25 celulares en el mismo tic son la
+  ráfaga que dispara el p95. Intervalo 3 s. Además se pausa en segundo plano.
+
+4.7 AISLAR: ATENUAR, NO OCULTAR
+  Atenuar deja el resto como contexto. Tocar el vacío también quita el aislamiento
+  (si no, un alumno se queda atascado sin saber cómo volver). Toque vs arrastre se
+  distingue por distancia (12 px) usando eventos de UI, para no depender de qué
+  sistema de entrada tenga el proyecto. Los ÁTOMOS conservan su collider (es lo
+  que el rayo golpea); los cilindros de enlace no.
+
+4.8 COPIAR A UN UNIVERSO: ESCALA Y ALTURA
+  Las posiciones vienen en ångströms (un enlace ~1 Å) pero en la zona de juego los
+  átomos se colocan a ~1.5 unidades y el agrupador usa radio 2.0. Por eso la copia
+  escala por 1.6 y ELEVA todo (las posiciones vienen centradas en cero, así que la
+  mitad tendría Y negativa y quedaría enterrada). Ambos valores en el inspector.
+  LIMITACIÓN CONOCIDA: las estructuras iónicas tienen sus iones a ~2.8 Å, más que
+  el radio del agrupador. Sus enlaces guardados se dibujan igual, pero si el alumno
+  mueve un ion, esa parte no se re-detecta como una sola cosa.
+
+4.9 BOTONES QUE NO HACEN NADA VISIBLE: NO SE PONEN
+  Por eso no hay botón de capas en la Fase 2 (el comando existe, el dibujado llega
+  en la Fase 4), y por eso "Conducir" no existió hasta que existió su escena.
+
+4.10 LOS BOTONES DE RESALTAR SE GENERAN DEL ESTADO
+  Uno por elemento presente en la escena. Así ninguno puede producir
+  ERR_SCENE_REFERENCE, porque solo se ofrece lo que hay.
+
+4.11 EL ROL QUE MANDA ES EL DE LA RESPUESTA
+  MisClasesScene decide su cara por el "role" que devuelve /classes/mine, no por
+  SessionData. Así, cuando a alguien lo hacen docente, la pantalla se adapta sin
+  esperar al siguiente login.
+
+4.12 EL BOTÓN "CLASES" SE MUESTRA A TODO EL QUE TENGA SESIÓN
+  No se consulta /classes/mine desde el menú. La razón es el modo de falla: si su
+  visibilidad dependiera de una petición, una red lenta o un 429 lo harían
+  desaparecer y el alumno se quedaría sin camino a su clase justo la mañana del
+  taller. Una lista vacía es recuperable; un botón ausente no, y encima es
+  indistinguible de "no tienes clases" cuando lo reportan por chat.
+
+4.13 ORDEN DE LECTURA DEL ESTADO (obligatorio)
+  1. changed == false  -> NO redibujar; el resto del cuerpo es relleno.
+  2. status != running -> espera o fin.
+  3. running           -> dibujar.
+  Y los objetos opcionales se preguntan por su booleano hasX, NUNCA por "!= null":
+  JsonUtility jamás deja null un objeto, crea uno vacío.
+
+
+================================================================================
+5. CONVENCIONES DEL PROYECTO QUE HAY QUE RESPETAR
+================================================================================
+
+  - ESCENAS AJUSTADAS A MANO, no reconstruir con su builder:
+      ZonaJuegoScene, DiaryScene, y ahora MisClasesScene (el autor la ajustó).
+      Los builders de clase RECREAN el Canvas: sirven mientras se itera el diseño,
+      pero una vez aprobada la pantalla hay que congelarla y extenderla con
+      herramientas aditivas.
+
+  - NADA DE EMOJIS NI GLIFOS ESPECIALES en texto TMP. La fuente Fredoka no tiene
+    fallback ni hay sprite asset. Iconos = Image + sprite. Fórmulas en ASCII.
+
+  - PATRÓN DE PANTALLA: Builder (crea y cablea con SerializedObject) + Manager
+    (lógica) + Scene. Nunca arrastrar referencias a mano en el inspector.
+
+  - VERIFICACIÓN SIN COMPILAR (el MCP de Unity estuvo revocado toda la sesión):
+    cruzar cada SetRef del builder contra los [SerializeField] del manager. Un
+    nombre que no coincide deja el campo sin cablear SIN ERROR, y la pantalla
+    falla en silencio. Cuidado: una regex [a-zA-Z]+ corta los dígitos y da falsos
+    positivos con nombres como btnCO2.
+
+  - Los heredoc de bash fallan con archivos largos; para esos, escribir el archivo
+    con la herramienta de escritura directa.
+
+
+================================================================================
+6. LO QUE FALTA
+================================================================================
+
+6.1 SIN PROBAR (lo más urgente)
+  NADA de la Fase 2 ni de la Fase 3 del cliente se ha ejecutado. Se acumularon
+  muchas piezas sin compilar porque el MCP de Unity estuvo revocado.
+  Prueba mínima que cierra la Fase 2:
+    docente: Conducir -> Iniciar -> Agua -> modo agregar -> Sal -> Resaltar O
+    alumno:  entra con DEMO_01 -> ve lo mismo en <= 3 s
+    y uno que entra tarde ve exactamente lo mismo.
+  Después: aislar tocando, y copiar a un universo.
+
+6.2 A LA ESPERA DEL BACKEND
+  /commands/interpret no existe todavía (el backend está en 3a, un intérprete
+  local de reglas sin IA). La vista previa del cliente ya está escrita contra la
+  forma congelada y es defensiva: si actionsJson viene vacío lo trata como "no se
+  entendió" y muestra el reason del servidor.
+
+6.3 FASE 4 — CAPAS (siguiente trabajo grande del cliente)
+  labels, electronegativity, bondTypes, structure2D.
+  Los DATOS YA VIAJAN desde la Fase 2 (en, kind, negativeEnd) y ya están
+  declarados en ClassSceneModels.cs, así que es dibujar, no renegociar.
+  OJO: "structure2D" lleva D MAYÚSCULA en el JSON.
+  Y delta+/delta- son glifos griegos: van como SPRITES, no como texto (§5).
+  Cuando se enciendan las capas, añadir sus botones a la barra del docente.
+
+6.4 FASE 5 — INTERACCIONES Y PREDICCIÓN
+  Cuatro primitivas (move, transfer, bond, attract) compuestas desde guiones que
+  viven en el backend. Cada paso define su ESTADO FINAL y la animación es solo la
+  transición: quien entra tarde dibuja el estado directo.
+  También faltan: dibujar annotations (con Billboard) y attractions.
+
+6.5 PENDIENTES MENORES
+  - Los bondIds de highlights no se dibujan (solo los atomIds). Los botones
+    actuales solo generan selectores por elemento; hará falta cuando el intérprete
+    pueda pedir "los enlaces O-H".
+  - El frontend no ha leído docs/guion-listas-para-backend.txt.
+  - BASE_URL sigue en 127.0.0.1. Para el taller: URL de producción en el APK.
+
+
+================================================================================
+7. EL ENSAYO QUE CIERRA TODO
+================================================================================
+  Los 20 minutos completos con dos dispositivos y el guion en la mano. Es la única
+  prueba que puede descubrir lo que ninguno de los dos lados ve por separado, y
+  está en el plan como parte de la última fase. Cuanto antes se corra, mejor.
+
+================================================================================
+FIN
+================================================================================

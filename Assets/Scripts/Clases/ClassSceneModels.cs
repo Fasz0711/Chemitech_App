@@ -153,6 +153,22 @@ public class RevealDTO
     public string correctOptionId;
 }
 
+/// <summary>Respuesta de /commands/interpret. El intérprete TRADUCE, nunca ejecuta:
+/// esto no cambia nada en la escena hasta que el docente confirma.
+///
+/// 'actionsJson' es OPACO y el cliente NO lo parsea: el vocabulario es polimórfico y
+/// JsonUtility perdería campos en silencio, así que se aplicaría algo distinto de lo
+/// que el docente vio en la vista previa. Se guarda tal cual y se reenvía a /apply.</summary>
+[Serializable]
+public class InterpretResponse
+{
+    public string   message;
+    public string[] preview;      // frases en lenguaje simple, para que el docente confirme
+    public string   actionsJson;  // opaco; vacío = no se pudo interpretar
+    public int      baseVersion;  // versión sobre la que se interpretó
+    public string   reason;       // por qué no se pudo, cuando no hay acciones
+}
+
 // ── Roster (panel del docente) ───────────────────────────────────────────────
 
 [Serializable]

@@ -325,19 +325,38 @@ public class ApiManager : MonoBehaviour
     /// instante y guardar SU versión. Si se espera al siguiente sondeo para actualizarla,
     /// dos botones seguidos chocan con 409 contra la acción anterior del propio docente.</summary>
     public void ApplyCommand(string classId, string actionsJson, int baseVersion,
-                             Action<ClassStateResponse> onSuccess, Action<int, string> onError)
+                             Action<ClassStateResponse> onSuccess, Action<int, string> onError,
+                             string source = "button", string promptText = "")
     {
         string body = JsonUtility.ToJson(new ApplyCommandRequest
         {
             actionsJson = actionsJson,
             baseVersion = baseVersion,
-            source      = "button",   // "prompt" llega con el intérprete (Fase 3)
-            promptText  = "",
+            source      = source,       // "button" o "prompt"
+            promptText  = promptText,   // lo que escribió el docente; queda como evidencia
         });
         Debug.Log($"[API] POST {BASE_URL}/classes/{classId}/commands/apply - {actionsJson}");
 
         StartCoroutine(PostAuthed($"/classes/{classId}/commands/apply", body,
             json => onSuccess?.Invoke(JsonUtility.FromJson<ClassStateResponse>(json)),
+            onError));
+    }
+
+    /// <summary>Traduce lo que escribió el docente a acciones, SIN aplicar nada. Está
+    /// separado de /apply justamente para que se pueda mostrar una vista previa: si
+    /// interpretar tuviera efecto, no habría nada que confirmar.</summary>
+    public void InterpretCommand(string classId, string promptText, int baseVersion,
+                                 Action<InterpretResponse> onSuccess, Action<int, string> onError)
+    {
+        string body = JsonUtility.ToJson(new InterpretCommandRequest
+        {
+            prompt      = promptText,
+            baseVersion = baseVersion,
+        });
+        Debug.Log($"[API] POST {BASE_URL}/classes/{classId}/commands/interpret - {promptText}");
+
+        StartCoroutine(PostAuthed($"/classes/{classId}/commands/interpret", body,
+            json => onSuccess?.Invoke(JsonUtility.FromJson<InterpretResponse>(json)),
             onError));
     }
 
@@ -644,6 +663,14 @@ public class ApiManager : MonoBehaviour
     [Serializable] class LogoutRequest     { public string refreshToken; }
     [Serializable] class CreateClassRequest { public string name; public string section; public int studentCount; }
     [Serializable] class AddStudentsRequest { public int count; }
+    [Serializable] class InterpretCommandRequest
+    {
+        // El contrato lo llama "prompt" aquí y "promptText" en /apply. Si no coincide
+        // exacto, el servidor recibe una cadena vacía y no hay error que lo delate.
+        public string prompt;
+        public int    baseVersion;
+    }
+
     [Serializable] class ApplyCommandRequest
     {
         public string actionsJson;   // JSON dentro de un string; JsonUtility lo escapa solo
