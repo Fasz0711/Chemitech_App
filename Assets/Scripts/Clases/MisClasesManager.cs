@@ -70,6 +70,10 @@ public class MisClasesManager : MonoBehaviour
     string    pendingStopId = "";
     Coroutine noticeCo;
 
+    RectTransform listRT;
+    RectTransform teacherBarRT;
+    Vector2       listOffsetMaxTeacher;   // el que dejó el ajuste manual de la escena
+
     const float NOTICE_SECONDS = 3.5f;
 
     void Start()
@@ -88,6 +92,7 @@ public class MisClasesManager : MonoBehaviour
         CloseCodesModal();
         CloseStopModal();
         HideNotice();
+        CacheListLayout();
 
         Refresh();
     }
@@ -102,6 +107,7 @@ public class MisClasesManager : MonoBehaviour
             {
                 isTeacher = resp != null && resp.role == SessionData.ROLE_TEACHER;
                 if (teacherBar) teacherBar.SetActive(isTeacher);
+                LayoutListForRole();
 
                 var classes = (resp != null && resp.classes != null) ? resp.classes : new ClassroomDTO[0];
                 if (classes.Length == 0) { ShowEmpty(); return; }
@@ -111,6 +117,7 @@ public class MisClasesManager : MonoBehaviour
             },
             onError: (code, detail) =>
             {
+                LayoutListForRole();
                 ShowEmpty();
                 ShowNotice(MapError(code, detail));
             });
@@ -130,6 +137,32 @@ public class MisClasesManager : MonoBehaviour
         if (loadingGroup)    loadingGroup.SetActive(loading);
         if (listGroup)       listGroup.SetActive(list);
         if (emptyStateGroup) emptyStateGroup.SetActive(empty);
+    }
+
+    // ── Alto de la lista según rol ─────────────────────────────────────────────
+    /// <summary>El ListState de la escena está ajustado a mano para el docente: su borde
+    /// superior deja hueco a la barra de "Crear clase". Al alumno esa barra no se le
+    /// muestra, así que sin esto la lista queda flotando sobre el hueco vacío.</summary>
+    void CacheListLayout()
+    {
+        listRT       = listGroup  ? listGroup.GetComponent<RectTransform>()  : null;
+        teacherBarRT = teacherBar ? teacherBar.GetComponent<RectTransform>() : null;
+        if (listRT) listOffsetMaxTeacher = listRT.offsetMax;
+    }
+
+    /// <summary>El destino del alumno se lee del rect de la propia barra, no de un número
+    /// fijo: si la barra se mueve a mano, la cara del alumno la sigue sin tocar código.
+    /// Los dos offsetMax.y se miden desde el mismo borde (anchorMax.y = 1 en ambos), así
+    /// que se pueden copiar directo.</summary>
+    void LayoutListForRole()
+    {
+        if (!listRT) return;
+
+        // Docente: la barra ocupa su sitio, la lista se queda donde la dejaron.
+        if (isTeacher || !teacherBarRT) { listRT.offsetMax = listOffsetMaxTeacher; return; }
+
+        // Alumno: sin barra, la lista empieza donde empezaría la barra.
+        listRT.offsetMax = new Vector2(listOffsetMaxTeacher.x, teacherBarRT.offsetMax.y);
     }
 
     void PopulateList(ClassroomDTO[] classes)

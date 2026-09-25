@@ -103,6 +103,7 @@ ESCENAS NUEVAS
   ChemiTech → Build Clase Docente Scene
   ChemiTech → Add → Clases Button       (con SampleScene abierta)
   ChemiTech → Add → Conducir Button     (con MisClasesScene abierta)
+  ChemiTech → Add → Card Actions Row    (con MisClasesScene abierta)
   ChemiTech → Fix → Login por código    (con LoginScene abierta)
 
   Y añadir las 4 escenas a Build Settings. Sin eso:
