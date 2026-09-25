@@ -57,9 +57,14 @@ public class PasswordReplacedResponse
 [Serializable]
 public class ClassStatusResponse
 {
-    public string message;   // OK_CLASS_STARTED | OK_CLASS_STOPPED
+    public string message;   // OK_CLASS_STARTED | OK_CLASS_STOPPED | OK_CLASS_DELETED
     public string status;    // "waiting" | "running" | "ended"
     public int    version;
+
+    /// <summary>Cuentas de alumno borradas. 0 salvo al borrar la clase. Las tres rutas
+    /// comparten forma a propósito: una respuesta que cambia de forma según un flag sería
+    /// polimorfismo, y JsonUtility no lo lee.</summary>
+    public int    deletedStudents;
 }
 
 /// <summary>GET /classes/mine. UNA sola forma para los dos roles: una respuesta distinta

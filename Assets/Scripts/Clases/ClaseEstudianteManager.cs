@@ -185,6 +185,10 @@ public class ClaseEstudianteManager : MonoBehaviour
                     return;
                 }
 
+                // 401 = la cuenta ya no existe, casi siempre porque el docente borró la
+                // clase. ApiManager se encarga de mandar al login; aquí solo se deja dicho
+                // qué pasó, para que no parezca un fallo de la app.
+                if (code == 401) ClassContext.ExitNotice = "La clase terminó.";
                 if (code == 403 || code == 404) BackToWaiting();
             });
     }

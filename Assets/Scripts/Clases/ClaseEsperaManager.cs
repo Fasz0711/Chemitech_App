@@ -101,6 +101,10 @@ public class ClaseEsperaManager : MonoBehaviour
                     return;
                 }
 
+                // 401 = la cuenta desapareció con la clase borrada. ApiManager ya manda
+                // al login; esto solo deja dicho por qué.
+                if (code == 401) ClassContext.ExitNotice = "La clase terminó.";
+
                 // Permiso o clase inexistente: no tiene sentido insistir.
                 if (code == 403 || code == 404)
                 {

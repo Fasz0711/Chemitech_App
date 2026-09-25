@@ -43,6 +43,11 @@ public class LoginManager : MonoBehaviour
 
         // Estado inicial: contraseña oculta
         SetPasswordVisible(false);
+
+        // Si se llegó aquí porque una clase se borró, el alumno merece saber por qué está
+        // en el login y no en su clase. Sin esto parecería que la app falló.
+        string notice = ClassContext.TakeExitNotice();
+        if (!string.IsNullOrEmpty(notice)) ShowError(notice);
     }
 
     private bool loggingIn = false;

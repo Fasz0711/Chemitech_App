@@ -155,6 +155,10 @@ public static class ClaseDocenteBuilder
         var btnQuitar = MakeButton(root, "BtnQuitarResaltado", "Quitar resaltado", PURPLE,
                                    new Vector2(1f, 0f), new Vector2(-170f, 165f), new Vector2(280f, 58f), 21f);
 
+        var btnSumar = MakeButton(root, "BtnModoSumar", "Resaltar: solo uno", AMBER,
+                                  new Vector2(0f, 0f), new Vector2(190f, 165f), new Vector2(330f, 58f), 21f);
+        var lblSumar = btnSumar.GetComponentInChildren<TextMeshProUGUI>(true);
+
         // ── Barra de acciones ─────────────────────────────────────────────────
         var bar = MakeEmpty(root, "ActionBar");
         var barRT = bar.GetComponent<RectTransform>();
@@ -196,6 +200,16 @@ public static class ClaseDocenteBuilder
                                     stretchRight: 250f);
         var btnEnviar = MakeButton(promptRow.transform, "BtnEnviarPrompt", "Enviar", CYAN,
                                    new Vector2(1f, 0.5f), new Vector2(-115f, 0f), new Vector2(220f, 66f), 24f);
+
+        // Aparece solo si la respuesta tarda; lo instantáneo no debe parpadear.
+        var thinking = MakeEmpty(root, "ThinkingIndicator");
+        SetRT(thinking, new Vector2(0.5f, 0f), new Vector2(0f, 300f), new Vector2(460f, 54f));
+        var thImg = thinking.AddComponent<Image>();
+        thImg.sprite = rounded; thImg.type = Image.Type.Sliced; thImg.color = AMBER;
+        MakeText(thinking.transform, "Text", "Pensando…",
+                 new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(440f, 48f),
+                 22f, Hex("1E2050"), TextAlignmentOptions.Center, FontStyles.Bold);
+        thinking.SetActive(false);
 
         // ── Vista previa: nada llega a los alumnos hasta confirmar ────────────
         var preview = MakeEmpty(root, "PreviewPanel");
@@ -277,6 +291,9 @@ public static class ClaseDocenteBuilder
         SetRef(so, "highlightBar",            hlBar.GetComponent<RectTransform>());
         SetRef(so, "highlightButtonTemplate", hlTemplate.gameObject);
         SetRef(so, "btnQuitarResaltado",      btnQuitar);
+        SetRef(so, "btnModoSumar",            btnSumar);
+        SetRef(so, "lblModoSumar",            lblSumar);
+        SetRef(so, "thinkingIndicator",       thinking);
         SetRef(so, "btnIniciar",              btnIniciar);
         SetRef(so, "btnTerminar",             btnTerminar);
         SetRef(so, "stopModal",               stopModal);

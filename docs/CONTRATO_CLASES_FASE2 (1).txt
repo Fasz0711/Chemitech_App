@@ -235,6 +235,13 @@ que las confirme. NO APLICA NADA.
 
     envías:   { "prompt": "muestra el agua y la sal", "baseVersion": 8 }
 
+  >>> OJO CON EL NOMBRE DEL CAMPO: aquí es "prompt", pero en /commands/apply
+      el texto del docente se llama "promptText". Son nombres distintos para lo
+      mismo y equivocarse NO da error: los DTOs ignoran los campos que no
+      conocen (a propósito, para que agregar uno no rompa nada), así que el
+      servidor recibe cadena vacía y TODAS las frases vuelven como "no
+      entendí". Parece un fallo del intérprete y es el nombre del campo.
+
     recibes:  { "message": "OK_COMMAND_INTERPRETED",
                 "preview": ["Mostrar Agua y Cloruro de sodio (reemplaza lo que
                              hay en pantalla)"],
@@ -288,9 +295,38 @@ EL 503 ERR_INTERPRETER_UNAVAILABLE  [FASE 3b]
       tiene que poder darse entera sin escribir una sola instrucción.
     - Sin clave configurada NO hay 503: se responde con las reglas, y lo que no
       entienden llega como OK_COMMAND_UNSUPPORTED de siempre.
-  LATENCIA: lo que resuelven las reglas contesta en milisegundos; lo que va al
-  modelo tarda entre 1.5 y 5 segundos. Poné un indicador de "pensando" y no
-  bloquees la pantalla: el docente está frente a 25 alumnos.
+LATENCIA Y EL INDICADOR DE "PENSANDO"  (todo esto está MEDIDO)
+
+  Cuánto tarda /interpret, según por dónde salga:
+    reglas locales ..................... milisegundos (las 23 frases del guion)
+    modelo, caso normal ................ 1.5 a 5 s
+    modelo, peor caso antes del 503 .... ~9 s
+
+  El peor caso sale de la configuración real: 8 s de tope por intento, y UN
+  reintento que solo ocurre con 503/429 (que fallan en menos de un segundo).
+  Un timeout NO se reintenta, para no duplicar una espera que el docente ya
+  aguantó de pie frente a la clase.
+
+  TRES REGLAS PARA EL CLIENTE:
+
+  1. NO pongas un timeout corto en esta petición. Si cortas a los 5 o 10 s, vas
+     a abortar peticiones que el servidor todavía está sirviendo, y el docente
+     verá un error de red genérico en vez del 503 limpio con su mensaje.
+     Déjalo en 15 s o más, SOLO en esta ruta.
+
+  2. No muestres el indicador de inmediato: espera ~250 ms. Las frases del
+     guion contestan en milisegundos, y un indicador que aparece y desaparece
+     en un parpadeo se ve como un defecto. Si a los 250 ms no hay respuesta,
+     entonces sí muéstralo.
+
+  3. No bloquees la pantalla ni el campo de texto. El docente está frente a 25
+     alumnos y tiene que poder cancelar y tocar un botón. Basta con deshabilitar
+     el botón de enviar para que no dispare dos veces.
+
+  Y una tranquilidad: mientras una interpretación está en vuelo, el sondeo de
+  los alumnos SIGUE respondiendo. El endpoint es síncrono a propósito, así que
+  FastAPI lo corre en su pool de hilos y no congela el resto del servidor. Una
+  instrucción lenta del docente no congela la clase.
 
 QUÉ ENTIENDE HOY (reglas locales, instantáneas y sin salir del servidor)
   mostrar    "muestra el agua", "pon la sal", "saca el CO2",

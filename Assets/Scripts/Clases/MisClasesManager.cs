@@ -54,6 +54,7 @@ public class MisClasesManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI stopMessage;
     [SerializeField] private Button          btnStopConfirm;
     [SerializeField] private Button          btnStopCancel;
+    [SerializeField] private TextMeshProUGUI lblStopConfirm;   // cambia según la acción
 
     [Header("Aviso")]
     [SerializeField] private GameObject      noticeRoot;
@@ -67,6 +68,10 @@ public class MisClasesManager : MonoBehaviour
     readonly List<GameObject> spawnedCards = new List<GameObject>();
     bool      isTeacher;
     bool      busy;
+    // El modal confirma dos cosas distintas, irreversibles de maneras diferentes:
+    // el texto y el botón tienen que decir cuál es.
+    enum PendingAction { None, Stop, Delete }
+    PendingAction pendingAction = PendingAction.None;
     string    pendingStopId = "";
     Coroutine noticeCo;
 
@@ -75,6 +80,7 @@ public class MisClasesManager : MonoBehaviour
     Vector2       listOffsetMaxTeacher;   // el que dejó el ajuste manual de la escena
 
     const float NOTICE_SECONDS = 3.5f;
+    static readonly string NEWLINE = System.Environment.NewLine;
 
     void Start()
     {
@@ -84,7 +90,7 @@ public class MisClasesManager : MonoBehaviour
         if (btnCreateConfirm) btnCreateConfirm.onClick.AddListener(OnCreateConfirm);
         if (btnCodesClose)    btnCodesClose.onClick.AddListener(CloseCodesModal);
         if (btnStopCancel)    btnStopCancel.onClick.AddListener(CloseStopModal);
-        if (btnStopConfirm)   btnStopConfirm.onClick.AddListener(OnStopConfirm);
+        if (btnStopConfirm)   btnStopConfirm.onClick.AddListener(OnConfirmAction);
 
         if (cardTemplate)    cardTemplate.SetActive(false);
         if (codeRowTemplate) codeRowTemplate.SetActive(false);
@@ -225,6 +231,16 @@ public class MisClasesManager : MonoBehaviour
             btnStop.onClick.AddListener(() => AskStop(id, name));
         }
 
+        var btnBorrar = FindButton(card, "BtnBorrar");
+        if (btnBorrar)
+        {
+            // El servidor rechaza borrar una clase en curso (409): no se ofrece,
+            // porque un botón que siempre falla es peor que no tenerlo.
+            btnBorrar.gameObject.SetActive(isTeacher && !running);
+            int students = c.studentCount;
+            btnBorrar.onClick.AddListener(() => AskDelete(id, name, students));
+        }
+
         var btnConducir = FindButton(card, "BtnConducir");
         if (btnConducir)
         {
@@ -274,18 +290,52 @@ public class MisClasesManager : MonoBehaviour
 
     void AskStop(string id, string name)
     {
+        pendingAction = PendingAction.Stop;
         pendingStopId = id;
         if (stopMessage)
             stopMessage.text = "Vas a terminar \"" + name + "\".\n\nEsto es definitivo: la clase no se puede volver a abrir.";
+        if (lblStopConfirm) lblStopConfirm.text = "Sí, terminar";
         if (stopModal) stopModal.SetActive(true);
     }
 
-    void OnStopConfirm()
+    /// <summary>Borrar se lleva la clase, su escena, el registro de comandos del docente
+    /// y las cuentas de TODOS sus alumnos. Por eso la confirmación enseña el número: no es
+    /// lo mismo descartar una clase de prueba que una de 25.</summary>
+    void AskDelete(string id, string name, int studentCount)
+    {
+        pendingAction = PendingAction.Delete;
+        pendingStopId = id;
+
+        if (stopMessage)
+            stopMessage.text = "Vas a BORRAR la clase " + name + "." + NEWLINE + NEWLINE
+                             + "Se borrarán " + studentCount + " cuentas de alumno y el registro de la clase."
+                             + NEWLINE + "Esto no se puede deshacer.";
+        if (lblStopConfirm) lblStopConfirm.text = "Sí, borrar";
+        if (stopModal) stopModal.SetActive(true);
+    }
+
+    void OnConfirmAction()
     {
         if (busy || string.IsNullOrEmpty(pendingStopId)) return;
-        busy = true;
-        string id = pendingStopId;
+
+        string id     = pendingStopId;
+        var    action = pendingAction;
         CloseStopModal();
+        busy = true;
+
+        if (action == PendingAction.Delete)
+        {
+            ApiManager.Instance.DeleteClass(id,
+                onSuccess: resp =>
+                {
+                    busy = false;
+                    int n = resp != null ? resp.deletedStudents : 0;
+                    ShowNotice("Clase borrada (" + n + " cuentas).");
+                    Refresh();
+                },
+                onError: (code, detail) => { busy = false; ShowNotice(MapError(code, detail)); });
+            return;
+        }
 
         ApiManager.Instance.StopClass(id,
             onSuccess: _ => { busy = false; Refresh(); },
@@ -294,6 +344,7 @@ public class MisClasesManager : MonoBehaviour
 
     void CloseStopModal()
     {
+        pendingAction = PendingAction.None;
         pendingStopId = "";
         if (stopModal) stopModal.SetActive(false);
     }
@@ -423,6 +474,7 @@ public class MisClasesManager : MonoBehaviour
             case "ERR_CLASS_NOT_FOUND":       return "Esa clase ya no existe.";
             case "ERR_CLASS_ALREADY_ENDED":   return "La clase ya terminó y no se puede reabrir.";
             case "ERR_CLASS_NOT_RUNNING":     return "Esa clase todavía no ha empezado.";
+            case "ERR_CLASS_IS_RUNNING":      return "No se puede borrar una clase en curso. Termínala primero.";
             case "ERR_CLASS_CODES_TAKEN":     return "Esa sección ya tiene cuentas creadas; usa otra (por ejemplo 3A2).";
             case "ERR_CLASS_FULL":            return "La clase llegó al máximo de 99 alumnos.";
             case "ERR_CLASS_NAME_REQUIRED":   return "Ponle un nombre a la clase.";

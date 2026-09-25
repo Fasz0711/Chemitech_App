@@ -45,10 +45,15 @@ public class ClaseDocenteManager : MonoBehaviour
     [SerializeField] private RectTransform highlightBar;
     [SerializeField] private GameObject    highlightButtonTemplate;
     [SerializeField] private Button        btnQuitarResaltado;
+    [SerializeField] private Button        btnModoSumar;
+    [SerializeField] private TextMeshProUGUI lblModoSumar;
 
     [Header("Instrucción en lenguaje natural")]
     [SerializeField] private TMP_InputField  inputPrompt;
     [SerializeField] private Button          btnEnviarPrompt;
+
+    [Header("Pensando")]
+    [SerializeField] private GameObject thinkingIndicator;
 
     [Header("Vista previa")]
     [SerializeField] private GameObject      previewPanel;
@@ -90,8 +95,11 @@ public class ClaseDocenteManager : MonoBehaviour
     const string CMD_FIJAR    = @"[{""action"":""view"",""locked"":true}]";
     const string CMD_LIBERAR  = @"[{""action"":""view"",""locked"":false}]";
     const string CMD_SIN_RESALTADO = @"[{""action"":""highlight""}]";
+    // append=true SUMA al resaltado en vez de reemplazarlo. El guion lo necesita: cuando
+    // el sodio entrega su electrón al cloro hay que ver los dos marcados a la vez, y con
+    // un solo selector no se puede porque son elementos distintos.
     const string HIGHLIGHT_FMT =
-        @"[{{""action"":""highlight"",""selector"":{{""by"":""element"",""value"":""{0}""}}}}]";
+        @"[{{""action"":""highlight"",""selector"":{{""by"":""element"",""value"":""{0}""}},""append"":{1}}}]";
 
     const float NOTICE_SECONDS = 3.5f;
     static readonly string NEWLINE = System.Environment.NewLine;
@@ -106,6 +114,13 @@ public class ClaseDocenteManager : MonoBehaviour
     // Lo que devolvió el intérprete y está esperando confirmación. El actionsJson se
     // guarda SIN parsear: se reenvía tal cual, que es lo único que garantiza que se
     // aplique exactamente lo que el docente vio en la vista previa.
+    bool      sumMode;        // los botones de resaltar suman en vez de reemplazar
+    Coroutine thinkingCo;
+
+    // El indicador no aparece de inmediato: las frases del guion las resuelven las reglas
+    // en milisegundos y un indicador que parpadea se lee como un defecto.
+    const float THINKING_DELAY = 0.25f;
+
     string pendingActions = "";
     string pendingPrompt  = "";
     int    pendingBaseVersion;
@@ -122,6 +137,7 @@ public class ClaseDocenteManager : MonoBehaviour
         if (btnCO2)              btnCO2.onClick.AddListener(() => Show("co2"));
         if (btnModoAgregar)      btnModoAgregar.onClick.AddListener(ToggleAddMode);
         if (btnEnviarPrompt)     btnEnviarPrompt.onClick.AddListener(SendPrompt);
+        if (btnModoSumar)        btnModoSumar.onClick.AddListener(ToggleSumMode);
         if (btnPreviewConfirm)   btnPreviewConfirm.onClick.AddListener(ConfirmPreview);
         if (btnPreviewDiscard)   btnPreviewDiscard.onClick.AddListener(DiscardPreview);
         if (inputPrompt)         inputPrompt.onSubmit.AddListener(_ => SendPrompt());
@@ -136,6 +152,8 @@ public class ClaseDocenteManager : MonoBehaviour
         if (highlightButtonTemplate) highlightButtonTemplate.SetActive(false);
         if (stopModal) stopModal.SetActive(false);
         DiscardPreview();
+        StopThinking();
+        RefreshSumModeLabel();
         HideNotice();
 
         if (className) className.text = ClassContext.HasClass ? ClassContext.ClassName : "Clase";
@@ -266,7 +284,8 @@ public class ClaseDocenteManager : MonoBehaviour
 
             string captured = element;
             var btn = go.GetComponent<Button>();
-            if (btn) btn.onClick.AddListener(() => Apply(string.Format(HIGHLIGHT_FMT, captured)));
+            if (btn) btn.onClick.AddListener(() =>
+                Apply(string.Format(HIGHLIGHT_FMT, captured, sumMode ? "true" : "false")));
         }
 
         if (btnQuitarResaltado) btnQuitarResaltado.gameObject.SetActive(elements.Count > 0);
@@ -284,11 +303,13 @@ public class ClaseDocenteManager : MonoBehaviour
         if (string.IsNullOrEmpty(text)) return;
 
         busy = true;
+        StartThinking();
 
         ApiManager.Instance.InterpretCommand(ClassContext.ClassId, text, currentVersion,
             onSuccess: resp =>
             {
                 busy = false;
+                StopThinking();
                 if (resp == null) { ShowNotice("No se pudo interpretar la instrucción."); return; }
 
                 // Sin acciones = no se entendió. El motivo viene del servidor, que sabe por
@@ -309,6 +330,7 @@ public class ClaseDocenteManager : MonoBehaviour
             onError: (code, detail) =>
             {
                 busy = false;
+                StopThinking();
 
                 // Sin intérprete la clase NO se detiene: los botones hacen lo mismo sin
                 // pasar por el proveedor. Por eso el aviso dice qué hacer, no solo qué falló.
@@ -372,6 +394,41 @@ public class ClaseDocenteManager : MonoBehaviour
         pendingActions = "";
         pendingPrompt  = "";
         if (previewPanel) previewPanel.SetActive(false);
+    }
+
+    /// <summary>Solo se deshabilita el botón de enviar: ni la pantalla ni el campo de
+    /// texto se bloquean. El docente está frente a 25 alumnos y tiene que poder seguir
+    /// tocando botones mientras el asistente piensa.</summary>
+    void StartThinking()
+    {
+        if (btnEnviarPrompt) btnEnviarPrompt.interactable = false;
+        if (thinkingCo != null) StopCoroutine(thinkingCo);
+        thinkingCo = StartCoroutine(ShowThinkingAfterDelay());
+    }
+
+    IEnumerator ShowThinkingAfterDelay()
+    {
+        yield return new WaitForSeconds(THINKING_DELAY);
+        if (thinkingIndicator) thinkingIndicator.SetActive(true);
+        thinkingCo = null;
+    }
+
+    void StopThinking()
+    {
+        if (thinkingCo != null) { StopCoroutine(thinkingCo); thinkingCo = null; }
+        if (thinkingIndicator)  thinkingIndicator.SetActive(false);
+        if (btnEnviarPrompt)    btnEnviarPrompt.interactable = true;
+    }
+
+    void ToggleSumMode()
+    {
+        sumMode = !sumMode;
+        RefreshSumModeLabel();
+    }
+
+    void RefreshSumModeLabel()
+    {
+        if (lblModoSumar) lblModoSumar.text = sumMode ? "Resaltar: sumando" : "Resaltar: solo uno";
     }
 
     void ToggleView() => Apply(cameraLocked ? CMD_LIBERAR : CMD_FIJAR);

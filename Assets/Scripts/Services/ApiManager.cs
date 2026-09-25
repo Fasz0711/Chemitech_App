@@ -36,6 +36,16 @@ public class ApiManager : MonoBehaviour
     // Content-Type json: un objeto vacío es lo que FastAPI acepta sin quejarse.
     const string EMPTY_BODY = "{}";
 
+    // Timeout por defecto de una petición autenticada. Cubre de sobra una respuesta
+    // normal y evita conexiones colgadas, que en celular son eternas.
+    const int DEFAULT_TIMEOUT_SECONDS = 10;
+
+    // /interpret puede tardar: las reglas contestan en milisegundos, pero lo que va al
+    // modelo de lenguaje llega hasta ~9 s en el peor caso antes de que el servidor
+    // responda 503. Cortar antes abortaría una petición que el servidor SIGUE sirviendo,
+    // y el docente vería un error de red en vez del 503 con su mensaje.
+    const int INTERPRET_TIMEOUT_SECONDS = 20;
+
     void Awake()
     {
         if (_instance != null && _instance != this) { Destroy(gameObject); return; }
@@ -299,6 +309,18 @@ public class ApiManager : MonoBehaviour
     public void StopClass(string classId, Action<ClassStatusResponse> onSuccess, Action<int, string> onError)
         => SendClassStatus($"/classes/{classId}/stop", onSuccess, onError);
 
+    /// <summary>Borra la clase. IRREVERSIBLE y se lleva más de lo que parece: la escena,
+    /// el registro de comandos del docente y TODAS las cuentas por código de sus alumnos.
+    /// Una clase en curso no se borra (409 ERR_CLASS_IS_RUNNING): hay que terminarla
+    /// primero, o a media sesión dejaría a 25 alumnos sin explicación.</summary>
+    public void DeleteClass(string classId, Action<ClassStatusResponse> onSuccess, Action<int, string> onError)
+    {
+        Debug.Log($"[API] DELETE {BASE_URL}/classes/{classId}");
+        StartCoroutine(DeleteAuthed($"/classes/{classId}",
+            json => onSuccess?.Invoke(JsonUtility.FromJson<ClassStatusResponse>(json)),
+            onError));
+    }
+
     void SendClassStatus(string endpoint, Action<ClassStatusResponse> onSuccess, Action<int, string> onError)
     {
         Debug.Log($"[API] POST {BASE_URL}{endpoint}");
@@ -357,7 +379,7 @@ public class ApiManager : MonoBehaviour
 
         StartCoroutine(PostAuthed($"/classes/{classId}/commands/interpret", body,
             json => onSuccess?.Invoke(JsonUtility.FromJson<InterpretResponse>(json)),
-            onError));
+            onError, INTERPRET_TIMEOUT_SECONDS));
     }
 
     /// <summary>Quién está conectado. La presencia vive en memoria del servidor: si el
@@ -406,7 +428,9 @@ public class ApiManager : MonoBehaviour
             using var req = build();
             if (!string.IsNullOrEmpty(SessionData.AccessToken))
                 req.SetRequestHeader("Authorization", "Bearer " + SessionData.AccessToken);
-            req.timeout = 10; // evita conexiones colgadas indefinidamente (especialmente importante en celular)
+            // Solo si la ruta no puso el suyo: antes esto pisaba el timeout de quien
+            // construyó la petición, así que /detection y /interpret nunca lo aplicaban.
+            if (req.timeout <= 0) req.timeout = DEFAULT_TIMEOUT_SECONDS;
 
             yield return req.SendWebRequest();
 

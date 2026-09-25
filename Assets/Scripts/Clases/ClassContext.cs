@@ -19,6 +19,20 @@ public static class ClassContext
         ClassName = name ?? "";
     }
 
+    /// <summary>Por qué se salió de la clase, para que la siguiente pantalla lo explique.
+    /// Al borrar una clase, la cuenta del alumno desaparece con ella: su sondeo recibe 401
+    /// y ApiManager lo manda al login. Es correcto, pero sin esto aparecería ahí sin
+    /// ninguna explicación, como si la app hubiera fallado.
+    /// Sobrevive al cambio de escena porque es estático; lo consume quien lo muestra.</summary>
+    public static string ExitNotice = "";
+
+    public static string TakeExitNotice()
+    {
+        string n = ExitNotice;
+        ExitNotice = "";
+        return n;
+    }
+
     public static void Clear()
     {
         ClassId   = "";
