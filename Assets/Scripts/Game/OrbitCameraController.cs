@@ -14,8 +14,12 @@ public class OrbitCameraController : MonoBehaviour
     [SerializeField] private Vector3 defTarget = Vector3.zero;
 
     [Header("Límites")]
-    [SerializeField] private float minPitch  = 5f;
-    [SerializeField] private float maxPitch  = 80f;
+    // Rotación libre: se puede mirar la escena desde arriba y también desde abajo.
+    // Se corta en ±85 y no en ±90 a propósito: justo en el polo la proyección de
+    // 'forward' sobre el plano vale cero y el desplazamiento lateral se quedaría sin
+    // dirección que seguir.
+    [SerializeField] private float minPitch  = -85f;
+    [SerializeField] private float maxPitch  =  85f;
     [SerializeField] private float minDist   = 6f;
     [SerializeField] private float maxDist   = 34f;
 
@@ -40,6 +44,10 @@ public class OrbitCameraController : MonoBehaviour
     /// <summary>Altura (Y) del punto de enfoque actual de la cámara.</summary>
     public float FocusHeight => curTarget.y;
 
+    /// <summary>El punto al que mira la cámara: lo que hay justo bajo la cruz central.
+    /// La colocación lo sigue, así que mover la cámara es lo que mueve el átomo.</summary>
+    public Vector3 FocusPoint => curTarget;
+
     void Awake()
     {
         desYaw = curYaw = defYaw;
@@ -60,7 +68,13 @@ public class OrbitCameraController : MonoBehaviour
     public void PanScreen(Vector2 dir)
     {
         Vector3 right = transform.right;
-        Vector3 fwd   = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized;
+
+        // Mirando casi en vertical, 'forward' apenas tiene componente horizontal y
+        // normalizarlo daría una dirección sin sentido. Ahí el "hacia delante" de la
+        // pantalla es la vertical de la cámara, que sí apunta a algún lado del plano.
+        Vector3 flat = Vector3.ProjectOnPlane(transform.forward, Vector3.up);
+        if (flat.sqrMagnitude < 0.0001f) flat = Vector3.ProjectOnPlane(transform.up, Vector3.up);
+        Vector3 fwd = flat.normalized;
         Vector3 move  = (right * dir.x + fwd * dir.y) * panSpeed * Time.deltaTime * (desDist * 0.12f);
         desTarget += move;
     }

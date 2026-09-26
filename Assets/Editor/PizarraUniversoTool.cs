@@ -128,7 +128,6 @@ public static class PizarraUniversoTool
         Set(pso, "atomBaseMaterial", atomMat);
         Set(pso, "previewMaterial",  ghostMat);
         Set(pso, "reticleRoot",      FindDeep(u, "PlacementReticle"));
-        Set(pso, "reticleDot",       Comp<Image>(FindDeep(u, "Dot")));
         Set(pso, "btnPlace",         Comp<Button>(FindDeep(u, "BtnPlace")));
         Set(pso, "cancelRoot",       FindDeep(u, "CancelBar"));
         Set(pso, "btnCancel",        Comp<Button>(FindDeep(u, "CancelBar")));

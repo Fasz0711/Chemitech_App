@@ -133,7 +133,6 @@ public static class ZonaJuegoBuilder
         SetRef(pso, "atomBaseMaterial", atomMat);
         SetRef(pso, "previewMaterial",  ghostMat);
         SetRef(pso, "reticleRoot",      FindChild(hud.transform, "PlacementReticle"));
-        SetRef(pso, "reticleDot",       FindChild(hud.transform, "Dot")?.GetComponent<Image>());
         SetRef(pso, "btnPlace",         FindChild(hud.transform, "BtnPlace")?.GetComponent<Button>());
         SetRef(pso, "cancelRoot",       FindChild(hud.transform, "CancelBar"));
         SetRef(pso, "btnCancel",        FindChild(hud.transform, "CancelBar")?.GetComponent<Button>());

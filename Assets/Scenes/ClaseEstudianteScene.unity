@@ -1777,8 +1777,8 @@ MonoBehaviour:
   defPitch: 28
   defDistance: 8
   defTarget: {x: 0, y: 0, z: 0}
-  minPitch: 5
-  maxPitch: 80
+  minPitch: -85
+  maxPitch: 85
   minDist: 1.5
   maxDist: 40
   rotSpeed: 0.22

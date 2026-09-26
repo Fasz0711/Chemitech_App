@@ -19311,9 +19311,9 @@ MonoBehaviour:
   defYaw: 35
   defPitch: 28
   defDistance: 16
-  defTarget: {x: 0, y: 0, z: 0}
-  minPitch: 5
-  maxPitch: 80
+  defTarget: {x: 0, y: 0.55, z: 0}
+  minPitch: -85
+  maxPitch: 85
   minDist: 6
   maxDist: 34
   rotSpeed: 0.22

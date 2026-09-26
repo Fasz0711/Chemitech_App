@@ -1335,9 +1335,9 @@ MonoBehaviour:
   defYaw: 35
   defPitch: 28
   defDistance: 8
-  defTarget: {x: 0, y: 0, z: 0}
-  minPitch: 5
-  maxPitch: 80
+  defTarget: {x: 0, y: 0.55, z: 0}
+  minPitch: -85
+  maxPitch: 85
   minDist: 1.5
   maxDist: 40
   rotSpeed: 0.22
@@ -1346,7 +1346,7 @@ MonoBehaviour:
   vertSpeed: 6
   smooth: 12
   minTargetY: -1
-  maxTargetY: 14
+  maxTargetY: 18
 --- !u!81 &198812484
 AudioListener:
   m_ObjectHideFlags: 0

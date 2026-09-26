@@ -7,14 +7,20 @@ using TMPro;
 /// <summary>
 /// Colocación, selección, movimiento y borrado de átomos en la zona 3D.
 ///
-///  • Arrastrar sobre espacio vacío → rota la cámara.
-///  • Tocar un slot del hotbar → aparece una PREVISUALIZACIÓN (fantasma) del átomo
-///    en el centro de la vista, se oculta el cursor y sale el botón "Cancelar".
-///  • Las flechas mueven la previsualización (modo exclusivo).
-///  • "Presiona para colocar átomo" → coloca un átomo real en la posición de la
-///    previsualización; la previsualización se queda (colocar varios).
-///  • "Cancelar" → quita la previsualización y vuelve el cursor.
-///  • Sin previsualización: tocar un átomo colocado lo selecciona (mover/borrar).
+/// EL MODELO: los mandos mueven LA CÁMARA, siempre. Lo que estés colocando o editando
+/// viaja con ella, así que la cruz del centro marca en todo momento dónde va a caer.
+/// Antes las flechas movían el átomo y la cámara según el caso, y el mismo control
+/// hacía dos cosas distintas sin avisar.
+///
+///  • Arrastrar sobre espacio vacío → rota la cámara (libre, también por debajo).
+///  • D-pad y flechas verticales → desplazan la cámara. SIEMPRE.
+///  • Tocar un slot del hotbar → aparece una PREVISUALIZACIÓN (fantasma) bajo la cruz,
+///    que sigue a la cámara. "Presiona para colocar átomo" la deja ahí; el fantasma se
+///    queda, para colocar varios.
+///  • Tocar un átomo colocado lo selecciona (mover/borrar).
+///  • Con uno seleccionado, ese mismo botón dice "Mover átomo": al pulsarlo el átomo
+///    pasa a viajar con la cámara, y se suelta con "Soltar aquí".
+///  • "Cancelar" quita la previsualización, o devuelve el átomo a donde estaba.
 /// </summary>
 public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSink
 {
@@ -24,7 +30,6 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
     [SerializeField] private Material             atomBaseMaterial;
     [SerializeField] private Material             previewMaterial;  // translúcido (preview)
     [SerializeField] private GameObject           reticleRoot;      // cursor central (guía)
-    [SerializeField] private Image                reticleDot;
     [SerializeField] private Button               btnPlace;         // "Presiona para colocar átomo"
     [SerializeField] private GameObject           cancelRoot;       // botón "Cancelar" (preview)
     [SerializeField] private Button               btnCancel;
@@ -38,7 +43,6 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
 
     [Header("Ajustes")]
     [SerializeField] private float atomScale         = 1.1f;
-    [SerializeField] private float moveSpeed         = 5f;
     [SerializeField] private float rotateThreshold   = 7f;   // px para considerar arrastre
     [SerializeField] private float platformHalf      = 11.5f;
     [SerializeField] private float maxHeight         = 12f;
@@ -49,6 +53,20 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
     int     armedAtom = -1;
     Atom3D  selected;
     int     nextId;
+
+    // Reposicionando un átomo ya colocado: viaja con la cámara hasta que se suelta.
+    bool    editing;
+    Vector3 moveOrigin;      // para poder devolverlo si se cancela
+
+    // Dónde miraba la cámara el frame anterior. Lo que se está colocando se mueve ESA
+    // MISMA diferencia, en vez de saltar al centro: así al empezar a mover un átomo no
+    // se teletransporta a donde apunta la cruz.
+    Vector3 lastFocus;
+    bool    hasLastFocus;
+
+    // La etiqueta del botón de colocar. Se busca sola en el hijo del botón para no tener
+    // que cablear una referencia más en cada escena que use este HUD.
+    TMP_Text placeLabel;
 
     // Marca de suelo + línea de altura + anillo de selección (ver PlacementGuides).
     PlacementGuides guides;
@@ -84,13 +102,14 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
     {
         selector = FindObjectOfType<AtomSelectorController>();
         if (btnDelete)      btnDelete.onClick.AddListener(DeleteSelected);
-        if (btnPlace)       btnPlace.onClick.AddListener(PlaceActiveAtom);
-        if (btnCancel)      btnCancel.onClick.AddListener(CancelPreview);
+        if (btnPlace)     { btnPlace.onClick.AddListener(OnPlaceButton);
+                            placeLabel = btnPlace.GetComponentInChildren<TMP_Text>(true); }
+        if (btnCancel)      btnCancel.onClick.AddListener(CancelCurrent);
         if (btnCollisionOk) btnCollisionOk.onClick.AddListener(HideCollision);
         ShowDelete(false);
         ShowCancel(false);
-        if (reticleRoot)    reticleRoot.SetActive(true);
         if (collisionModal) collisionModal.SetActive(false);
+        RefreshPlaceLabel();
     }
 
     /// <summary>Con esto apagado se puede rotar la cámara pero no tocar los átomos.
@@ -116,9 +135,40 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
     void Update()
     {
         HandlePointer();
+        FollowCamera();
         UpdateReticle();
         UpdateGuides();
     }
+
+    /// <summary>Arrastra lo que se está colocando la misma distancia que se movió la
+    /// cámara. Se usa la DIFERENCIA y no la posición absoluta para que empezar a mover
+    /// un átomo no lo arranque de donde está.</summary>
+    void FollowCamera()
+    {
+        if (!orbit) return;
+
+        Vector3 focus = orbit.FocusPoint;
+        if (!hasLastFocus) { lastFocus = focus; hasLastFocus = true; return; }
+
+        Vector3 delta = focus - lastFocus;
+        lastFocus = focus;
+        if (delta.sqrMagnitude < 1e-10f) return;
+
+        Transform target = ActiveTransform;
+        if (!target) return;
+
+        target.position = Clamp(target.position + delta);
+    }
+
+    /// <summary>Lo que ahora mismo viaja con la cámara: la previsualización si la hay, y
+    /// si no el átomo que se esté reposicionando. Nada más se mueve solo.</summary>
+    Transform ActiveTransform
+        => previewGhost ? previewGhost.transform : (editing && selected ? selected.transform : null);
+
+    Vector3 Clamp(Vector3 p) => new Vector3(
+        Mathf.Clamp(p.x, -platformHalf, platformHalf),
+        Mathf.Clamp(p.y, atomScale * 0.5f, maxHeight),
+        Mathf.Clamp(p.z, -platformHalf, platformHalf));
 
     /// <summary>
     /// Las guías siguen al átomo ACTIVO: la previsualización tiene prioridad
@@ -150,7 +200,7 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
                 previewMat = new Material(previewMaterial);
                 previewGhost.GetComponent<Renderer>().sharedMaterial = previewMat;
             }
-            previewGhost.transform.position = CenterGroundPos();
+            previewGhost.transform.position = CrosshairPoint();
         }
 
         if (previewMat)
@@ -160,6 +210,7 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
         }
         previewGhost.SetActive(true);
         ShowCancel(true);
+        RefreshPlaceLabel();
     }
 
     public void CancelPreview()
@@ -169,23 +220,82 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
         armedAtom = -1;
         ShowCancel(false);
         if (selector) selector.ClearHighlight();  // quita el resaltado cyan del slot
+        RefreshPlaceLabel();
     }
 
-    Vector3 CenterGroundPos()
+    /// <summary>El punto al que mira la cámara: exactamente lo que hay bajo la cruz.
+    ///
+    /// Antes se lanzaba un rayo contra un plano horizontal, pero con la rotación ya libre
+    /// ese rayo puede no cortar el plano —o cortarlo a la espalda— cuando se mira desde
+    /// abajo. El punto de enfoque siempre existe y siempre está en el centro de pantalla.</summary>
+    Vector3 CrosshairPoint()
     {
-        if (!cam) return new Vector3(0f, atomScale * 0.5f, 0f);
-        Ray cray = cam.ScreenPointToRay(new Vector3(Screen.width * 0.5f, Screen.height * 0.5f, 0f));
-        float planeY = orbit ? Mathf.Max(0f, orbit.FocusHeight) : 0f;
-        var plane = new Plane(Vector3.up, new Vector3(0f, planeY, 0f));
-        if (plane.Raycast(cray, out float e))
-        {
-            Vector3 raw = cray.GetPoint(e);
-            return new Vector3(
-                Mathf.Clamp(raw.x, -platformHalf, platformHalf),
-                Mathf.Clamp(raw.y, atomScale * 0.5f, maxHeight),
-                Mathf.Clamp(raw.z, -platformHalf, platformHalf));
-        }
+        if (orbit) return Clamp(orbit.FocusPoint);
         return new Vector3(0f, atomScale * 0.5f, 0f);
+    }
+
+    // ── El botón de colocar, según lo que haya ────────────────────────────────
+
+    void OnPlaceButton()
+    {
+        if (!Interactive) return;
+        if (editing)            ConfirmMove();
+        else if (previewGhost)  PlaceActiveAtom();
+        else if (selected)      BeginMove();
+    }
+
+    /// <summary>"Cancelar": quita la previsualización, o deja el átomo donde estaba.</summary>
+    void CancelCurrent()
+    {
+        if (editing) { EndMove(keep: false); return; }
+        CancelPreview();
+    }
+
+    /// <summary>El átomo seleccionado pasa a viajar con la cámara.</summary>
+    void BeginMove()
+    {
+        if (!selected) return;
+        editing    = true;
+        moveOrigin = selected.transform.position;
+        ShowCancel(true);
+        RefreshPlaceLabel();
+    }
+
+    void ConfirmMove()
+    {
+        if (!selected) { EndMove(keep: false); return; }
+
+        // Soltarlo encima de otro átomo formaría enlaces que no son: se avisa y se sigue
+        // moviendo, en vez de aceptar una posición que el detector va a malinterpretar.
+        if (Overlaps(selected.transform.position, ignore: selected)) { ShowCollision(); return; }
+        EndMove(keep: true);
+    }
+
+    void EndMove(bool keep)
+    {
+        if (!editing) return;
+        editing = false;
+        ShowCancel(false);
+
+        if (selected)
+        {
+            // Aunque se acepte, no se deja encima de otro: eso solo puede pasar por una
+            // salida implícita (elegir otro elemento del hotbar a media edición).
+            if (!keep || Overlaps(selected.transform.position, ignore: selected))
+                selected.transform.position = moveOrigin;
+            else if (selected.transform.position != moveOrigin)
+                Dirty = true;
+        }
+        RefreshPlaceLabel();
+    }
+
+    void RefreshPlaceLabel()
+    {
+        if (!placeLabel) return;
+        placeLabel.text = editing       ? "Soltar aquí"
+                        : previewGhost  ? "Presiona para colocar átomo"
+                        : selected      ? "Mover átomo"
+                                        : "Presiona para colocar átomo";
     }
 
     /// <summary>Coloca un átomo real en la posición de la previsualización (esta se queda).</summary>
@@ -200,25 +310,31 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
         PlaceAtom(armedAtom, pos, animate: true);
         AudioManager.Instance.PlayPlaceAtom();
         Dirty = true;
+        RefreshPlaceLabel();
     }
 
-    // ── Retícula: cursor central, visible solo cuando NO hay previsualización ──
+    // ── La cruz central: marca dónde cae lo que se coloca ─────────────────────
+    // Está visible siempre que se pueda construir, también con la previsualización
+    // puesta: ahora es la mira, y esconderla justo al apuntar sería quitarla cuando más
+    // sirve. En la pizarra, conduciendo, no aparece.
     void UpdateReticle()
     {
         if (!reticleRoot) return;
-        bool show = (previewGhost == null);
-        if (reticleRoot.activeSelf != show) reticleRoot.SetActive(show);
-        if (show && reticleDot) reticleDot.color = Color.white;
+        if (reticleRoot.activeSelf != Interactive) reticleRoot.SetActive(Interactive);
     }
 
-    /// <summary>¿La posición se solaparía con un átomo ya colocado?</summary>
-    bool Overlaps(Vector3 pos)
+    /// <summary>¿La posición se solaparía con un átomo ya colocado? 'ignore' es el que se
+    /// está moviendo: si no se excluyera, chocaría consigo mismo.</summary>
+    bool Overlaps(Vector3 pos, Atom3D ignore = null)
     {
         if (!atomsRoot) return false;
         float minDist = atomScale * minSeparationFrac;
         foreach (Transform child in atomsRoot)
-            if (child.GetComponent<Atom3D>() && Vector3.Distance(child.position, pos) < minDist)
-                return true;
+        {
+            var a = child.GetComponent<Atom3D>();
+            if (!a || a == ignore) continue;
+            if (Vector3.Distance(child.position, pos) < minDist) return true;
+        }
         return false;
     }
 
@@ -287,7 +403,9 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
     void HandleTap(Vector3 screenPos)
     {
         if (!Interactive) return;
-        if (!cam || previewGhost != null) return; // en modo preview no se seleccionan átomos
+        // Ni colocando ni moviendo se cambia de átomo: el toque es para soltar, no para
+        // saltar a otro y dejarse el anterior a medio mover.
+        if (!cam || previewGhost != null || editing) return;
 
         Ray ray = cam.ScreenPointToRay(screenPos);
         if (Physics.Raycast(ray, out RaycastHit hit, 500f))
@@ -454,61 +572,49 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
         lblGo.AddComponent<Billboard>();
     }
 
-    /// <summary>d-pad: mueve la previsualización; si no, el átomo seleccionado; si no, pan de cámara.</summary>
+    /// <summary>d-pad: desplaza LA CÁMARA. Lo que se esté colocando la sigue (FollowCamera),
+    /// así que este mismo control coloca sin dejar de hacer siempre lo mismo.</summary>
     public void MoveOrPan(Vector2 dir)
     {
-        Transform target = previewGhost ? previewGhost.transform : (selected ? selected.transform : null);
-        if (target)
-        {
-            Vector3 right = cam.transform.right;
-            Vector3 fwd   = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up).normalized;
-            Vector3 mv    = (right * dir.x + fwd * dir.y) * moveSpeed * Time.deltaTime;
-            var p = target.position + mv;
-            p.x = Mathf.Clamp(p.x, -platformHalf, platformHalf);
-            p.z = Mathf.Clamp(p.z, -platformHalf, platformHalf);
-            target.position = p;
-            if (!previewGhost && selected) Dirty = true; // mover un átomo colocado es un cambio
-        }
-        else if (orbit) orbit.PanScreen(dir);
+        if (orbit) orbit.PanScreen(dir);
     }
 
-    /// <summary>Flechas verticales: sube/baja la previsualización o el átomo seleccionado, o la cámara.</summary>
+    /// <summary>Flechas verticales: suben y bajan LA CÁMARA, con la misma regla.</summary>
     public void VerticalOrCam(float sign)
     {
-        Transform target = previewGhost ? previewGhost.transform : (selected ? selected.transform : null);
-        if (target)
-        {
-            var p = target.position;
-            p.y = Mathf.Clamp(p.y + sign * moveSpeed * Time.deltaTime, atomScale * 0.5f, maxHeight);
-            target.position = p;
-            if (!previewGhost && selected) Dirty = true;
-        }
-        else if (orbit) orbit.MoveVertical(sign);
+        if (orbit) orbit.MoveVertical(sign);
     }
 
     void Select(Atom3D a)
     {
+        if (editing) EndMove(keep: true);
         if (selected && selected != a) selected.SetSelected(false);
         selected = a;
         if (selected) selected.SetSelected(true);
         ShowDelete(selected != null);
+        RefreshPlaceLabel();
     }
 
     void Deselect()
     {
+        if (editing) EndMove(keep: true);
         if (selected) selected.SetSelected(false);
         selected = null;
         ShowDelete(false);
+        RefreshPlaceLabel();
     }
 
     void DeleteSelected()
     {
         if (!selected) return;
+        editing = false;
+        ShowCancel(false);
         Discard(selected.gameObject);
         AudioManager.Instance.PlayDeleteAtom();
         selected = null;
         ShowDelete(false);
         Dirty = true;
+        RefreshPlaceLabel();
     }
 
     void ShowDelete(bool show) { if (btnDeleteRoot) btnDeleteRoot.SetActive(show); }
