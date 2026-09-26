@@ -48,6 +48,7 @@ public class MisClasesManager : MonoBehaviour
     [SerializeField] private RectTransform   codesContent;
     [SerializeField] private GameObject      codeRowTemplate;  // inactivo; se clona
     [SerializeField] private Button          btnCodesClose;
+    [SerializeField] private Button          btnCodesCopy;
 
     [Header("Modal: confirmar terminar")]
     [SerializeField] private GameObject      stopModal;
@@ -72,6 +73,9 @@ public class MisClasesManager : MonoBehaviour
     // el texto y el botón tienen que decir cuál es.
     enum PendingAction { None, Stop, Delete }
     PendingAction pendingAction = PendingAction.None;
+    // Los códigos en texto plano, para el portapapeles. Se arma al mostrarlos porque
+    // es el único momento en que el servidor los manda: después solo existe el hash.
+    string    codesClipboardText = "";
     string    pendingStopId = "";
     Coroutine noticeCo;
 
@@ -89,6 +93,7 @@ public class MisClasesManager : MonoBehaviour
         if (btnCreateCancel)  btnCreateCancel.onClick.AddListener(CloseCreateModal);
         if (btnCreateConfirm) btnCreateConfirm.onClick.AddListener(OnCreateConfirm);
         if (btnCodesClose)    btnCodesClose.onClick.AddListener(CloseCodesModal);
+        if (btnCodesCopy)     btnCodesCopy.onClick.AddListener(CopyCodesToClipboard);
         if (btnStopCancel)    btnStopCancel.onClick.AddListener(CloseStopModal);
         if (btnStopConfirm)   btnStopConfirm.onClick.AddListener(OnConfirmAction);
 
@@ -422,6 +427,10 @@ public class MisClasesManager : MonoBehaviour
         if (codesTitle)
             codesTitle.text = "Códigos de " + (resp.classroom != null ? resp.classroom.name : "la clase");
 
+        var clip = new System.Text.StringBuilder();
+        if (resp.classroom != null)
+            clip.Append(resp.classroom.name).Append(" - ").Append(resp.classroom.section).Append(NEWLINE);
+
         foreach (var s in resp.students)
         {
             if (!codeRowTemplate) break;
@@ -430,9 +439,21 @@ public class MisClasesManager : MonoBehaviour
             row.SetActive(true);
             SetText(row, "Code",     s.code);
             SetText(row, "Password", s.password);
+            clip.Append(s.code).Append("  ").Append(s.password).Append(NEWLINE);
         }
 
+        codesClipboardText = clip.ToString();
         if (codesModal) codesModal.SetActive(true);
+    }
+
+    /// <summary>Copia los códigos al portapapeles del dispositivo. Es la red de seguridad
+    /// del docente: las contraseñas solo se ven aquí, y si cierra sin apuntarlas hay que
+    /// reponerlas alumno por alumno.</summary>
+    void CopyCodesToClipboard()
+    {
+        if (string.IsNullOrEmpty(codesClipboardText)) return;
+        GUIUtility.systemCopyBuffer = codesClipboardText;
+        ShowNotice("Códigos copiados. Pégalos donde no se pierdan.");
     }
 
     void CloseCodesModal()
