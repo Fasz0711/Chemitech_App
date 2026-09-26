@@ -1,0 +1,514 @@
+================================================================================
+LA PIZARRA COMO UNIVERSO — ACUERDO FRONTEND + BACKEND
+ChemiTech · 2026-09-25 (rev. 3)
+================================================================================
+
+YA NO ES UNA PROPUESTA: EL BACKEND LA REVISÓ Y ESTÁ ACORDADA. Se puede empezar
+a escribir código de los dos lados. Todo lo que queda marcado [DECIDIDO] está
+cerrado; ya no hay nada [PROPUESTO] ni casillas sin marcar.
+
+Autocontenido: se puede leer sin el resto de la documentación.
+
+REV. 3 — QUÉ CAMBIÓ AL REVISARLO EL BACKEND
+  1. VEREDICTO: sí, y el backend cambia poco. El diagnóstico de la sección 6 era
+     correcto: falta un verbo que lleve estructura en vez de un nombre del
+     catálogo, y es lo único que falta.
+  2. SE CORRIGEN DOS COSAS DE ESTA MISMA PROPUESTA:
+       - §5.5 daba por cierto que omitir userPublicId hace la llamada de
+         invitado. DEJÓ DE SER CIERTO con el retrofit de identidad, y fallaba
+         callado: el diario del docente se llenaba igual. Se resuelve con un
+         flag explícito.
+       - §5.7 + §6: el cliente manda SOLO ÁTOMOS. Los enlaces los recalcula el
+         backend.
+  3. SE AÑADE UNA DECISIÓN QUE LA PROPUESTA NO CONTEMPLABA y que habría roto el
+     uso principal: el verbo nuevo CONSERVA LA GEOMETRÍA (§6). `show` reparte
+     las moléculas en fila; esto no puede hacerlo.
+  4. Las cinco preguntas de la sección 9 quedan respondidas ahí mismo.
+  5. CALENDARIO: esto va ANTES del despliegue en Render, decidido por el autor.
+     No estaba en la lista unificada de pendientes del taller: es funcionalidad
+     nueva y se mete por delante a conciencia.
+
+REV. 2 — QUÉ CAMBIÓ RESPECTO A LA PRIMERA VERSIÓN
+  La primera versión modelaba DOS contenidos 3D: un "lienzo" privado del docente
+  y la escena publicada. El autor lo corrigió: es UN SOLO UNIVERSO 3D, y las dos
+  interfaces son dos formas de operarlo. Es más simple y es lo que se adopta.
+  La palabra "lienzo" desaparece de esta propuesta.
+
+
+================================================================================
+1. QUÉ SE QUIERE Y POR QUÉ
+================================================================================
+
+HOY la pizarra del docente es un VISOR con botones: muestra agua, sal o CO2 del
+catálogo, resalta, limpia. Funciona, pero el docente no puede construir nada:
+solo elegir entre lo que ya existe.
+
+EL UNIVERSO 3D (la parte creativa de la app, la que usa el alumno en "Mis
+universos") sí deja construir: hay un selector con 24 elementos, se coloca
+átomo por átomo en un espacio 3D, y el detector resuelve qué molécula salió.
+
+LA IDEA: que la pizarra SEA un universo. El docente entra a conducir y tiene la
+misma libertad que en su sandbox, más el panel de conducción que ya existe.
+
+POR QUÉ IMPORTA: con el catálogo, el docente solo puede explicar lo que alguien
+previó. Construyendo, puede responder a lo que pregunte el salón. "¿Y si le
+quito un hidrógeno?" deja de ser una pregunta que no se puede contestar.
+
+NO ES UN CAMBIO DE 180 GRADOS. La lógica de clase, el sondeo, los comandos, el
+roster y el render del alumno quedan como están. Lo que cambia es que aparece
+UNA forma nueva de que la escena cambie, y una interfaz que hoy no existe.
+
+
+================================================================================
+2. CÓMO ES EL UNIVERSO 3D HOY  (contexto para el backend)
+================================================================================
+
+Escena: ZonaJuegoScene. El alumno entra desde "Mis universos".
+
+  - Una plataforma 3D con cámara orbital (arrastrar rota, d-pad desplaza,
+    flechas suben y bajan, "Recentrar" vuelve al inicio).
+  - "Selector de átomos": un modal con los 24 elementos del catálogo, con
+    buscador y filtros. Lo elegido queda en una BARRA INFERIOR de 6 ranuras,
+    como el inventario de Minecraft.
+  - Se toca una ranura, aparece una previsualización translúcida en el centro,
+    se mueve con las flechas y se confirma con "Presiona para colocar átomo".
+  - Cada vez que la estructura se estabiliza, el cliente agrupa los átomos por
+    cercanía y manda cada grupo a POST /detection/molecule. El BACKEND decide
+    los enlaces; el cliente solo los dibuja.
+  - Además hay cronómetro de tiempo jugado y guardado del universo.
+
+DATO ÚTIL: el componente que coloca átomos (AtomPlacementController) NO depende
+del manager de la zona de juego, ni del universo abierto, ni del almacenamiento
+local. Solo necesita cámara, materiales y referencias de UI. Es decir: SE PUEDE
+TRASPLANTAR a la escena del docente sin desmontar nada.
+
+
+================================================================================
+3. EL MODELO: UN UNIVERSO, DOS INTERFACES  [DECIDIDO]
+================================================================================
+
+HAY UN SOLO ESPACIO 3D, con un solo conjunto de átomos. Lo que cambia al pulsar
+el botón de alternar es la INTERFAZ que se le monta encima:
+
+    MODO UNIVERSO   HUD creativo: selector de átomos, barra de 6 ranuras,
+                    colocar, mover, borrar, d-pad, flechas.
+    MODO PIZARRA    panel de conducción: botones del catálogo, instrucción en
+                    lenguaje natural con su vista previa, resaltado, roster,
+                    iniciar y terminar.
+
+El universo se llena por LOS DOS CAMINOS y se mezclan sin problema: lo que trae
+un comando del catálogo y lo que el docente coloca a mano conviven en el mismo
+espacio. Si trae agua con el botón y luego le añade un átomo, eso es una sola
+escena.
+
+LO QUE VEN LOS ALUMNOS es lo último PUBLICADO. No ven al docente construir.
+
+  POR QUÉ NO EN VIVO  [DECIDIDO]
+  Se evaluó reflejar cada átomo al instante en los 25 celulares y se descartó.
+  Armar una molécula átomo por átomo es TORPE DE VER: el alumno vería dudas,
+  colocaciones corregidas y átomos sueltos volando antes de entender qué se
+  está armando. Publicando, ve el resultado limpio. Y el docente puede PREPARAR
+  LA SIGUIENTE MOLÉCULA MIENTRAS HABLA DE LA ACTUAL, que en una lección de 20
+  minutos cronometrados vale mucho. De paso, en vivo multiplicaría las
+  peticiones justo donde hay 25 sondeos esperando.
+
+EL RIESGO QUE ESTO INTRODUCE, Y CÓMO SE CUBRE
+  Con un solo universo, el docente puede DIVERGIR SIN DARSE CUENTA: coloca tres
+  átomos, se olvida de publicar, y explica señalando algo que en los celulares
+  no está. El día del taller eso es feo.
+  La solución NO es duplicar la escena, es un INDICADOR HONESTO:
+
+      "Hay cambios sin publicar"
+
+  visible mientras el universo tenga algo que los alumnos no ven, y que
+  desaparece al publicar. Además, el modo universo tiñe sutilmente el fondo,
+  como señal de "estás preparando, no proyectando" (sutil a propósito: el
+  docente tiene que seguir viendo los colores reales de los átomos).
+
+
+================================================================================
+4. CÓMO SE USA  (el recorrido completo)
+================================================================================
+
+  1. El docente entra a conducir. Arranca en MODO PIZARRA. Todo funciona como
+     hoy: botones del catálogo, instrucción escrita, roster.
+
+  2. Pulsa "Cambiar a universo" (junto al nombre de la clase). Se oculta el
+     panel de conducción y aparece el HUD creativo. El espacio 3D es el mismo.
+
+  3. Construye: elige elementos, los coloca, los mueve, los borra. El detector
+     resuelve los enlaces igual que en el universo del alumno.
+     LOS ALUMNOS NO VEN NADA DE ESTO, y aparece "hay cambios sin publicar".
+
+  4. Pulsa "Mostrar a la clase". Se publica el estado actual del universo y en
+     <=3 s aparece en los 25 celulares. El aviso desaparece.
+
+  5. Vuelve a modo pizarra para resaltar, fijar la vista o seguir con los
+     botones de siempre.
+
+Alternar de modo NO toca el contenido: es solo cambiar la interfaz.
+
+
+================================================================================
+5. LO QUE CAMBIA EN EL FRONTEND
+================================================================================
+
+5.1 ClaseDocenteScene gana el HUD creativo
+    Se trasplantan: el selector de átomos, la barra de 6 ranuras, la
+    previsualización y colocación, el d-pad y las flechas. Componentes que ya
+    existen y no están acoplados a la zona de juego.
+
+    NO se trasplantan, porque no aplican:  [DECIDIDO]
+      - el cronómetro de tiempo jugado (su clase no es tiempo de juego)
+      - guardar el universo (la escena de clase vive en el servidor)
+      - el menú de pausa y el tutorial
+
+5.2 Los átomos de la escena pasan a ser EDITABLES
+    Hoy el docente ve una escena dibujada, no manipulable. Con este cambio, los
+    átomos que llegan del servidor tienen que quedar en el mismo estado que los
+    que coloca a mano: se pueden seleccionar, mover y borrar. Si no, lo traído
+    del catálogo sería intocable y lo construido sí, que es incoherente.
+    Implica convertir de las unidades del contrato (ångströms normalizados) a
+    las del universo. Ya hay precedente: "copiar a un universo" hace la
+    conversión inversa.
+
+5.3 Un interruptor de interfaz
+    El botón va junto al nombre de la clase, y solo enciende y apaga grupos de
+    UI. La cámara y el contenido 3D son los mismos debajo: eso es lo que hace
+    la transición natural.
+
+5.4 Indicador de cambios sin publicar
+    Se enciende cuando el universo cambia por mano del docente y se apaga al
+    publicar. Es la única defensa contra la divergencia silenciosa (§3).
+
+5.5 Detección sin ensuciar el diario  [CORREGIDO POR EL BACKEND]
+    Se reutiliza el ciclo que ya existe (agrupar por cercanía -> /detection/
+    molecule -> dibujar los enlaces que devuelve el backend). El objetivo es el
+    correcto: el docente está dando clase, no jugando, y su diario no debería
+    llenarse de moléculas de demostración.
+
+    PERO EL MEDIO PROPUESTO NO FUNCIONA. Omitir userPublicId ya NO es el camino
+    de invitado. Desde el retrofit de identidad la regla es:
+
+        sin token y sin userPublicId     -> invitado
+        sin token pero con userPublicId  -> 401
+        CON TOKEN -> MANDA EL TOKEN, haya o no userPublicId
+
+    El docente está logueado y su cliente manda la cabecera Authorization, así
+    que el descubrimiento SE REGISTRA en su diario igual. Y falla callado: no hay
+    error, el diario simplemente se llena. Se decidió así a propósito, para que
+    Unity pudiera dejar de mandar el campo sin cambiar de comportamiento.
+
+    LA SOLUCIÓN ACORDADA: un flag explícito en el cuerpo.  [DECIDIDO]
+
+        POST /api/detection/molecule
+        { "atoms": [...], "bonds": [], "record": false }
+
+    Es seguro por construcción: solo puede SALTARSE una escritura, nunca
+    conceder nada. Se evaluó mandar la llamada sin la cabecera Authorization
+    (funciona hoy, cero cambios) y se descartó: una app logueada que se quita su
+    propia cabecera es frágil y parece un bug para quien audite el código.
+    El backend implementa el flag.
+
+    AVISO DE LÍMITES: la detección tiene 120/min POR USUARIO, y construyendo se
+    manda una petición POR GRUPO de átomos en cada cambio. Con varios grupos en
+    pantalla se acerca más rápido de lo que parece. Si en el ensayo aparece un
+    429 mientras el docente construye, avisen: es un número en ThrottlerSettings,
+    no un rediseño.
+
+5.6 Publicar
+    Un botón "Mostrar a la clase" que manda el estado actual del universo por
+    /commands/apply, con la acción nueva de §6.
+
+5.7 Unidades  [DECIDIDO]
+    El universo trabaja en unidades de mundo (un enlace simple mide ~1.5). El
+    cliente CONVIERTE A ÅNGSTRÖMS antes de publicar, porque es la unidad del
+    contrato de escena. Se confirma: manden ångströms.
+
+    MATIZ ÚTIL: para los ENLACES la conversión da igual. La inferencia del
+    backend ordena por distancia / (radio_a + radio_b), que es ADIMENSIONAL: solo
+    importa el orden relativo, no la escala ni el redondeo. Donde sí importa el
+    ångström de verdad es en `scale`, que es el tamaño REAL de la molécula y es
+    lo que evita que un fragmento de red de NaCl y una molécula de agua ocupen el
+    mismo volumen en pantalla. Por eso se mandan ångströms igual.
+
+5.8 "Limpiar" vacía el universo entero  [DECIDIDO]
+    Un solo botón, sin ambigüedad. Si había algo publicado, publicar después
+    deja la escena de los alumnos vacía también.
+
+
+================================================================================
+6. LO QUE CAMBIA EN EL BACKEND
+================================================================================
+
+UNA SOLA COSA: un verbo nuevo en el vocabulario de acciones.
+
+EL PROBLEMA: hoy la escena solo cambia con `show`, que resuelve un NOMBRE del
+catálogo ("agua") a una estructura. No existe forma de decir "hay un oxígeno
+aquí y dos hidrógenos allá". Sin eso, lo que el docente construya no puede
+llegar a los alumnos.
+
+FORMA ACORDADA  [DECIDIDO]
+
+    [{"action": "setAtoms",
+      "atoms": [ {"element": "O", "x": 0.0,  "y": 0.0,  "z": 0.0},
+                 {"element": "H", "x": 0.76, "y": 0.59, "z": 0.0},
+                 {"element": "H", "x": -0.76,"y": 0.59, "z": 0.0} ]}]
+
+    - SIN `bonds`. El cliente aporta SOLO la geometría (ver "por qué" abajo).
+    - Coordenadas en ÅNGSTRÖMS, ya centradas en el origen.
+    - Es el ESTADO COMPLETO del universo del docente, no un añadido: siempre
+      reemplaza, sin flag `replace`. Publicar es "esto es lo que hay ahora".
+    - Hereda la semántica que ya tiene `show` con replace: se caen los
+      resaltados, las anotaciones ancladas, las atracciones y el foco de cámara
+      que apuntaban a moléculas viejas, porque un id colgado hace que el cliente
+      dibuje en el vacío.
+
+  SE LLAMA `setAtoms` Y NO `setScene` porque "escena" promete de más: suena a que
+  también fija cámara, capas y resaltados, y no los toca. Es la misma distinción
+  que ya hace `clear`, que vacía el contenido pero respeta cámara y capas.
+  (El nombre es barato de cambiar: el cliente nunca parsea acciones. Solo se ve
+  en el servidor y en el registro de comandos de la tesis.)
+
+POR QUÉ SOLO ÁTOMOS, SIN ENLACES  [DECIDIDO]
+  No es desconfianza: es que NO PUEDEN DIVERGIR. La inferencia del backend ordena
+  por distancia / (radio_a + radio_b), que es adimensional, así que recalcular
+  devuelve EXACTAMENTE los mismos enlaces que el docente ya vio en su pantalla.
+  Mandarlos no aporta nada y sí añade un riesgo: los enlaces salen del backend,
+  cierto, pero pasarían por un REINDEXADO (detección por grupos -> varios
+  resultados -> un arreglo plano). Un desfase de uno ahí produce una molécula
+  químicamente válida y EQUIVOCADA, sin un solo error — que es literalmente el
+  fallo que convirtió el CO2 en CH4O2 y costó rediseñar toda la inferencia. Al
+  cliente además le sale más fácil: manda menos.
+
+EL VERBO CONSERVA LA GEOMETRÍA  [DECIDIDO — no estaba en la propuesta]
+  `show` REPARTE LAS MOLÉCULAS EN FILA: el motor calcula offsets a partir del
+  tamaño real de cada una. Si el verbo nuevo hiciera lo mismo, el docente
+  acomodaría dos moléculas enfrentadas para explicar cómo se atraen, publicaría,
+  y el servidor SE LAS REORDENARÍA. La posición es justamente lo que está
+  aportando.
+  Así que `setAtoms` conserva las coordenadas tal cual llegan, y calcula scale y
+  offset de cada fragmento a partir de las coordenadas reales, no de un layout.
+  Es lo contrario de `show`, y está bien que lo sea: en `show` el servidor no
+  tiene ninguna intención del docente que respetar, y aquí sí.
+
+EL INTÉRPRETE NO PUEDE EMITIRLO  [DECIDIDO — seguridad]
+  `setAtoms` se acepta SOLO desde el botón de publicar del cliente, y se RECHAZA
+  en el camino del intérprete. Motivo: hoy la propuesta del modelo de lenguaje
+  pasa por la misma validación que el actionsJson del cliente, y todo el diseño
+  se apoya en que el modelo no pueda hacer nada que el docente no pudiera hacer
+  con un botón. Con `show` el modelo solo puede pedir una molécula del catálogo;
+  con `setAtoms` podría FABRICAR geometría y publicarla en 25 celulares. Con
+  temperatura 0 y vocabulario cerrado es improbable, pero la validación es justo
+  donde eso tiene que morir.
+  Consecuencia para ustedes: ninguna. El docente publica con su botón.
+
+LO QUE EL BACKEND SIGUE CALCULANDO ÉL, como hasta ahora:
+    en, kind, negativeEnd, charge, scale, offset, formula, name,
+    canonicalSmiles y el id de molécula.
+    La regla química sigue viviendo en un solo sitio; el cliente no la duplica.
+
+RECONOCER LO CONSTRUIDO  [DECIDIDO]
+    Si el docente arma O + H + H, el backend debe reconocerlo como agua y
+    devolver su nombre y su fórmula, igual que si hubiera venido del catálogo.
+    Importa por dos cosas: la tarjeta de fórmula 2D de la Fase 4 se genera del
+    SMILES, y esa MISMA imagen va en la hoja impresa del grupo que da la clase
+    sin app. Si no salen de la misma fuente, los dos grupos verían dibujos
+    distintos y la comparación del postest se ensucia.
+
+ACEPTAR LO INCOMPLETO  [DECIDIDO]
+    El docente puede publicar átomos sueltos o una estructura a medias A
+    PROPÓSITO ("miren, todavía le falta un hidrógeno"). Eso es material
+    didáctico legítimo, no un error: hay que aceptarlo y publicarlo tal cual.
+
+LO QUE HAY QUE VALIDAR (y rechazar entero, como todo comando):
+    - los topes acordados (abajo)
+    - elementos dentro de los 24 del featurizer
+
+DOS COSAS QUE YA ESTÁN RESUELTAS Y LES AHORRAN TRABAJO  [VERIFICADO]
+
+  1. "ACEPTAR LO INCOMPLETO" NO NECESITA NINGÚN CAMBIO DE CONTRATO.
+     SceneMolecule ya trae name, formula y canonicalSmiles con "" por defecto.
+     Una estructura que RDKit no logra identificar viaja con esos tres vacíos y
+     el resto completo. Lo único que tienen que hacer ustedes es dibujar bien
+     una molécula SIN NOMBRE: cadena vacía, no null, que JsonUtility lee bien.
+
+  2. LAS CAPAS DE LA FASE 4 VAN A FUNCIONAR SOBRE LO CONSTRUIDO A MANO, como
+     asume la sección 10. Confirmado en el código: kind, en y negativeEnd se
+     calculan de la electronegatividad de los DOS ELEMENTOS del enlace, no de
+     una molécula válida. Un enlace suelto entre dos átomos ya tiene su tipo.
+
+  Y una tranquilidad de rendimiento: publicar es barato. La inferencia de
+  enlaces tarda menos de 1.2 ms y el modelo de IA NO INTERVIENE (la escena
+  necesita nombre, fórmula y SMILES, no solubilidad). Publicar no compite con
+  los 25 sondeos.
+
+LOS TOPES  [DECIDIDO]
+  Los de hoy (4 moléculas, 30 átomos pesados) se calibraron para el camino del
+  catálogo. Construyendo a mano el problema es OTRO: "molécula" significa
+  FRAGMENTO CONECTADO, así que un docente que reparte 6 átomos sueltos acaba de
+  crear 6 fragmentos y revienta un tope de 4 — cuando publicar átomos sueltos es
+  exactamente lo que la sección 8 ya decidió que es material didáctico legítimo.
+  O sea que el tope de moléculas, no el de átomos, era el que iba a doler.
+
+      30 átomos pesados POR FRAGMENTO     sin cambios (la red de NaCl ya usa 27)
+      12 moléculas (fragmentos)           era 4; sube para que los sueltos sean
+                                          legales
+      60 ÁTOMOS TOTALES en la escena      tope NUEVO, contando hidrógenos
+
+  Referencia para calibrar: sal (27) + dos aguas (6) = 33, así que 60 deja aire.
+  Un celular dibuja 60 esferas sin pestañear, y el sondeo solo carga contenido
+  cuando cambió la versión, así que no encarece el sondeo normal.
+  El aviso en el universo (sección 8) se dispara con el TOTAL DE ÁTOMOS, no con
+  el número de fragmentos.
+  Son constantes en SceneSettings: cambiarlos después es una línea.
+
+LO QUE NO CAMBIA EN EL BACKEND:
+    el sondeo, el versionado, el roster, /interpret, el resto del vocabulario,
+    la forma del estado que recibe el alumno, y el contrato de la Fase 1 entero.
+
+
+================================================================================
+7. LO QUE NO CAMBIA EN NINGÚN LADO
+================================================================================
+
+  - LA ESCENA DEL ALUMNO SIGUE SIENDO DE SOLO LECTURA.  [DECIDIDO]
+    Este cambio es solo para el docente. El alumno mira, rota, aísla y copia a
+    su universo, como hoy. Darle construcción sería otra conversación mucho
+    más grande.
+  - El formato del estado que viaja en cada sondeo.
+  - Los alumnos no ven nada hasta que se publica.
+  - Sin contenido antes de iniciar la clase: lo sigue decidiendo el servidor.
+
+
+================================================================================
+8. DECISIONES YA TOMADAS CON EL AUTOR
+================================================================================
+
+  [x] UN SOLO UNIVERSO 3D, dos interfaces. No dos escenas separadas.
+  [x] Construir en privado y publicar; no espejo en vivo.
+  [x] Indicador "hay cambios sin publicar" + tinte sutil del fondo al editar.
+  [x] La detección SÍ se usa para resolver los enlaces del docente.
+  [x] Esas detecciones NO se registran en el diario del docente.
+  [x] El universo del docente NO se guarda: si cierra la app lo pierde, y al
+      volver ve lo publicado (que sí sobrevive en el servidor).
+  [x] Fuera del modo universo: cronómetro y guardar universo.
+  [x] "Limpiar" vacía el universo entero.
+  [x] Avisar EN EL UNIVERSO cuando se alcanza el tope de átomos o moléculas, en
+      vez de dejar construir diez minutos y fallar al publicar.
+  [x] El backend reconoce y nombra lo construido a mano.
+  [x] Se acepta publicar estructuras incompletas a propósito.
+  [x] La escena del alumno sigue siendo de solo lectura.
+
+  AÑADIDAS EN LA REV. 3, AL REVISARLO EL BACKEND:
+  [x] El verbo nuevo se llama `setAtoms` y es miembro propio del vocabulario, no
+      una variante de `show`.
+  [x] El cliente manda SOLO ÁTOMOS; el backend recalcula los enlaces.
+  [x] `setAtoms` CONSERVA la geometría: no hay layout en fila.
+  [x] `setAtoms` NO puede venir del intérprete, solo del botón de publicar.
+  [x] La detección se salta el diario con un flag explícito {"record": false},
+      no omitiendo userPublicId.
+  [x] Los comandos SÍ se registran en classroom_commands.
+  [x] Topes: 30 pesados por fragmento, 12 fragmentos, 60 átomos totales.
+  [x] Esto va ANTES del despliegue en Render (decisión del autor).
+
+
+================================================================================
+9. LAS CINCO PREGUNTAS, RESPONDIDAS POR EL BACKEND
+================================================================================
+
+  [x] 1. NOMBRE Y FORMA -> `setAtoms`, miembro propio del vocabulario, NO una
+         variante de `show`. `show` resuelve NOMBRES; esto trae ESTRUCTURA: otra
+         entrada, otras validaciones, otros modos de fallar. Detalle en §6.
+         Y con ello va una decisión de seguridad que no estaba en la pregunta:
+         el intérprete no puede emitirlo (§6).
+
+  [x] 2. ENLACES DEL CLIENTE -> NO. Manden solo átomos. El backend recalcula.
+         Razón completa en §6: no pueden divergir (la inferencia es
+         adimensional), y mandarlos añade un reindexado que es el mismo modo de
+         fallo del CO2 -> CH4O2.
+
+  [x] 3. /detection SIN userPublicId -> NO FUNCIONA como creían; flag explícito
+         {"record": false}. Detalle y motivo en §5.5.
+
+  [x] 4. REGISTRAR EN classroom_commands -> SÍ, sin duda: es el registro de
+         comandos del expositor y la evidencia del plan de validación. El tamaño
+         no es problema (~60 átomos son 2-3 KB de JSONB).
+         DOS DETALLES QUE RESUELVE EL BACKEND, no ustedes:
+           - Se guarda la acción TAL CUAL llega, sin excepciones a la regla.
+           - Pero así el registro diría "publicó 12 átomos de C, H y O" y nadie
+             sabría que era etanol (la escena actual se guarda, su historia no).
+             Así que el export vuelve a derivar el nombre con RDKit al generar el
+             CSV, y la columna resumen dirá "setAtoms: 12 átomos (Etanol)".
+         De hecho esto MEJORA la evidencia: queda qué construyó el docente, no
+         solo "mostró agua".
+
+  [x] 5. TOPES -> cambian, y no por donde esperaban. Tabla y razones en §6:
+         30 pesados por fragmento (igual), 12 fragmentos (era 4), 60 átomos
+         totales (nuevo).
+
+
+================================================================================
+10. LO QUE ESTO NO RESUELVE  (para que no se espere)
+================================================================================
+
+  - No añade animaciones ni predicciones (siguen fuera del alcance del taller).
+  - No cambia las capas de información: cuando se enciendan (Fase 4), se
+    aplicarán igual a lo construido a mano, porque el backend le habrá
+    calculado en/kind/negativeEnd como a cualquier molécula.
+  - El universo del docente no persiste entre sesiones (decisión consciente).
+
+
+================================================================================
+11. QUIÉN HACE QUÉ  [REV. 3]
+================================================================================
+
+BACKEND — TERMINADO EL 2026-09-26. Ya pueden publicar contra /commands/apply.
+  [x] La acción `setAtoms` en el vocabulario, con sus validaciones (los 24
+      elementos, los topes, las coordenadas), y rechazada en el intérprete.
+  [x] El camino de resolución: átomos -> el MISMO pipeline de detección que ya
+      usa /detection/molecule -> un SceneMolecule por fragmento, CONSERVANDO las
+      posiciones.
+  [x] La rama en el motor de escena, compartiendo con `show` la lógica de
+      reemplazo para que no puedan divergir.
+  [x] El flag {"record": false} en /detection/molecule.
+  [x] Los topes nuevos en SceneSettings (30 / 12 / 60).
+  [x] La columna resumen en el export de la tesis.
+  [x] Pruebas: classroom_flows (89), scene_chemistry (65), record_flag (7).
+
+  DOS COSAS QUE SE DESCUBRIERON AL IMPLEMENTARLO, Y QUE LES AFECTAN:
+
+  1. LA ESCENA SE PARTE EN FRAGMENTOS POR CERCANÍA, EN EL SERVIDOR. No hace
+     falta que ustedes agrupen nada: manden la lista plana de átomos y el
+     backend decide qué es una molécula y qué es otra. El corte está calibrado
+     para que un ENLACE quede dentro y un PUENTE DE HIDRÓGENO fuera, así que dos
+     aguas cercanas siguen siendo dos moléculas (que es lo que la lección
+     necesita). Hizo falta porque la inferencia de enlaces, tal cual, fuerza un
+     árbol que conecta TODO: con la escena entera de una vez, dos aguas
+     separadas salían inválidas.
+
+  2. UN FRAGMENTO SIN IDENTIFICAR LLEGA CON name, formula Y canonicalSmiles EN
+     CADENA VACÍA, y con los enlaces que sí se resolvieron. Ya estaba avisado en
+     la sección 6, pero ahora está probado y es el caso NORMAL mientras el
+     docente construye. Un átomo suelto sí lleva su símbolo ("O") como nombre y
+     fórmula, para que la tarjeta diga algo.
+
+FRONTEND
+  - Todo lo de la sección 5, con las dos correcciones de la rev. 3: manden SOLO
+    ÁTOMOS (§6) y usen el flag {"record": false} en lugar de omitir userPublicId
+    (§5.5).
+
+EL CONTRATO TÉCNICO ESTÁ EN CONTRATO_PIZARRA_UNIVERSO.txt
+  Qué mandar, qué llega, los topes con su código de error y la lista de
+  comprobación. Sus JSON están volcados del servidor real. Este archivo guarda el
+  POR QUÉ de cada decisión; ese guarda el CÓMO.
+
+YA NO HAY NADA QUE ESPERAR DEL BACKEND
+  El HUD creativo (§5.1), los átomos editables (§5.2), el interruptor de interfaz
+  (§5.3), el indicador de cambios sin publicar (§5.4), "limpiar" (§5.8), el botón
+  de publicar (§5.6) y la detección con {"record": false} (§5.5) están todos
+  soportados. Manden `setAtoms` a /commands/apply cuando quieran.
+
+================================================================================
+FIN
+================================================================================

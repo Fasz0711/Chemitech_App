@@ -16,7 +16,7 @@ using TMPro;
 ///  • "Cancelar" → quita la previsualización y vuelve el cursor.
 ///  • Sin previsualización: tocar un átomo colocado lo selecciona (mover/borrar).
 /// </summary>
-public class AtomPlacementController : MonoBehaviour
+public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSink
 {
     [Header("Refs")]
     [SerializeField] private Camera               cam;
@@ -93,9 +93,21 @@ public class AtomPlacementController : MonoBehaviour
         if (collisionModal) collisionModal.SetActive(false);
     }
 
+    /// <summary>Con esto apagado se puede rotar la cámara pero no tocar los átomos.
+    /// Es lo que permite que la pizarra y el universo compartan el mismo espacio 3D sin
+    /// que el docente mueva algo sin querer mientras conduce la clase.</summary>
+    public bool Interactive { get; private set; } = true;
+
+    public void SetInteractive(bool value)
+    {
+        Interactive = value;
+        if (!value) { CancelPreview(); Deselect(); }
+    }
+
     /// <summary>Tocar un slot del hotbar: arma el átomo y muestra su previsualización.</summary>
     public void ArmForPlacement(int atomIndex)
     {
+        if (!Interactive) return;
         armedAtom = atomIndex;
         Deselect();      // modo exclusivo: salir de edición de átomos colocados
         ShowPreview();
@@ -179,6 +191,7 @@ public class AtomPlacementController : MonoBehaviour
     /// <summary>Coloca un átomo real en la posición de la previsualización (esta se queda).</summary>
     public void PlaceActiveAtom()
     {
+        if (!Interactive) return;
         if (armedAtom < 0 || previewGhost == null) return;
         Vector3 pos = previewGhost.transform.position;
         if (Overlaps(pos)) { ShowCollision(); return; }
@@ -273,6 +286,7 @@ public class AtomPlacementController : MonoBehaviour
 
     void HandleTap(Vector3 screenPos)
     {
+        if (!Interactive) return;
         if (!cam || previewGhost != null) return; // en modo preview no se seleccionan átomos
 
         Ray ray = cam.ScreenPointToRay(screenPos);
@@ -307,6 +321,46 @@ public class AtomPlacementController : MonoBehaviour
         return best;
     }
 
+    // ── Escena que llega del servidor (pizarra del docente) ───────────────────
+    //
+    // El docente y el alumno ven UN SOLO universo. Cuando el servidor devuelve el
+    // estado, sus átomos se reconstruyen AQUÍ y no como esferas aparte, para que el
+    // docente pueda moverlos y borrarlos igual que los que colocó a mano. Si no, lo
+    // traído del catálogo sería intocable y lo construido sí, que es incoherente.
+
+    /// <summary>Vacía el universo. No marca cambios: lo usan tanto "Limpiar" (que ya
+    /// publica por su cuenta) como el repintado de un estado del servidor.</summary>
+    public void ClearAtoms()
+    {
+        Deselect();
+        CancelPreview();
+        if (!atomsRoot) return;
+        for (int i = atomsRoot.childCount - 1; i >= 0; i--)
+        {
+            var a = atomsRoot.GetChild(i).GetComponent<Atom3D>();
+            if (a) Discard(a.gameObject);
+        }
+    }
+
+    // Destroy() no borra hasta el final del frame. Quien recorra atomsRoot antes de eso
+    // —BondManager lo hace cada frame— vería los átomos viejos junto a los nuevos y
+    // mandaría a detectar una estructura que no existe. Desengancharlos primero los saca
+    // del recorrido en el acto.
+    static void Discard(GameObject go)
+    {
+        go.transform.SetParent(null, false);
+        Destroy(go);
+    }
+
+    /// <summary>Crea un átomo editable en una posición que decide el servidor. Sin
+    /// animación (llegan decenas a la vez) y sin recorte (la geometría es suya).</summary>
+    public Atom3D SpawnFromScene(string element, Vector3 worldPos)
+    {
+        int index = AtomCatalog.IndexOf(element);
+        if (index < 0) return null;
+        return PlaceAtom(index, worldPos, animate: false, clamp: false);
+    }
+
     // ── Guardar / restaurar estado (lo usa el modal de pausa) ─────────────────
     /// <summary>Átomos colocados en orden de atomsRoot (para mapear índices ↔ ids).</summary>
     public List<Atom3D> GetOrderedAtoms()
@@ -338,7 +392,7 @@ public class AtomPlacementController : MonoBehaviour
             for (int i = atomsRoot.childCount - 1; i >= 0; i--)
             {
                 var a = atomsRoot.GetChild(i).GetComponent<Atom3D>();
-                if (a) Destroy(a.gameObject);
+                if (a) Discard(a.gameObject);
             }
         if (saved != null)
             foreach (var s in saved)
@@ -350,12 +404,19 @@ public class AtomPlacementController : MonoBehaviour
     }
 
     // ── Colocar / mover / borrar ──────────────────────────────────────────────
-    void PlaceAtom(int index, Vector3 worldPos, bool animate = false)
+    /// <param name="clamp">Recorta a la plataforma. Se apaga al reconstruir una escena
+    /// que viene del servidor: ahí la geometría es autoritativa y recortarla movería
+    /// átomos que el docente colocó a propósito lejos.</param>
+    Atom3D PlaceAtom(int index, Vector3 worldPos, bool animate = false, bool clamp = true)
     {
         var info = AtomCatalog.All[index];
-        float x = Mathf.Clamp(worldPos.x, -platformHalf, platformHalf);
-        float z = Mathf.Clamp(worldPos.z, -platformHalf, platformHalf);
-        float y = Mathf.Clamp(worldPos.y, atomScale * 0.5f, maxHeight);
+        float x = worldPos.x, y = worldPos.y, z = worldPos.z;
+        if (clamp)
+        {
+            x = Mathf.Clamp(x, -platformHalf, platformHalf);
+            z = Mathf.Clamp(z, -platformHalf, platformHalf);
+            y = Mathf.Clamp(y, atomScale * 0.5f, maxHeight);
+        }
 
         var root = new GameObject($"Atom_{info.symbol}_{nextId}");
         root.transform.SetParent(atomsRoot, false);
@@ -376,6 +437,7 @@ public class AtomPlacementController : MonoBehaviour
             sphere.AddComponent<SpawnPop>().Play(Vector3.one * atomScale);
 
         if (showLabels && labelFont) AddLabel(root.transform, info.symbol);
+        return a;
     }
 
     void AddLabel(Transform parent, string symbol)
@@ -442,7 +504,7 @@ public class AtomPlacementController : MonoBehaviour
     void DeleteSelected()
     {
         if (!selected) return;
-        Destroy(selected.gameObject);
+        Discard(selected.gameObject);
         AudioManager.Instance.PlayDeleteAtom();
         selected = null;
         ShowDelete(false);

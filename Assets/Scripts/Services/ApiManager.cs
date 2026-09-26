@@ -230,8 +230,19 @@ public class ApiManager : MonoBehaviour
             onError));
     }
 
+    /// <summary>
+    /// Detecta la molécula que forman unos átomos. El backend decide los enlaces; el
+    /// cliente solo dibuja lo que devuelve.
+    ///
+    /// 'record' en false detecta SIN escribir en el diario. Lo usa la pizarra: el docente
+    /// está dando clase, no jugando, y su diario no debería llenarse de moléculas de
+    /// demostración. OJO: quitar userPublicId NO sirve para esto. Desde el retrofit de
+    /// identidad, si la petición lleva token manda el token, así que el descubrimiento se
+    /// registraría igual y sin ningún error que lo delate.
+    /// </summary>
     public void DetectMolecule(string userPublicId, AtomDTO[] atoms, BondDTO[] bonds,
-                               Action<DetectResponse> onSuccess, Action<int, string> onError)
+                               Action<DetectResponse> onSuccess, Action<int, string> onError,
+                               bool record = true)
     {
         // Logeado = hay userId y access token. Invitado = sin ambos.
         bool logged = !string.IsNullOrEmpty(userPublicId) && !string.IsNullOrEmpty(SessionData.AccessToken);
@@ -239,8 +250,8 @@ public class ApiManager : MonoBehaviour
         // Invitado: sin token y sin userPublicId (mandarlo sin token daría 401).
         // Logeado: con token; userPublicId en el body coincide con el del token (permitido).
         string body = logged
-            ? JsonUtility.ToJson(new DetectRequest { userPublicId = userPublicId, atoms = atoms, bonds = bonds })
-            : JsonUtility.ToJson(new DetectRequestGuest { atoms = atoms, bonds = bonds });
+            ? JsonUtility.ToJson(new DetectRequest { userPublicId = userPublicId, atoms = atoms, bonds = bonds, record = record })
+            : JsonUtility.ToJson(new DetectRequestGuest { atoms = atoms, bonds = bonds, record = record });
         Debug.Log($"[API] POST {BASE_URL}/detection/molecule (logged={logged})\n{body}");
 
         void OnOk(string json) { Debug.Log($"[API] respuesta OK:\n{json}"); onSuccess?.Invoke(JsonUtility.FromJson<DetectResponse>(json)); }
@@ -752,8 +763,10 @@ public class ApiManager : MonoBehaviour
     // ── Detección de moléculas ──────────────────────────────────────────────
     [Serializable] public class AtomDTO { public int id; public string element; public float x; public float y; public float z; }
     [Serializable] public class BondDTO { public int beginAtomId; public int endAtomId; public int order; }
-    [Serializable] class DetectRequest      { public string userPublicId; public AtomDTO[] atoms; public BondDTO[] bonds; }
-    [Serializable] class DetectRequestGuest { public AtomDTO[] atoms; public BondDTO[] bonds; } // sin userPublicId (invitado)
+    // 'record' viaja siempre y por defecto en true, que es justo lo que el servidor
+    // asume si falta: mandarlo explícito no cambia el comportamiento de nadie.
+    [Serializable] class DetectRequest      { public string userPublicId; public AtomDTO[] atoms; public BondDTO[] bonds; public bool record; }
+    [Serializable] class DetectRequestGuest { public AtomDTO[] atoms; public BondDTO[] bonds; public bool record; } // sin userPublicId (invitado)
 
     [Serializable]
     public class MoleculeDTO

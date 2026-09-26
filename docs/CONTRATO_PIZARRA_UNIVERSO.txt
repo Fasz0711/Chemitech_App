@@ -1,0 +1,274 @@
+================================================================================
+CONTRATO: LA PIZARRA COMO UNIVERSO
+ChemiTech · backend -> frontend · 2026-09-26
+================================================================================
+
+Lo que el backend agregó para que el docente construya a mano y publique. Es un
+APÉNDICE de CONTRATO_CLASES_FASE1.txt y CONTRATO_CLASES_FASE2.txt: aquí está
+SOLO lo nuevo. Todo lo demás (login, clases, sondeo, roster, /interpret,
+resaltados, capas, anotaciones) no cambió nada.
+
+EL ACUERDO COMPLETO, con el por qué de cada decisión, está en
+PROPUESTA_PIZARRA_UNIVERSO.txt rev. 3. Este archivo es la parte técnica: qué
+mandar, qué llega y qué puede fallar.
+
+TODOS LOS JSON DE AQUÍ ESTÁN VOLCADOS DEL SERVIDOR REAL, no escritos a mano.
+
+RESUMEN EN CUATRO LÍNEAS
+  1. Hay una acción nueva, `setAtoms`, que publica lo que el docente construyó.
+  2. Manden SOLO ÁTOMOS con sus coordenadas. Nada de enlaces, nada de agrupar.
+  3. La escena que vuelve tiene la MISMA forma de siempre; lo único nuevo es que
+     una molécula puede venir sin nombre.
+  4. /detection/molecule acepta "record": false para no ensuciar el diario.
+
+
+================================================================================
+1. PUBLICAR: LA ACCIÓN `setAtoms`
+================================================================================
+
+Va por el endpoint que ya usan para los botones:
+
+    POST /api/classes/{id}/commands/apply        (solo el docente DUEÑO)
+
+1.1 EL actionsJson
+--------------------------------------------------------------------------------
+Dentro de `actionsJson` va esta lista. En el ejemplo el docente armó un agua y,
+a 20 Å, dos carbonos sueltos (una estructura a medias, a propósito):
+
+[
+  {
+    "action": "setAtoms",
+    "atoms": [
+      { "element": "O", "x": 0.0,   "y": 0.0,  "z": 0.0 },
+      { "element": "H", "x": 0.76,  "y": 0.59, "z": 0.0 },
+      { "element": "H", "x": -0.76, "y": 0.59, "z": 0.0 },
+      { "element": "C", "x": 20.0,  "y": 0.0,  "z": 0.0 },
+      { "element": "C", "x": 21.54, "y": 0.0,  "z": 0.0 }
+    ]
+  }
+]
+
+  - `element`: el símbolo, como se escribe en química ("O", "Na", "Cl").
+  - `x`, `y`, `z`: ÅNGSTRÖMS. Conviertan desde unidades de mundo antes de mandar
+    (en el universo un enlace simple mide ~1.5; en ångströms, ~1.5 también para
+    C–C, pero NO asuman que la escala coincide: usen su factor de conversión).
+  - NO manden `bonds`. Si los mandan, se ignoran.
+  - NO agrupen los átomos. Manden la lista plana y ya.
+  - Es el ESTADO COMPLETO: publicar reemplaza siempre lo que hubiera.
+
+1.2 EL CUERPO DE LA PETICIÓN
+--------------------------------------------------------------------------------
+Igual que para los botones de siempre — el sobre no cambió:
+
+{
+  "actionsJson": "[{\"action\": \"setAtoms\", \"atoms\": [{\"element\": \"O\", \"x\": 0.0, \"y\": 0.0, \"z\": 0.0}, ...]}]",
+  "baseVersion": 7,
+  "source": "button",
+  "promptText": ""
+}
+
+  - `source`: "button" (el docente pulsó "Mostrar a la clase"). No es "prompt":
+    eso es solo para lo que vino del campo de texto.
+  - `baseVersion`: la última versión que tienen. Si la escena cambió desde
+    entonces, 409 ERR_STALE_SCENE, igual que siempre.
+  - `promptText`: "" con los botones.
+
+  OJO CON EL NOMBRE: aquí el campo se llama `promptText`; en /commands/interpret
+  se llama `prompt`. Equivocarse NO da error (los campos desconocidos se
+  ignoran), simplemente llega vacío.
+
+
+================================================================================
+2. LO QUE VUELVE  (y es lo mismo que llega por el sondeo)
+================================================================================
+
+La respuesta de /commands/apply y la de GET /classes/{id}/state tienen la MISMA
+forma que ya manejan. Volcado real del ejemplo de arriba, recortando al final lo
+que no cambió:
+
+{
+  "message": "OK_COMMAND_APPLIED",
+  "changed": true,
+  "version": 8,
+  "status": "running",
+  "molecules": [
+    {
+      "id": "m1",
+      "name": "Agua",
+      "formula": "H2O",
+      "canonicalSmiles": "O",
+      "scale": 1.52,
+      "offset": { "x": 0.0, "y": 0.295, "z": 0.0 },
+      "atoms": [
+        { "type": "O", "position": { "x": 0.5, "y": 0.3059, "z": 0.5 }, "en": 3.44, "charge": 0 },
+        { "type": "H", "position": { "x": 1.0, "y": 0.6941, "z": 0.5 }, "en": 2.2,  "charge": 0 },
+        { "type": "H", "position": { "x": 0.0, "y": 0.6941, "z": 0.5 }, "en": 2.2,  "charge": 0 }
+      ],
+      "bonds": [
+        { "beginAtomId": 0, "endAtomId": 1, "order": 1, "kind": "polar", "negativeEnd": 0 },
+        { "beginAtomId": 0, "endAtomId": 2, "order": 1, "kind": "polar", "negativeEnd": 0 }
+      ]
+    },
+    {
+      "id": "m2",
+      "name": "",
+      "formula": "",
+      "canonicalSmiles": "",
+      "scale": 1.54,
+      "offset": { "x": 20.77, "y": 0.0, "z": 0.0 },
+      "atoms": [
+        { "type": "C", "position": { "x": 0.0, "y": 0.5, "z": 0.5 }, "en": 2.55, "charge": 0 },
+        { "type": "C", "position": { "x": 1.0, "y": 0.5, "z": 0.5 }, "en": 2.55, "charge": 0 }
+      ],
+      "bonds": [
+        { "beginAtomId": 0, "endAtomId": 1, "order": 1, "kind": "nonpolar", "negativeEnd": -1 }
+      ]
+    }
+  ],
+  "attractions": [], "hasInteraction": false, "interaction": { ... },
+  "hasPrediction": false, "prediction": { ... }, "hasReveal": false,
+  "reveal": { ... }, "highlights": [], "overlays": { ... },
+  "annotations": [], "camera": { ... }
+}
+
+2.1 CINCO COSAS QUE LEER DE AHÍ
+--------------------------------------------------------------------------------
+
+a) LOS 5 ÁTOMOS SE PARTIERON EN 2 MOLÉCULAS, y eso lo hizo el servidor. Ustedes
+   mandaron una lista plana. El corte está calibrado para que un ENLACE quede
+   dentro y un PUENTE DE HIDRÓGENO fuera, así que dos aguas cercanas siguen
+   siendo dos moléculas — que es lo que la lección del puente necesita.
+
+b) EL AGUA SE RECONOCIÓ: name "Agua", formula "H2O", canonicalSmiles "O". Sale
+   del catálogo, exactamente igual que si hubiera venido del botón. Las seis
+   moléculas de la lección están probadas: Agua, Oxígeno, Dióxido de carbono,
+   Amoníaco, Cloruro de sodio y Metano.
+
+c) LA SEGUNDA NO SE PUDO IDENTIFICAR: name, formula y canonicalSmiles en CADENA
+   VACÍA. No es un error, es el caso normal mientras el docente construye: dos
+   carbonos sin hidrógenos no son una molécula completa.
+   >>> ES LO ÚNICO NUEVO QUE TIENEN QUE MANEJAR: dibujen la molécula igual y
+       oculten la etiqueta cuando el nombre esté vacío. Es cadena vacía, NUNCA
+       null, así que string.IsNullOrEmpty basta.
+   Un ÁTOMO SOLO sí lleva su símbolo: name "O", formula "O", sin enlaces.
+
+d) LAS POSICIONES SE CONSERVAN. `scale` es el tamaño real del fragmento en
+   ångströms y `offset` su centro real, así que la disposición que armó el
+   docente sobrevive intacta:
+       posiciónEnÅ = (position - 0.5) * scale + offset
+   Los dos carbonos están en offset.x = 20.77, o sea a ~20 Å del agua, tal como
+   los colocó. `setAtoms` NO reparte en fila: eso lo hace `show`.
+
+e) LOS ENLACES VIENEN CON SU TIPO YA CALCULADO, también en lo construido a mano:
+   `kind` es "nonpolar" | "polar" | "ionic", y `negativeEnd` es el índice del
+   átomo δ− (o -1 si no aplica). O sea que las capas de información van a
+   funcionar sobre lo del docente igual que sobre lo del catálogo.
+   `beginAtomId`/`endAtomId` son índices dentro del array `atoms` DE ESA
+   molécula (0, 1, 2...), no los de su lista original.
+
+
+================================================================================
+3. LOS TOPES  (y qué error llega al pasarse)
+================================================================================
+
+    30 átomos pesados POR MOLÉCULA (fragmento)   sin cambios
+    12 moléculas en escena                       era 4
+    60 ÁTOMOS TOTALES contando hidrógenos        tope nuevo
+
+El de moléculas subió de 4 a 12 justamente por esto: construyendo a mano,
+"molécula" = fragmento conectado, así que 6 átomos sueltos son 6 fragmentos.
+
+CÓDIGOS, todos con la forma de siempre {"detail": "ERR_..."}:
+
+  409 ERR_SCENE_FULL          más de 12 fragmentos
+  422 ERR_MOLECULE_TOO_BIG    un fragmento con más de 30 átomos pesados
+  422 ERR_UNKNOWN_MOLECULE    un elemento fuera de los 24 del catálogo
+  422 ERR_INVALID_ACTION      más de 60 átomos, o el JSON mal formado, o una
+                              coordenada que no es un número
+  409 ERR_STALE_SCENE         baseVersion viejo (igual que siempre)
+
+  >>> AVISEN EN EL UNIVERSO, NO AL PUBLICAR. Lleven la cuenta de átomos y
+      fragmentos mientras el docente construye y avísenle al acercarse al tope.
+      Dejarle construir diez minutos y fallar al publicar es lo peor que puede
+      pasar delante de 25 alumnos. Ya lo habíamos acordado (§8 de la propuesta);
+      esto es el recordatorio con los números finales.
+
+  Y ojo: los comandos son TODO O NADA. Si la acción se rechaza, la escena de los
+  alumnos queda EXACTAMENTE como estaba y la versión no sube.
+
+
+================================================================================
+4. DETECTAR SIN ENSUCIAR EL DIARIO DEL DOCENTE
+================================================================================
+
+    POST /api/detection/molecule
+
+Campo nuevo en el cuerpo: "record". Por defecto true, o sea que el
+comportamiento de siempre no cambia.
+
+{
+  "atoms": [
+    { "id": 7, "element": "O", "x": 0.0,   "y": 0.0,  "z": 0.0 },
+    { "id": 8, "element": "H", "x": 0.76,  "y": 0.59, "z": 0.0 },
+    { "id": 9, "element": "H", "x": -0.76, "y": 0.59, "z": 0.0 }
+  ],
+  "bonds": [],
+  "record": false
+}
+
+CUÁNDO USARLO: en la pizarra del docente, siempre. Está dando clase, no jugando,
+y su diario no debería llenarse de moléculas de demostración.
+
+NO SIRVE OMITIR userPublicId. Era lo que proponía la §5.5 de la propuesta y hoy
+no funciona: desde el retrofit de identidad, si la petición trae token, MANDA EL
+TOKEN. El docente está logueado, así que el descubrimiento se registraría igual
+y SIN NINGÚN ERROR que lo delate. De ahí el flag.
+
+LA RESPUESTA NO CAMBIA EN NADA. Con record:false la química es idéntica:
+
+{
+  "message": "OK_MOLECULE_DETECTED",
+  "isValid": true,
+  "invalidityReason": null,
+  "bonds": [
+    { "beginAtomId": 7, "endAtomId": 8, "order": 1 },
+    { "beginAtomId": 7, "endAtomId": 9, "order": 1 }
+  ],
+  "molecule": { "name": "Agua", "canonicalSmiles": "O", ... }
+}
+
+  - `bonds` (primer nivel) es lo que se DIBUJA, y llega válida o no. Sus ids son
+    los que ustedes mandaron (7, 8, 9), no índices.
+  - `molecule.isNewDiscovery` sale false con record:false, porque efectivamente
+    no se registró nada.
+  - Con record:false, `molecule` sigue llegando completa: nombre, fórmula,
+    solubilidad, todo. Lo único que no ocurre es la escritura en el diario.
+
+LÍMITE: 120 peticiones por minuto POR USUARIO. Construyendo se manda una por
+grupo de átomos en cada cambio, así que con varios grupos en pantalla se acerca
+más rápido de lo que parece. Si les sale 429 (ERR_RATE_LIMITED) construyendo,
+avisen: es un número en el servidor, no un rediseño.
+
+
+================================================================================
+5. LISTA DE COMPROBACIÓN ANTES DE DAR ESTO POR HECHO
+================================================================================
+
+  [ ] Publicar manda SOLO átomos, en ångströms, sin `bonds` y sin agrupar.
+  [ ] `source` es "button" y `promptText` va vacío al publicar.
+  [ ] El `baseVersion` sale de la última respuesta que recibieron.
+  [ ] Una molécula con `name` vacío se dibuja igual, sin etiqueta y sin tratarla
+      como error.
+  [ ] Las posiciones se reconstruyen con (position - 0.5) * scale + offset, y NO
+      se reacomodan: lo que el docente colocó es lo que se ve.
+  [ ] `scale` se declara en la clase de C# (si falta, JsonUtility lee 0 y la
+      molécula colapsa a un punto).
+  [ ] La detección de la pizarra manda "record": false.
+  [ ] Hay aviso EN EL UNIVERSO al acercarse a 60 átomos o 12 fragmentos.
+  [ ] Un rechazo al publicar deja el indicador de "cambios sin publicar"
+      encendido: la escena de los alumnos no cambió, así que sigue habiendo algo
+      pendiente.
+
+================================================================================
+FIN
+================================================================================

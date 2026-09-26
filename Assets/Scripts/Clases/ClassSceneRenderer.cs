@@ -8,23 +8,43 @@ using UnityEngine;
 /// pinta, que es justo la razón por la que el dibujado de enlaces se extrajo de
 /// BondManager a BondRenderer.
 ///
-/// No es MonoBehaviour: lo instancia quien lo usa (el alumno y el docente ven la misma
-/// escena) y llama a UpdateVisuals() cada frame. Al terminar, Dispose().
+/// Tiene dos modos:
+///   • SOLO LECTURA (alumno): crea sus propias esferas y dibuja los enlaces él mismo.
+///   • EDITABLE (pizarra del docente): delega la creación de átomos en un IAtomSink —
+///     su AtomPlacementController— para que lo que llega del servidor sea el MISMO
+///     objeto manipulable que lo que el docente coloca a mano. En ese modo los enlaces
+///     los dibuja BondManager, no este renderer, para que no haya dos dueños del mismo
+///     cilindro.
+///
+/// No es MonoBehaviour: lo instancia quien lo usa y llama a UpdateVisuals() cada frame.
+/// Al terminar, Dispose().
 /// </summary>
 public class ClassSceneRenderer
 {
+    /// <summary>Quien crea los átomos cuando la escena no es de solo lectura.</summary>
+    public interface IAtomSink
+    {
+        void   ClearAtoms();
+        Atom3D SpawnFromScene(string element, Vector3 worldPos);
+    }
+
     readonly Transform root;
     readonly Material  atomMaterial;
     readonly float     worldScale;
     readonly float     atomSize;
+    readonly IAtomSink sink;   // null = solo lectura (alumno)
 
     readonly Dictionary<int, Atom3D> byId = new Dictionary<int, Atom3D>();
     readonly List<GameObject>        spawned = new List<GameObject>();
     readonly List<(int a, int b, int order)> bonds = new List<(int, int, int)>();
 
-    // "m1" -> primer id global de sus átomos. Los highlights vienen con índices LOCALES
-    // a su molécula, así que sin este mapa no se sabe a qué esfera se refieren.
-    readonly Dictionary<string, int> moleculeBase = new Dictionary<string, int>();
+    // "m1" -> los ids globales de sus átomos, EN EL ORDEN LOCAL del contrato. Los
+    // highlights y los enlaces vienen con índices locales a su molécula, así que sin
+    // este mapa no se sabe a qué esfera se refieren.
+    //
+    // Es una tabla y no un desplazamiento base porque con el sink los ids los asigna el
+    // controlador de colocación y no tienen por qué ser consecutivos.
+    readonly Dictionary<string, int[]> moleculeAtomIds = new Dictionary<string, int[]>();
 
     // Al revés: id global de átomo -> molécula a la que pertenece. Lo usa el aislamiento,
     // que parte de tocar un átomo y necesita saber qué molécula dejar encendida.
@@ -32,20 +52,28 @@ public class ClassSceneRenderer
 
     string isolated = "";
 
-    readonly BondRenderer bondRenderer;
+    readonly BondRenderer bondRenderer;   // null en modo editable: los pinta BondManager
 
     static readonly Color FALLBACK_COLOR = new Color(0.72f, 0.75f, 0.82f);
 
     public ClassSceneRenderer(Transform root, Material atomMaterial, Material bondMaterial,
-                              float worldScale, float atomSize, float bondThickness, float bondSpacing)
+                              float worldScale, float atomSize, float bondThickness, float bondSpacing,
+                              IAtomSink sink = null)
     {
         this.root         = root;
         this.atomMaterial = atomMaterial;
         this.worldScale   = worldScale;
         this.atomSize     = atomSize;
+        this.sink         = sink;
 
-        bondRenderer = new BondRenderer(root, bondMaterial, byId, bondThickness, bondSpacing);
+        if (sink == null)
+            bondRenderer = new BondRenderer(root, bondMaterial, byId, bondThickness, bondSpacing);
     }
+
+    /// <summary>Los enlaces del último Render, ya en ids de Atom3D. En modo editable es
+    /// lo que se le pasa a BondManager para que los dibuje sin volver a preguntarle al
+    /// servidor algo que el servidor acaba de decir.</summary>
+    public List<(int a, int b, int order)> Bonds => bonds;
 
     /// <summary>Reconstruye la escena entera. Se llama solo cuando el estado CAMBIÓ:
     /// el servidor manda estado completo, así que redibujar es siempre correcto.</summary>
@@ -56,14 +84,11 @@ public class ClassSceneRenderer
 
         // Ids globales: los del JSON son locales a cada molécula (0..n-1), y con varias
         // moléculas en escena se pisarían entre ellas.
-        int baseId = 0;
+        int nextInternalId = 0;
 
         foreach (var m in molecules)
         {
             if (m == null || m.atoms == null) continue;
-
-            if (!string.IsNullOrEmpty(m.id)) moleculeBase[m.id] = baseId;
-            for (int k = 0; k < m.atoms.Length; k++) atomMolecule[baseId + k] = m.id;
 
             Vector3 offset = m.offset != null ? m.offset.ToVector3() : Vector3.zero;
 
@@ -73,8 +98,11 @@ public class ClassSceneRenderer
             // El 0 no debería llegar nunca; si llegara, la molécula colapsaría a un punto.
             float mScale = m.scale > 0f ? m.scale : 1f;
 
+            var ids = new int[m.atoms.Length];
+
             for (int i = 0; i < m.atoms.Length; i++)
             {
+                ids[i] = -1;
                 var a = m.atoms[i];
                 if (a == null) continue;
 
@@ -83,23 +111,40 @@ public class ClassSceneRenderer
                 // offset en vez de centrada en él.
                 Vector3 local = a.position != null ? a.position.ToVector3() : Vector3.zero;
                 Vector3 angstroms = (local - Vector3.one * 0.5f) * mScale + offset;
+                Vector3 world = angstroms * worldScale;
 
-                SpawnAtom(baseId + i, a.type, angstroms * worldScale);
+                if (sink != null)
+                {
+                    // Un elemento fuera del catálogo devuelve null. Se salta el átomo en
+                    // vez de abortar la escena: perder uno es mejor que no pintar nada.
+                    var atom = sink.SpawnFromScene(a.type, world);
+                    if (!atom) continue;
+                    ids[i] = atom.id;
+                    byId[atom.id] = atom;
+                }
+                else
+                {
+                    ids[i] = nextInternalId++;
+                    SpawnAtom(ids[i], a.type, world);
+                }
+
+                atomMolecule[ids[i]] = m.id;
             }
+
+            if (!string.IsNullOrEmpty(m.id)) moleculeAtomIds[m.id] = ids;
 
             if (m.bonds != null)
                 foreach (var b in m.bonds)
                 {
                     if (b == null) continue;
-                    if (b.beginAtomId < 0 || b.beginAtomId >= m.atoms.Length) continue;
-                    if (b.endAtomId   < 0 || b.endAtomId   >= m.atoms.Length) continue;
-                    bonds.Add((baseId + b.beginAtomId, baseId + b.endAtomId, b.order));
+                    if (b.beginAtomId < 0 || b.beginAtomId >= ids.Length) continue;
+                    if (b.endAtomId   < 0 || b.endAtomId   >= ids.Length) continue;
+                    if (ids[b.beginAtomId] < 0 || ids[b.endAtomId] < 0) continue;  // átomo saltado
+                    bonds.Add((ids[b.beginAtomId], ids[b.endAtomId], b.order));
                 }
-
-            baseId += m.atoms.Length;
         }
 
-        bondRenderer.SetBonds(bonds);
+        bondRenderer?.SetBonds(bonds);
     }
 
     /// <summary>Enciende el resaltado de los átomos que indica el estado.
@@ -119,11 +164,14 @@ public class ClassSceneRenderer
         foreach (var h in highlights)
         {
             if (h == null || h.atomIds == null || string.IsNullOrEmpty(h.moleculeId)) continue;
-            if (!moleculeBase.TryGetValue(h.moleculeId, out int baseId)) continue;
+            if (!moleculeAtomIds.TryGetValue(h.moleculeId, out var ids)) continue;
 
             foreach (int localId in h.atomIds)
-                if (byId.TryGetValue(baseId + localId, out var atom) && atom)
+            {
+                if (localId < 0 || localId >= ids.Length || ids[localId] < 0) continue;
+                if (byId.TryGetValue(ids[localId], out var atom) && atom)
                     atom.SetSelected(true);
+            }
         }
     }
 
@@ -152,25 +200,27 @@ public class ClassSceneRenderer
     }
 
     /// <summary>Orienta los enlaces según la cámara. Llamar cada frame.</summary>
-    public void UpdateVisuals() => bondRenderer.UpdateVisuals();
+    public void UpdateVisuals() => bondRenderer?.UpdateVisuals();
 
     public void Clear()
     {
-        bondRenderer.Clear();
+        bondRenderer?.Clear();
         bonds.Clear();
         byId.Clear();
-        moleculeBase.Clear();
+        moleculeAtomIds.Clear();
         atomMolecule.Clear();
         isolated = "";
 
-        foreach (var go in spawned) if (go) Object.Destroy(go);
+        // Con sink, los átomos son suyos y los destruye él. Sin sink son estas esferas.
+        if (sink != null) sink.ClearAtoms();
+        else foreach (var go in spawned) if (go) Object.Destroy(go);
         spawned.Clear();
     }
 
     public void Dispose()
     {
         Clear();
-        bondRenderer.Dispose();
+        bondRenderer?.Dispose();
     }
 
     void SpawnAtom(int id, string element, Vector3 position)

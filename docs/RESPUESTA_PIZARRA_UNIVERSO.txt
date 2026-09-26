@@ -1,0 +1,231 @@
+================================================================================
+LA PIZARRA COMO UNIVERSO — RESPUESTA DEL BACKEND
+ChemiTech · backend · 2026-09-25
+================================================================================
+
+  >>> SUPERADO POR PROPUESTA_PIZARRA_UNIVERSO.txt REV. 3, que ya incorpora todas
+      estas decisiones. AL FRONTEND SE LE PASA ESA, NO ESTA. Este archivo queda
+      solo como el razonamiento del backend, por si hace falta releer el "por
+      qué" sin el resto del acuerdo alrededor.
+
+Respuesta a PROPUESTA_PIZARRA_UNIVERSO.txt (rev. 2). Se lee al lado de esa.
+
+VEREDICTO: SÍ, Y EL BACKEND CAMBIA POCO.
+El diagnóstico de la sección 6 es correcto: falta un verbo que lleve estructura
+en vez de un nombre del catálogo, y es lo único que falta. Todo lo demás
+—sondeo, versionado, roster, /interpret, la forma del estado del alumno— queda
+igual.
+
+Pero hay tres cosas que revisar antes de escribir código, y una de ellas es un
+error de hecho que haría fallar el §5.5 en silencio.
+
+
+================================================================================
+A. LO QUE ESTÁ MAL EN LA PROPUESTA (§5.5)
+================================================================================
+
+  "llamando SIN userPublicId, o sea por el camino de invitado"
+
+ESO YA NO ES CIERTO. Cambió con el retrofit de identidad, y el cambio fue
+deliberado. La regla de hoy (resolve_optional_identity) es:
+
+    sin token y sin userPublicId  -> invitado
+    sin token pero con userPublicId -> 401  (era la vía para escribir en el
+                                             diario de otro alumno)
+    CON TOKEN -> MANDA EL TOKEN, haya o no userPublicId
+
+O sea: el docente está logueado, su cliente manda la cabecera Authorization, y
+omitir userPublicId **no lo convierte en invitado**: el descubrimiento SE
+REGISTRA en su diario. Justo lo que querían evitar. Y falla callado: no hay
+error, simplemente el diario se llena de moléculas de demostración.
+
+Se decidió así a propósito, para que Unity pudiera dejar de mandar el campo sin
+cambiar de comportamiento.
+
+DOS SALIDAS:
+
+  (a) Mandar la llamada SIN la cabecera Authorization. Funciona hoy, cero
+      cambios de backend. Pero una app logueada que quita su propia cabecera es
+      frágil y parece un bug para cualquiera que audite el código después.
+
+  (b) UN FLAG EXPLÍCITO en el cuerpo, p. ej. {"record": false}. Es seguro por
+      construcción: solo puede SALTARSE una escritura, nunca conceder nada.
+
+  RECOMIENDO (b), y lo implemento yo. Díganme si prefieren (a).
+
+TERCERA OPCIÓN, QUE QUIZÁ LES SIRVA MÁS: si el backend recalcula los enlaces al
+publicar (ver C), /detection/molecule solo hace falta para la PREVISUALIZACIÓN
+mientras el docente construye. El publicar no lo necesita.
+
+
+================================================================================
+B. LO QUE NO CONTEMPLAN Y LES ROMPERÍA EL USO PRINCIPAL
+================================================================================
+
+`show` COLOCA LAS MOLÉCULAS EN FILA. El motor las reparte con un layout propio,
+calculando offsets a partir del tamaño real de cada una.
+
+Si el verbo nuevo hiciera lo mismo, el docente acomodaría dos moléculas
+enfrentadas para explicar cómo se atraen, publicaría, y el servidor se las
+REORDENARÍA EN FILA. La posición es justamente lo que está aportando.
+
+  DECISIÓN: el verbo nuevo CONSERVA LA GEOMETRÍA TAL CUAL LLEGA. El scale y el
+  offset de cada fragmento se calculan de las coordenadas reales, no de un
+  layout. Es lo contrario de `show`, y está bien que lo sea: en `show` el
+  servidor no tiene ninguna intención del docente que respetar, y aquí sí.
+
+
+================================================================================
+C. LAS CINCO PREGUNTAS DE LA SECCIÓN 9
+================================================================================
+
+--------------------------------------------------------------------------------
+1. EL NOMBRE Y LA FORMA DEL VERBO
+--------------------------------------------------------------------------------
+NO como variante de `show`. `show` resuelve NOMBRES; esto trae ESTRUCTURA: otra
+entrada, otras validaciones, otros modos de fallar. Va como miembro propio de la
+unión, igual que highlight, overlay, view, annotate y clear.
+
+EL NOMBRE: `setAtoms`, no `setScene`. "Escena" promete de más — suena a que
+también fija cámara, capas y resaltados, y no lo hace (la misma distinción que
+ya hace `clear`, que vacía el contenido pero respeta cámara y capas).
+
+Y no se preocupen por el nombre: el cliente NUNCA parsea acciones, así que
+cambiarlo después no les cuesta nada.
+
+REEMPLAZA SIEMPRE, sin flag `replace`: de acuerdo, publicar es "esto es lo que
+hay ahora". Hereda la semántica que ya tiene `show` con replace: se caen los
+resaltados, las anotaciones ancladas, las atracciones y el foco de cámara que
+apuntaban a moléculas viejas, porque un id colgado hace que el cliente dibuje en
+el vacío.
+
+--------------------------------------------------------------------------------
+2. ¿ENLACES DEL CLIENTE, O RECALCULAR?
+--------------------------------------------------------------------------------
+RECALCULAR. MANDEN SOLO ÁTOMOS. Cuatro razones, y la tercera es la que cierra
+la discusión:
+
+  a) Este proyecto YA PAGÓ ESTA LECCIÓN. El frontend calculaba los enlaces por
+     cercanía y los mandaba como verdad; cuando adivinaba mal un orden, RDKit
+     construía CORRECTAMENTE la molécula equivocada y el CO2 salía CH4O2, sin
+     un solo error. El arreglo fue de los dos lados: el cliente dejó de
+     adivinar, el backend calcula y devuelve.
+
+  b) Aquí los enlaces no los inventa el cliente, es cierto. Pero pasan por un
+     REINDEXADO: detección por grupos -> varios resultados -> un solo arreglo
+     plano de átomos. Un desfase de uno en ese paso produce una molécula
+     químicamente válida y equivocada, en silencio. Es el mismo modo de fallo.
+
+  c) NO PUEDEN DIVERGIR. GeometryBondInference ordena por
+     distancia / (radio_a + radio_b): es ADIMENSIONAL, solo importa el orden.
+     Da igual si las coordenadas llegan en ångströms o en unidades de mundo, y
+     da igual el redondeo. Recalcular devuelve EXACTAMENTE los mismos enlaces
+     que el docente ya vio en su pantalla. No hay nada que ganar mandándolos.
+
+  d) El backend tendría que validarlos con RDKit de todos modos, que es el
+     mismo trabajo que calcularlos.
+
+  EFECTO SECUNDARIO ÚTIL: la preocupación de §5.7 por convertir a ångströms se
+  cae para los enlaces. Sigue importando para `scale`, que es el tamaño REAL en
+  ångströms, así que manden las coordenadas en ångströms igual.
+
+--------------------------------------------------------------------------------
+3. /detection/molecule SIN userPublicId
+--------------------------------------------------------------------------------
+Ver la sección A: no funciona como creen. Recomiendo el flag explícito.
+
+AVISO DE LÍMITES, ya que están: la detección tiene 120/min por usuario. El
+docente construyendo manda una petición POR GRUPO de átomos en cada cambio, así
+que con varios grupos en pantalla se acerca más rápido de lo que parece. Si
+durante el ensayo les aparece un 429 construyendo, avísenme y subo ese límite
+para docentes: es un número, no un rediseño.
+
+--------------------------------------------------------------------------------
+4. ¿REGISTRAR EN classroom_commands?
+--------------------------------------------------------------------------------
+SÍ, SIN DUDA. Es el registro de comandos del expositor y la evidencia del plan
+de validación de la tesis.
+
+El tamaño no es problema: ~60 átomos son 2-3 KB de JSONB, nada para Postgres.
+Donde sí molesta es al abrir el CSV del export, así que le agrego una columna
+`resumen` a comandos.csv ("setAtoms: 3 átomos (H2O)") y dejo el JSON completo en
+su columna. Eso es trabajo mío, no de ustedes.
+
+De hecho esto MEJORA la evidencia: queda registrado qué construyó el docente,
+no solo "mostró agua".
+
+--------------------------------------------------------------------------------
+5. LOS TOPES
+--------------------------------------------------------------------------------
+Hoy: MAX_MOLECULES = 4, MAX_HEAVY_ATOMS = 30 (por molécula).
+
+EL QUE LES VA A DOLER ES EL DE MOLÉCULAS, NO EL DE ÁTOMOS, y creo que no lo
+vieron: construyendo a mano, "molécula" = fragmento conectado. Un docente que
+reparte 6 átomos sueltos para explicar algo acaba de crear 6 fragmentos y
+revienta un tope de 4. Y publicar estructuras sueltas o a medias es exactamente
+lo que la sección 8 ya decidió que es material didáctico legítimo. O sea que el
+tope actual contradice una decisión que ya tomaron.
+
+PROPONGO (a acordar, son números):
+    - MAX_HEAVY_ATOMS = 30 por fragmento, SIN CAMBIOS. Calibra bien: la red de
+      NaCl del catálogo ya usa 27.
+    - Para el camino construido a mano, el tope pasa a ser el TOTAL DE ÁTOMOS de
+      la escena (propongo 60) en vez del número de fragmentos.
+    - MAX_MOLECULES sube a 12, para que los átomos sueltos sean legales.
+    - El aviso en el universo (decidido en §8) se dispara con el TOTAL, no con
+      el número de fragmentos.
+
+
+================================================================================
+D. TRES COSAS QUE NO PREGUNTARON Y LES AHORRAN TRABAJO
+================================================================================
+
+1. NO HACE FALTA NINGÚN CAMBIO DE CONTRATO PARA "ACEPTAR LO INCOMPLETO".
+   SceneMolecule ya trae name, formula y canonicalSmiles con "" por defecto. Una
+   estructura que RDKit no logra identificar viaja con esos tres vacíos y el
+   resto completo. Lo único que tienen que hacer ustedes es dibujar bien una
+   molécula SIN NOMBRE (cadena vacía, no null: JsonUtility la lee bien).
+
+2. LAS CAPAS DE LA FASE 4 VAN A FUNCIONAR SOBRE LO CONSTRUIDO A MANO, como
+   asume su §10. Confirmado: kind, en y negativeEnd se calculan de la
+   electronegatividad de los DOS ELEMENTOS del enlace, no de una molécula
+   válida. Un enlace suelto entre dos átomos ya tiene su tipo.
+
+3. PUBLICAR ES BARATO Y NO MOLESTA AL SALÓN. La inferencia de enlaces tarda
+   menos de 1.2 ms, y el modelo de IA NO INTERVIENE: la escena necesita nombre,
+   fórmula y SMILES, no solubilidad. Publicar no va a competir con los 25
+   sondeos.
+
+
+================================================================================
+E. LO QUE HAY QUE HACER, Y DE QUIÉN ES
+================================================================================
+
+BACKEND (yo)
+  - La acción `setAtoms` en el vocabulario, con sus validaciones (elementos de
+    los 24, topes, coordenadas).
+  - El camino de resolución: átomos -> el MISMO pipeline de detección ->
+    SceneMolecule por fragmento, CONSERVANDO las posiciones (sección B).
+  - La rama en el motor, reusando lo que ya hace `show` con replace.
+  - El flag de no-registrar en /detection/molecule (sección A).
+  - La columna `resumen` en el export.
+  - Pruebas en classroom_flows y scene_chemistry.
+
+FRONTEND (ustedes)
+  - Todo lo de su sección 5, con dos correcciones: manden SOLO ÁTOMOS (C.2) y
+    no cuenten con que omitir userPublicId los haga invitados (A).
+
+A ACORDAR ANTES DE EMPEZAR
+  [ ] El nombre `setAtoms` (o el que prefieran).
+  [ ] Los topes de C.5.
+  [ ] Flag explícito (b) o llamada sin cabecera (a), en A.
+
+CALENDARIO, PORQUE IMPORTA: esto NO está en la lista unificada de lo que falta
+para el taller. Es funcionalidad nueva, no un pendiente. La lista sigue siendo
+la que manda, y el camino crítico sigue siendo el ensayo de 20 minutos con dos
+celulares. Si esto entra, entra sabiendo que se pone DELANTE de eso o DETRÁS,
+pero no gratis.
+
+================================================================================
+FIN
+================================================================================

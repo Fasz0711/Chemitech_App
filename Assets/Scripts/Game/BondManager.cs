@@ -33,6 +33,16 @@ public class BondManager : MonoBehaviour
     static readonly Color C_DETECT = new Color(0.10f, 0.65f, 0.81f, 1f);
     static readonly Color C_OK     = new Color(0.18f, 0.80f, 0.44f, 1f);
 
+    /// <summary>Detectar SIN escribir en el diario. La pizarra del docente lo apaga:
+    /// está dando clase, no jugando, y su diario no debería llenarse de moléculas de
+    /// demostración. Con esto en false, isNewDiscovery llega siempre false y el modal
+    /// de descubrimiento no se dispara.</summary>
+    public bool RecordDiscoveries { get; set; } = true;
+
+    /// <summary>El corte con el que se agrupan candidatos. Lo lee la pizarra para contar
+    /// fragmentos con el mismo criterio con el que se mandan a detectar.</summary>
+    public float ClusterDistance => clusterDistance;
+
     /// <summary>Se dispara al detectar una molécula por PRIMERA vez para el usuario
     /// (isNewDiscovery del backend). Args: (fórmula, nombre). Lo usa el modal de
     /// "¡Nuevo descubrimiento!" en ZonaJuegoManager.</summary>
@@ -179,6 +189,7 @@ public class BondManager : MonoBehaviour
 
             var capturedMap = map;
             ApiManager.Instance.DetectMolecule(SessionData.UserId, atomsDTO, new ApiManager.BondDTO[0],
+                record: RecordDiscoveries,
                 onSuccess: resp => OnClusterResult(batch, resp, capturedMap, false),
                 onError:   (code, detail) =>
                 {
@@ -279,29 +290,7 @@ public class BondManager : MonoBehaviour
     }
 
     // ── Agrupamiento por cercanía (componentes por distancia; NO decide enlaces) ─
-    List<List<Atom3D>> ClusterAtoms()
-    {
-        var parent = new Dictionary<int, int>();
-        foreach (var a in atomsBuf) parent[a.id] = a.id;
-
-        int Find(int x) { while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
-        void Union(int x, int y) { parent[Find(x)] = Find(y); }
-
-        float d2 = clusterDistance * clusterDistance;
-        for (int i = 0; i < atomsBuf.Count; i++)
-            for (int j = i + 1; j < atomsBuf.Count; j++)
-                if ((atomsBuf[i].transform.position - atomsBuf[j].transform.position).sqrMagnitude <= d2)
-                    Union(atomsBuf[i].id, atomsBuf[j].id);
-
-        var groups = new Dictionary<int, List<Atom3D>>();
-        foreach (var a in atomsBuf)
-        {
-            int r = Find(a.id);
-            if (!groups.TryGetValue(r, out var g)) { g = new List<Atom3D>(); groups[r] = g; }
-            g.Add(a);
-        }
-        return new List<List<Atom3D>>(groups.Values);
-    }
+    List<List<Atom3D>> ClusterAtoms() => AtomClustering.Group(atomsBuf, clusterDistance);
 
     void OnDestroy() => bondRenderer?.Dispose();
 

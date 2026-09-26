@@ -6,7 +6,18 @@ using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
-/// La pizarra virtual: la misma escena que ve el alumno, más el panel de conducción.
+/// La pizarra virtual: UN UNIVERSO 3D con dos interfaces encima.
+///
+///   • MODO PIZARRA:  el panel de conducción (catálogo, resaltar, instrucción escrita).
+///   • MODO UNIVERSO: el HUD creativo, el mismo que en "Mis universos": selector de
+///     átomos, barra de ranuras, colocar, mover y borrar.
+///
+/// El espacio 3D y la cámara son LOS MISMOS en los dos modos; el botón junto al nombre
+/// de la clase solo enciende y apaga grupos de UI. Lo que el docente construye NO llega
+/// a los alumnos hasta que pulsa "Mostrar a la clase": ver armar una molécula átomo por
+/// átomo es confuso, y así puede preparar la siguiente mientras habla de la actual.
+/// Mientras haya algo construido y sin publicar se enciende un aviso, que es la única
+/// defensa contra explicar señalando algo que en los celulares no está.
 ///
 /// A diferencia del alumno, el docente NO sondea el estado en bucle. Es el único que
 /// puede cambiarlo y /commands/apply le devuelve el estado completo, así que pinta al
@@ -72,8 +83,21 @@ public class ClaseDocenteManager : MonoBehaviour
     [SerializeField] private GameObject      noticeRoot;
     [SerializeField] private TextMeshProUGUI noticeText;
 
+    [Header("Universo (modo construcción)")]
+    [SerializeField] private AtomPlacementController placement;
+    [SerializeField] private BondManager             bonds;
+    [SerializeField] private GameObject      uiPizarra;      // panel de conducción
+    [SerializeField] private GameObject      uiUniverso;     // HUD creativo
+    [SerializeField] private Button          btnModo;
+    [SerializeField] private TextMeshProUGUI lblModo;
+    [SerializeField] private Button          btnPublicar;
+    [SerializeField] private GameObject      unpublishedBadge;
+    [SerializeField] private TextMeshProUGUI limitsLabel;
+    [SerializeField] private TextMeshProUGUI sceneSummary;   // qué reconoció el servidor
+    [SerializeField] private GameObject      editTint;       // tinte sutil al construir
+
     [Header("Render")]
-    [SerializeField] private float worldScale    = 6f;
+    [SerializeField] private float worldScale    = 1f;
     [SerializeField] private float atomSize      = 0.9f;
     [SerializeField] private float bondThickness = 0.09f;
     [SerializeField] private float bondSpacing   = 0.20f;
@@ -110,6 +134,12 @@ public class ClaseDocenteManager : MonoBehaviour
     int       currentVersion = -1;
     bool      busy;
     bool      addMode;      // los botones de molécula suman en vez de reemplazar
+    bool      universeMode; // false = pizarra (el modo en el que se entra)
+
+    // El recuento de topes se refresca a intervalos, no cada frame: agrupar es O(n²) y
+    // con 60 átomos serían 1800 comparaciones por frame para un texto que cambia poco.
+    const float LIMITS_INTERVAL = 0.3f;
+    float nextLimitsCheck;
 
     // Lo que devolvió el intérprete y está esperando confirmación. El actionsJson se
     // guarda SIN parsear: se reenvía tal cual, que es lo único que garantiza que se
@@ -159,9 +189,26 @@ public class ClaseDocenteManager : MonoBehaviour
         if (className) className.text = ClassContext.HasClass ? ClassContext.ClassName : "Clase";
         RefreshAddModeLabel();
 
+        if (btnModo)      btnModo.onClick.AddListener(ToggleMode);
+        if (btnPublicar)  btnPublicar.onClick.AddListener(Publish);
+
+        // El diario del docente NO se llena de moléculas de demostración: está dando
+        // clase, no jugando. Quitar el userPublicId no serviría —desde el retrofit de
+        // identidad, si la petición lleva token manda el token—, así que va el flag.
+        if (bonds) bonds.RecordDiscoveries = false;
+
         if (!sceneRoot) sceneRoot = transform;
+
+        // Con placement, los átomos que llegan del servidor se crean COMO SUYOS y el
+        // docente puede moverlos y borrarlos. Sin él (no debería pasar en esta escena)
+        // el renderer cae a sus esferas de solo lectura y la pizarra sigue funcionando
+        // como antes de la fusión.
         sceneRenderer = new ClassSceneRenderer(sceneRoot, atomMaterial, bondMaterial,
-                                               worldScale, atomSize, bondThickness, bondSpacing);
+                                               worldScale, atomSize, bondThickness, bondSpacing,
+                                               placement);
+
+        SetMode(false);   // se entra conduciendo, no construyendo
+        RefreshUnpublished();
 
         if (!ClassContext.HasClass) { Leave(); return; }
 
@@ -169,7 +216,12 @@ public class ClaseDocenteManager : MonoBehaviour
         StartCoroutine(RosterLoop());
     }
 
-    void Update() => sceneRenderer?.UpdateVisuals();
+    void Update()
+    {
+        sceneRenderer?.UpdateVisuals();
+        RefreshUnpublished();
+        RefreshLimits();
+    }
 
     void OnDestroy() => sceneRenderer?.Dispose();
 
@@ -202,9 +254,16 @@ public class ClaseDocenteManager : MonoBehaviour
 
                 // La escena cambió desde la última que vimos: recargar y que el docente
                 // vuelva a apretar. No se aplicó nada, así que no hay nada que deshacer.
+                //
+                // Salvo que hubiera un universo a medio construir: recargar lo reemplaza
+                // por lo que ven los alumnos y ese trabajo SÍ se pierde. Decirlo, porque
+                // "vuelve a intentarlo" daría a entender que sigue ahí.
                 if (detail == "ERR_STALE_SCENE")
                 {
-                    ShowNotice("La escena cambió. Se recargó: vuelve a intentarlo.");
+                    bool hadUnpublished = placement && placement.Dirty;
+                    ShowNotice(hadUnpublished
+                        ? "La clase cambió desde otro dispositivo. Se recargó lo que ven los alumnos y se perdió lo que tenías sin publicar."
+                        : "La escena cambió. Se recargó: vuelve a intentarlo.");
                     LoadState();
                     return;
                 }
@@ -223,6 +282,16 @@ public class ClaseDocenteManager : MonoBehaviour
         sceneRenderer.Render(state.molecules);
         sceneRenderer.ApplyHighlights(state.highlights);
 
+        // Los enlaces vienen resueltos por el servidor: dárselos a BondManager los dibuja
+        // y, de paso, le marca esta estructura como YA DETECTADA. Sin eso volvería a
+        // mandar a detectar lo que el servidor acaba de decir, y con la red lenta la
+        // pizarra se quedaría unos segundos sin enlaces después de cada comando.
+        if (bonds) bonds.ImportBonds(sceneRenderer.Bonds);
+
+        // Lo que hay en pantalla es exactamente lo que ven los alumnos.
+        if (placement) placement.ClearDirty();
+        RefreshUnpublished();
+
         bool empty = state.molecules == null || state.molecules.Length == 0;
         if (emptyHint) emptyHint.SetActive(empty);
 
@@ -234,6 +303,7 @@ public class ClaseDocenteManager : MonoBehaviour
 
         RefreshControls(state);
         RebuildHighlightButtons(state);
+        RefreshSummary(state);
     }
 
     void RefreshControls(ClassStateResponse state)
@@ -449,6 +519,137 @@ public class ClaseDocenteManager : MonoBehaviour
         if (lblModoAgregar) lblModoAgregar.text = addMode ? "Modo: agregar" : "Modo: reemplazar";
     }
 
+    /// <summary>Qué hay en la pizarra, según el SERVIDOR. Es la única forma que tiene el
+    /// docente de saber si lo que construyó se reconoció como algo.
+    ///
+    /// Una molécula puede llegar SIN NOMBRE (cadena vacía, nunca null): es el caso normal
+    /// mientras construye —dos carbonos sueltos no son una molécula completa— y no es un
+    /// error. Esas no se nombran, se cuentan; publicar estructuras a medias a propósito
+    /// es material didáctico legítimo y el renglón no debe dar a entender lo contrario.</summary>
+    void RefreshSummary(ClassStateResponse state)
+    {
+        if (!sceneSummary) return;
+
+        var named = new List<string>();
+        int unnamed = 0;
+
+        if (state.molecules != null)
+            foreach (var m in state.molecules)
+            {
+                if (m == null) continue;
+                if (string.IsNullOrEmpty(m.name)) unnamed++;
+                else if (!named.Contains(m.name)) named.Add(m.name);
+            }
+
+        string text = "";
+        if (named.Count > 0) text = "En la pizarra: " + string.Join(", ", named);
+        if (unnamed > 0)
+            text += (text.Length > 0 ? " · " : "")
+                  + (unnamed == 1 ? "1 estructura sin identificar"
+                                  : $"{unnamed} estructuras sin identificar");
+
+        sceneSummary.text = text;
+        sceneSummary.gameObject.SetActive(text.Length > 0);
+    }
+
+    // ── Los dos modos ──────────────────────────────────────────────────────────
+
+    void ToggleMode() => SetMode(!universeMode);
+
+    /// <summary>Enciende y apaga grupos de UI. NO toca el contenido 3D ni la cámara:
+    /// que el universo siga exactamente donde estaba es lo que hace que el cambio se
+    /// sienta como girar la vista y no como abrir otra pantalla.</summary>
+    void SetMode(bool universe)
+    {
+        universeMode = universe;
+
+        if (uiUniverso) uiUniverso.SetActive(universe);
+        if (uiPizarra)  uiPizarra.SetActive(!universe);
+        if (editTint)   editTint.SetActive(universe);
+
+        // En pizarra se puede rotar la cámara pero no tocar los átomos: el docente está
+        // conduciendo y un roce no debería moverle una molécula.
+        if (placement) placement.SetInteractive(universe);
+
+        if (lblModo) lblModo.text = universe ? "Ir a pizarra" : "Ir a universo";
+
+        // Una traducción a medio confirmar pertenece al panel de conducción. Se descarta
+        // en vez de dejarla esperando: interpretar no cambió nada, así que no hay nada
+        // que deshacer.
+        if (universe) DiscardPreview();
+
+        RefreshLimits(force: true);
+    }
+
+    // ── Publicar ───────────────────────────────────────────────────────────────
+
+    /// <summary>Manda a los alumnos el estado actual del universo. Es el ÚNICO momento
+    /// en que lo que el docente construyó sale de su pantalla.</summary>
+    void Publish()
+    {
+        if (busy || !placement) return;
+
+        var atoms  = placement.GetOrderedAtoms();
+        var counts = SetAtomsCommand.Count(atoms, ClusterDistance);
+
+        // El servidor también lo valida, pero rechaza el comando ENTERO. Avisar aquí le
+        // ahorra al docente descubrirlo delante del salón.
+        if (counts.OverLimit) { ShowNotice(SetAtomsCommand.WarningFor(counts)); return; }
+
+        // Un universo vacío se publica como 'clear', no como una lista de cero átomos:
+        // es el verbo que ya existe para eso y evita depender de un caso que el contrato
+        // no describe.
+        Apply(atoms.Count == 0
+            ? CMD_LIMPIAR
+            : SetAtomsCommand.Build(atoms, WorldToAngstrom));
+    }
+
+    /// <summary>De unidades de mundo a ångströms. Es el INVERSO exacto del factor con el
+    /// que se dibuja lo que llega del servidor, y tiene que serlo: si no, lo publicado
+    /// volvería con otro tamaño y el universo daría un salto en cada comando.</summary>
+    float WorldToAngstrom => worldScale > 0f ? 1f / worldScale : 1f;
+
+    /// <summary>El mismo corte con el que se mandan los grupos a detectar, para que la
+    /// cuenta de fragmentos y lo que se detecta hablen de lo mismo.</summary>
+    float ClusterDistance => bonds ? bonds.ClusterDistance : 2f;
+
+    // ── Cambios sin publicar ───────────────────────────────────────────────────
+
+    /// <summary>El aviso honesto: mientras el universo tenga algo que los alumnos no ven,
+    /// se dice. Sin esto el docente puede colocar tres átomos, olvidarse de publicar y
+    /// explicar señalando algo que en los 25 celulares no está.</summary>
+    void RefreshUnpublished()
+    {
+        bool pending = placement && placement.Dirty;
+        if (unpublishedBadge && unpublishedBadge.activeSelf != pending)
+            unpublishedBadge.SetActive(pending);
+    }
+
+    // ── Topes ──────────────────────────────────────────────────────────────────
+
+    void RefreshLimits(bool force = false)
+    {
+        if (!limitsLabel || !placement) return;
+
+        if (!universeMode)
+        {
+            if (limitsLabel.gameObject.activeSelf) limitsLabel.gameObject.SetActive(false);
+            return;
+        }
+
+        if (!force && Time.time < nextLimitsCheck) return;
+        nextLimitsCheck = Time.time + LIMITS_INTERVAL;
+
+        // Se recuenta entero cada vez, sin atajar por número de átomos: separar dos que
+        // ya estaban colocados no cambia cuántos hay pero sí en cuántos fragmentos caen,
+        // y el tope de fragmentos es justo el que se alcanza antes construyendo a mano.
+        var atoms = placement.GetOrderedAtoms();
+
+        string msg = SetAtomsCommand.WarningFor(SetAtomsCommand.Count(atoms, ClusterDistance));
+        limitsLabel.text = msg;
+        limitsLabel.gameObject.SetActive(!string.IsNullOrEmpty(msg));
+    }
+
     // ── Sesión de clase ────────────────────────────────────────────────────────
     void StartClass()
     {
@@ -522,11 +723,13 @@ public class ClaseDocenteManager : MonoBehaviour
         switch (detail)
         {
             case "ERR_STALE_SCENE":        return "La escena cambió. Vuelve a intentarlo.";
-            case "ERR_SCENE_FULL":         return "La pizarra está llena (4 moléculas). Limpia antes de añadir.";
-            case "ERR_UNKNOWN_MOLECULE":   return "No reconocí esa molécula.";
-            case "ERR_MOLECULE_TOO_BIG":   return "Esa molécula es demasiado grande para la pizarra.";
+            case "ERR_SCENE_FULL":         return $"La pizarra está llena ({SetAtomsCommand.MAX_FRAGMENTS} moléculas). Junta o quita algunas.";
+            case "ERR_UNKNOWN_MOLECULE":   return "No reconocí esa molécula. Revisa que todos los átomos sean del catálogo.";
+            case "ERR_MOLECULE_TOO_BIG":   return $"Esa molécula es demasiado grande ({SetAtomsCommand.MAX_HEAVY_PER_FRAGMENT} átomos pesados como máximo).";
             case "ERR_SCENE_REFERENCE":    return "Eso no está en la escena.";
-            case "ERR_INVALID_ACTION":     return "No se pudo interpretar la acción.";
+            // Al publicar, este es también el que llega al pasarse del total de átomos:
+            // el contrato no los distingue, así que el mensaje tiene que cubrir los dos.
+            case "ERR_INVALID_ACTION":     return $"No se pudo aplicar. Si estabas publicando, revisa que no pases de {SetAtomsCommand.MAX_TOTAL_ATOMS} átomos.";
             case "ERR_CLASS_ALREADY_ENDED":return "La clase ya terminó.";
             case "ERR_CLASS_NOT_RUNNING":  return "La clase todavía no ha empezado.";
             case "ERR_NOT_CLASS_OWNER":    return "Esta clase es de otro docente.";

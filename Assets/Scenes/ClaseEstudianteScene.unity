@@ -162,8 +162,8 @@ MonoBehaviour:
   emptyHint: {fileID: 652092413}
   noticeRoot: {fileID: 391425826}
   noticeText: {fileID: 268190072}
-  worldScale: 6
-  atomSize: 0.9
+  worldScale: 1
+  atomSize: 1.1
   bondThickness: 0.09
   bondSpacing: 0.2
   copyScale: 1.6
@@ -1775,15 +1775,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::OrbitCameraController
   defYaw: 35
   defPitch: 28
-  defDistance: 16
+  defDistance: 8
   defTarget: {x: 0, y: 0, z: 0}
   minPitch: 5
   maxPitch: 80
-  minDist: 6
-  maxDist: 34
+  minDist: 1.5
+  maxDist: 40
   rotSpeed: 0.22
   panSpeed: 6
-  zoomSpeed: 14
+  zoomSpeed: 6
   vertSpeed: 6
   smooth: 12
   minTargetY: -1
