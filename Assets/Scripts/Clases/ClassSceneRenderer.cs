@@ -92,9 +92,17 @@ public class ClassSceneRenderer
 
             Vector3 offset = m.offset != null ? m.offset.ToVector3() : Vector3.zero;
 
-            // 'scale' es el tamaño REAL en ångströms. Conserva la proporción entre
-            // moléculas: sin él, un cristal de sal se vería igual de grande que una
-            // molécula de agua, porque cada una llega normalizada a [0,1] por separado.
+            // 'scale' es el tamaño del fragmento en las unidades de la escena. Conserva la
+            // proporción entre moléculas: sin él, un cristal de sal se vería igual de
+            // grande que una molécula de agua, porque cada una llega normalizada a [0,1]
+            // por separado.
+            //
+            // OJO CON LAS UNIDADES: lo que viene del CATÁLOGO llega en ångströms reales
+            // (un O–H mide 0.96), mientras que lo construido a mano vuelve en las
+            // unidades en que se mandó. Nunca conviven en la misma escena —setAtoms
+            // reemplaza todo— pero sí hacen que una misma molécula se vea de distinto
+            // tamaño según de dónde venga.
+            //
             // El 0 no debería llegar nunca; si llegara, la molécula colapsaría a un punto.
             float mScale = m.scale > 0f ? m.scale : 1f;
 
@@ -110,8 +118,8 @@ public class ClassSceneRenderer
                 // ANTES de escalar, o la molécula quedaría colgada de una esquina del
                 // offset en vez de centrada en él.
                 Vector3 local = a.position != null ? a.position.ToVector3() : Vector3.zero;
-                Vector3 angstroms = (local - Vector3.one * 0.5f) * mScale + offset;
-                Vector3 world = angstroms * worldScale;
+                Vector3 scene = (local - Vector3.one * 0.5f) * mScale + offset;
+                Vector3 world = scene * worldScale;
 
                 if (sink != null)
                 {

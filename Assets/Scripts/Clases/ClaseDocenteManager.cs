@@ -658,13 +658,14 @@ public class ClaseDocenteManager : MonoBehaviour
         // "esto es lo que hay ahora", y lo que hay ahora es nada. Sustituirlo por 'clear'
         // funcionaba, pero hacía que vaciar la pizarra pasara por otro camino distinto al
         // de cualquier otra publicación.
-        Apply(SetAtomsCommand.Build(atoms, WorldToAngstrom));
+        Apply(SetAtomsCommand.Build(atoms, WorldToScene));
     }
 
-    /// <summary>De unidades de mundo a ångströms. Es el INVERSO exacto del factor con el
-    /// que se dibuja lo que llega del servidor, y tiene que serlo: si no, lo publicado
-    /// volvería con otro tamaño y el universo daría un salto en cada comando.</summary>
-    float WorldToAngstrom => worldScale > 0f ? 1f / worldScale : 1f;
+    /// <summary>El INVERSO exacto del factor con el que se dibuja lo que llega del
+    /// servidor. Al servidor la escala le da igual —la estima de la escena—, pero este
+    /// factor sigue importando aquí: si no fuera el inverso, lo publicado volvería con
+    /// otro tamaño y el universo daría un salto en cada comando.</summary>
+    float WorldToScene => worldScale > 0f ? 1f / worldScale : 1f;
 
     /// <summary>¿El estado trae una vista de verdad? Mientras el servidor no guarde la
     /// posición, los tres valores llegan en cero y aplicarlos teletransportaría a quien

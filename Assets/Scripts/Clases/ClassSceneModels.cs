@@ -51,7 +51,8 @@ public class SceneMoleculeDTO
     public string canonicalSmiles;
 
     public Vec3DTO offset;         // dónde se ubica la molécula en la escena
-    public float   scale;          // tamaño real (Å) con que se normalizó; conserva
+    public float   scale;          // tamaño con que se normalizó, en las unidades de la
+                                   // escena (Å si viene del catálogo); conserva
                                    // la proporción entre moléculas distintas
 
     public SceneAtomDTO[] atoms;

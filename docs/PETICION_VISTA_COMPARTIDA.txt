@@ -38,7 +38,9 @@ y que esa posición viaje en `state.camera`:
                 "yaw": 41.5, "pitch": 22.0,
                 "distance": 16.0, "focusMoleculeId": "", "focusAtomId": -1 }
 
-  - x, y, z en las MISMAS unidades que la escena (ångströms).
+  - x, y, z en las MISMAS unidades que la escena. Desde el cambio del 26/09 esa
+    escala la fija el cliente y el servidor la estima, así que basta con que lo
+    que se guarde aquí vuelva igual.
   - yaw y pitch en grados, como ya viajan.
   - `distance` puede quedarse donde está por compatibilidad; el cliente ya no lo
     usa (ver abajo). No hace falta borrarlo del contrato.

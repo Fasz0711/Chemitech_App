@@ -7,10 +7,18 @@ using UnityEngine;
 /// El comando `setAtoms`: publica en la pizarra lo que el docente construyó a mano.
 ///
 /// Contrato: docs/CONTRATO_PIZARRA_UNIVERSO.txt §1. Se manda SOLO la lista plana de
-/// átomos, en ångströms. Nada de enlaces —el servidor los recalcula, y así no puede
-/// haber dos versiones de la química— y nada de agrupar: el servidor parte la escena
-/// en moléculas con un corte calibrado para que un enlace quede dentro y un puente de
+/// átomos. Nada de enlaces —el servidor los recalcula, y así no puede haber dos
+/// versiones de la química— y nada de agrupar: el servidor parte la escena en moléculas
+/// con un criterio RELATIVO, calibrado para que un enlace quede dentro y un puente de
 /// hidrógeno fuera, que es lo que la lección necesita.
+///
+/// LA ESCALA NO IMPORTA  [contrato del 26/09]. El servidor la estima de la propia
+/// escena, así que las coordenadas van en las unidades que tenga el universo y no hay
+/// nada que convertir. Antes se exigían ångströms reales y eso era un bug: el universo
+/// coloca todos los pares con el mismo espaciado, mientras que las longitudes reales van
+/// de 0.97 (O–H) a 2.68 (Na–Cl), así que ningún factor único las deja bien a la vez. Un
+/// agua construida a mano llegaba con los átomos demasiado separados para el criterio
+/// del servidor y se publicaba como TRES ÁTOMOS SUELTOS SIN ENLACES.
 ///
 /// Es el ESTADO COMPLETO del universo: publicar siempre reemplaza.
 /// </summary>
@@ -27,10 +35,14 @@ public static class SetAtomsCommand
     /// <summary>Cuánto margen queda antes de avisar. A partir de aquí el aviso aparece.</summary>
     public const int WARN_MARGIN = 6;
 
-    /// <summary>Construye el actionsJson. 'worldToAngstrom' convierte de unidades de
-    /// mundo a ångströms; es el INVERSO del factor con el que se dibuja la escena, y
-    /// tiene que serlo, o lo publicado no coincidiría con lo que el docente ve.</summary>
-    public static string Build(IList<Atom3D> atoms, float worldToAngstrom)
+    /// <summary>Construye el actionsJson.
+    ///
+    /// 'worldToScene' es el INVERSO del factor con el que se dibuja lo que llega del
+    /// servidor. Ya no convierte a ninguna unidad física —al servidor le da igual la
+    /// escala— pero tiene que seguir siendo el inverso exacto: es lo que garantiza que
+    /// publicar y volver a dibujar devuelva los átomos al mismo sitio en vez de encoger
+    /// o agrandar el universo en cada publicación.</summary>
+    public static string Build(IList<Atom3D> atoms, float worldToScene)
     {
         var sb = new StringBuilder(64 + (atoms?.Count ?? 0) * 56);
         sb.Append(@"[{""action"":""setAtoms"",""atoms"":[");
@@ -43,7 +55,7 @@ public static class SetAtomsCommand
                 if (!first) sb.Append(',');
                 first = false;
 
-                Vector3 p = a.transform.position * worldToAngstrom;
+                Vector3 p = a.transform.position * worldToScene;
                 sb.Append(@"{""element"":""").Append(a.element).Append(@""",""x"":").Append(F(p.x))
                   .Append(@",""y"":").Append(F(p.y))
                   .Append(@",""z"":").Append(F(p.z)).Append('}');
@@ -56,7 +68,7 @@ public static class SetAtomsCommand
     // Un celular con el idioma en español escribe 0,76 en vez de 0.76, y eso no es un
     // número JSON: el servidor rechazaría el comando entero con ERR_INVALID_ACTION y
     // solo en los dispositivos con esa configuración. De ahí el InvariantCulture.
-    // Cuatro decimales sobran: el enlace más corto mide ~0.7 Å.
+    // Cuatro decimales sobran de sobra para cualquier escala razonable.
     static string F(float v) => v.ToString("0.####", CultureInfo.InvariantCulture);
 
     // ── Cuenta para el aviso ──────────────────────────────────────────────────

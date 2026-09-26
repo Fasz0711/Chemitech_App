@@ -16,7 +16,8 @@ TODOS LOS JSON DE AQUÍ ESTÁN VOLCADOS DEL SERVIDOR REAL, no escritos a mano.
 
 RESUMEN EN CUATRO LÍNEAS
   1. Hay una acción nueva, `setAtoms`, que publica lo que el docente construyó.
-  2. Manden SOLO ÁTOMOS con sus coordenadas. Nada de enlaces, nada de agrupar.
+  2. Manden SOLO ÁTOMOS con sus coordenadas. Nada de enlaces, nada de agrupar,
+     y en las unidades que ya tengan: la escala no importa (§1.1).
   3. La escena que vuelve tiene la MISMA forma de siempre; lo único nuevo es que
      una molécula puede venir sin nombre.
   4. /detection/molecule acepta "record": false para no ensuciar el diario.
@@ -48,10 +49,24 @@ a 20 Å, dos carbonos sueltos (una estructura a medias, a propósito):
   }
 ]
 
-  - `element`: el símbolo, como se escribe en química ("O", "Na", "Cl").
-  - `x`, `y`, `z`: ÅNGSTRÖMS. Conviertan desde unidades de mundo antes de mandar
-    (en el universo un enlace simple mide ~1.5; en ångströms, ~1.5 también para
-    C–C, pero NO asuman que la escala coincide: usen su factor de conversión).
+  - `element`: el símbolo, TAL CUAL se escribe en química ("O", "Na", "Cl"). En
+    minúscula se rechaza: "o" no es un elemento, y no se normaliza porque "CO" y
+    "Co" son monóxido y cobalto y los dos están en la paleta de 24.
+  - `x`, `y`, `z`: **LA ESCALA YA NO IMPORTA**  [CAMBIO DEL 26/09]
+        Manden las coordenadas en las unidades que tengan. El servidor estima la
+        escala de la propia escena, así que multiplicar todo por cualquier factor
+        no cambia el resultado.
+        Antes el contrato exigía ångströms reales y eso ERA UN BUG: en el
+        universo todos los pares se colocan con el mismo espaciado (~1.5),
+        mientras que las longitudes reales van de 0.97 (O–H) a 2.68 (Na–Cl), así
+        que ningún factor único las pone bien a la vez. Un agua construida a mano
+        llegaba con los átomos demasiado separados para el criterio del servidor
+        y se publicaba como TRES ÁTOMOS SUELTOS SIN ENLACES. Ya está arreglado y
+        **no tienen que convertir nada**.
+        Consecuencia sana: `scale` y `offset` vuelven en las MISMAS unidades que
+        mandaron, así que su reconstrucción sigue dando lo que esperan. Y como
+        `setAtoms` reemplaza toda la escena, nunca se mezclan unidades del
+        cliente con las del catálogo en una misma pizarra.
   - NO manden `bonds`. Si los mandan, se ignoran.
   - NO agrupen los átomos. Manden la lista plana y ya.
   - Es el ESTADO COMPLETO: publicar reemplaza siempre lo que hubiera.
@@ -135,9 +150,12 @@ que no cambió:
 --------------------------------------------------------------------------------
 
 a) LOS 5 ÁTOMOS SE PARTIERON EN 2 MOLÉCULAS, y eso lo hizo el servidor. Ustedes
-   mandaron una lista plana. El corte está calibrado para que un ENLACE quede
-   dentro y un PUENTE DE HIDRÓGENO fuera, así que dos aguas cercanas siguen
-   siendo dos moléculas — que es lo que la lección del puente necesita.
+   mandaron una lista plana. El criterio es RELATIVO: el servidor estima el
+   espaciado de enlace de la propia escena y agrupa lo que esté a menos de ~1.4
+   veces ese espaciado. Así un ENLACE queda dentro y un PUENTE DE HIDRÓGENO
+   (que está a ~1.8 veces) queda fuera, sea cual sea la escala en la que
+   trabajen: dos aguas cercanas siguen siendo dos moléculas, que es lo que la
+   lección del puente necesita.
 
 b) EL AGUA SE RECONOCIÓ: name "Agua", formula "H2O", canonicalSmiles "O". Sale
    del catálogo, exactamente igual que si hubiera venido del botón. Las seis
