@@ -13,13 +13,15 @@ using TMPro;
 /// hacía dos cosas distintas sin avisar.
 ///
 ///  • Arrastrar sobre espacio vacío → rota la cámara (libre, también por debajo).
-///  • D-pad y flechas verticales → desplazan la cámara. SIEMPRE.
+///  • D-pad y flechas verticales → desplazan la cámara, salvo mientras se mueve un
+///    átomo: entonces son suyos.
 ///  • Tocar un slot del hotbar → aparece una PREVISUALIZACIÓN (fantasma) bajo la cruz,
 ///    SOSTENIDA delante de ti: se mueve y gira contigo. "Presiona para colocar átomo" la
 ///    deja ahí; el fantasma se queda, para colocar varios.
 ///  • Tocar un átomo colocado lo selecciona (mover/borrar).
-///  • Con uno seleccionado, ese mismo botón dice "Mover átomo": al pulsarlo lo tomas y
-///    viaja contigo SIN saltar de sitio, y se suelta con "Soltar aquí".
+///  • Con uno seleccionado, ese mismo botón dice "Mover átomo": a partir de ahí el
+///    d-pad y las flechas lo mueven a ÉL y la cámara se queda quieta. Girar la vista
+///    sigue girando solo la vista. Se suelta con "Soltar aquí".
 ///  • "Cancelar" quita la previsualización, o devuelve el átomo a donde estaba.
 /// </summary>
 public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSink
@@ -49,6 +51,7 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
     [SerializeField] private float minSeparationFrac = 0.9f; // colisión si dist < atomScale*esto
     [SerializeField] private bool  showLabels        = true;
     [SerializeField] private float holdDistance      = 5f;   // a qué distancia se sostiene
+    [SerializeField] private float atomMoveSpeed     = 4f;   // al reposicionar un átomo
 
     Transform atomsRoot;
     int     armedAtom = -1;
@@ -162,10 +165,14 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
         hasGrab   = true;
     }
 
-    /// <summary>Lo que ahora mismo viaja con la cámara: la previsualización si la hay, y
-    /// si no el átomo que se esté reposicionando. Nada más se mueve solo.</summary>
-    Transform ActiveTransform
-        => previewGhost ? previewGhost.transform : (editing && selected ? selected.transform : null);
+    /// <summary>Lo único que viaja con la cámara es la PREVISUALIZACIÓN: un átomo que
+    /// todavía no existe no tiene sitio propio, así que tiene sentido que te acompañe
+    /// hasta que decidas dónde dejarlo.
+    ///
+    /// Un átomo YA COLOCADO no. Ese ocupa un lugar dentro de una estructura, y girar la
+    /// vista para mirarlo desde otro lado no debería arrastrarlo: se mueve solo con el
+    /// d-pad y las flechas, y solo mientras esté en modo mover.</summary>
+    Transform ActiveTransform => previewGhost ? previewGhost.transform : null;
 
     Vector3 Clamp(Vector3 p) => new Vector3(
         Mathf.Clamp(p.x, -platformHalf, platformHalf),
@@ -260,7 +267,6 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
         if (!selected) return;
         editing    = true;
         moveOrigin = selected.transform.position;
-        Grab(selected.transform);
         ShowCancel(true);
         RefreshPlaceLabel();
     }
@@ -577,17 +583,44 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
         lblGo.AddComponent<Billboard>();
     }
 
-    /// <summary>d-pad: desplaza LA CÁMARA. Lo que se esté colocando la sigue (FollowCamera),
-    /// así que este mismo control coloca sin dejar de hacer siempre lo mismo.</summary>
+    /// <summary>d-pad: mueve EL ÁTOMO mientras se está reposicionando, y LA CÁMARA el
+    /// resto del tiempo. Es la única excepción, y está detrás de un botón explícito: al
+    /// pulsar "Mover átomo" se entra a colocarlo, y hasta soltarlo los mandos son suyos.</summary>
     public void MoveOrPan(Vector2 dir)
     {
+        if (editing && selected) { NudgeSelected(dir); return; }
         if (orbit) orbit.PanScreen(dir);
     }
 
-    /// <summary>Flechas verticales: suben y bajan LA CÁMARA, con la misma regla.</summary>
+    /// <summary>Flechas verticales: suben y bajan el átomo si se está moviendo, y si no
+    /// la cámara.</summary>
     public void VerticalOrCam(float sign)
     {
+        if (editing && selected) { LiftSelected(sign); return; }
         if (orbit) orbit.MoveVertical(sign);
+    }
+
+    /// <summary>Desplaza el átomo en el plano, en la dirección en la que estás mirando:
+    /// "adelante" es adelante desde tu punto de vista, no una dirección fija del mundo.</summary>
+    void NudgeSelected(Vector2 dir)
+    {
+        if (!cam) return;
+
+        Vector3 flat = Vector3.ProjectOnPlane(cam.transform.forward, Vector3.up);
+        // Mirando casi a plomo, 'forward' no tiene componente horizontal que normalizar.
+        if (flat.sqrMagnitude < 0.0001f) flat = Vector3.ProjectOnPlane(cam.transform.up, Vector3.up);
+        Vector3 fwd   = flat.normalized;
+        Vector3 right = new Vector3(fwd.z, 0f, -fwd.x);
+
+        Vector3 move = (right * dir.x + fwd * dir.y) * atomMoveSpeed * Time.deltaTime;
+        selected.transform.position = Clamp(selected.transform.position + move);
+    }
+
+    void LiftSelected(float sign)
+    {
+        Vector3 p = selected.transform.position;
+        p.y += sign * atomMoveSpeed * Time.deltaTime;
+        selected.transform.position = Clamp(p);
     }
 
     void Select(Atom3D a)

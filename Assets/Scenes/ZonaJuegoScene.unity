@@ -19469,7 +19469,7 @@ MonoBehaviour:
   minDist: 6
   maxDist: 34
   rotSpeed: 0.22
-  panSpeed: 0.9
+  panSpeed: 2.7
   zoomSpeed: 14
   vertSpeed: 6
   smooth: 12
