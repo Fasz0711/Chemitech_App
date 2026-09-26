@@ -98,8 +98,19 @@ public class AnnotationDTO
 [Serializable]
 public class CameraDTO
 {
-    public bool  locked;       // true = todos siguen la vista del docente
+    public bool  locked;       // reliquia del seguimiento continuo; el cliente lo ignora
+
+    // La vista del docente. En primera persona hace falta DÓNDE está, no a qué distancia
+    // de un centro: 'distance' es de la época en que la cámara orbitaba y se mantiene
+    // porque el contrato lo declara, pero no se usa.
+    public float x, y, z;
     public float yaw, pitch, distance;
+
+    // Sube en uno cada vez que el docente comparte su vista, aunque mande los mismos
+    // valores. Sin esto, pulsar el botón dos veces desde el mismo sitio no movería a
+    // nadie. Si el servidor todavía no lo manda llega 0 siempre, y entonces se compara
+    // por valores: se pierde ese caso, pero nada se rompe.
+    public int viewSeq;
 
     // A qué mira la cámara cuando el docente enfoca algo. Se ignoran en la Fase 2,
     // pero se declaran para que el contrato no cambie al usarlos en la Fase 3.

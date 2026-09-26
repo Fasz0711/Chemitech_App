@@ -15,11 +15,11 @@ using TMPro;
 ///  • Arrastrar sobre espacio vacío → rota la cámara (libre, también por debajo).
 ///  • D-pad y flechas verticales → desplazan la cámara. SIEMPRE.
 ///  • Tocar un slot del hotbar → aparece una PREVISUALIZACIÓN (fantasma) bajo la cruz,
-///    que sigue a la cámara. "Presiona para colocar átomo" la deja ahí; el fantasma se
-///    queda, para colocar varios.
+///    SOSTENIDA delante de ti: se mueve y gira contigo. "Presiona para colocar átomo" la
+///    deja ahí; el fantasma se queda, para colocar varios.
 ///  • Tocar un átomo colocado lo selecciona (mover/borrar).
-///  • Con uno seleccionado, ese mismo botón dice "Mover átomo": al pulsarlo el átomo
-///    pasa a viajar con la cámara, y se suelta con "Soltar aquí".
+///  • Con uno seleccionado, ese mismo botón dice "Mover átomo": al pulsarlo lo tomas y
+///    viaja contigo SIN saltar de sitio, y se suelta con "Soltar aquí".
 ///  • "Cancelar" quita la previsualización, o devuelve el átomo a donde estaba.
 /// </summary>
 public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSink
@@ -48,6 +48,7 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
     [SerializeField] private float maxHeight         = 12f;
     [SerializeField] private float minSeparationFrac = 0.9f; // colisión si dist < atomScale*esto
     [SerializeField] private bool  showLabels        = true;
+    [SerializeField] private float holdDistance      = 5f;   // a qué distancia se sostiene
 
     Transform atomsRoot;
     int     armedAtom = -1;
@@ -58,11 +59,12 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
     bool    editing;
     Vector3 moveOrigin;      // para poder devolverlo si se cancela
 
-    // Dónde miraba la cámara el frame anterior. Lo que se está colocando se mueve ESA
-    // MISMA diferencia, en vez de saltar al centro: así al empezar a mover un átomo no
-    // se teletransporta a donde apunta la cruz.
-    Vector3 lastFocus;
-    bool    hasLastFocus;
+    // Dónde está lo que se sostiene, EN EL ESPACIO DE LA CÁMARA. Guardar el desplazamiento
+    // relativo (y no la posición del mundo) es lo que hace que al empezar a mover un átomo
+    // no se teletransporte delante de la cara: se queda donde estaba y desde ahí viaja
+    // contigo, como si lo llevaras en la mano.
+    Vector3 grabLocal;
+    bool    hasGrab;
 
     // La etiqueta del botón de colocar. Se busca sola en el hijo del botón para no tener
     // que cablear una referencia más en cada escena que use este HUD.
@@ -140,24 +142,24 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
         UpdateGuides();
     }
 
-    /// <summary>Arrastra lo que se está colocando la misma distancia que se movió la
-    /// cámara. Se usa la DIFERENCIA y no la posición absoluta para que empezar a mover
-    /// un átomo no lo arranque de donde está.</summary>
+    /// <summary>Lo que se sostiene viaja con la cámara: se mueve contigo y gira contigo,
+    /// manteniendo la misma posición relativa a tu vista.</summary>
     void FollowCamera()
     {
-        if (!orbit) return;
-
-        Vector3 focus = orbit.FocusPoint;
-        if (!hasLastFocus) { lastFocus = focus; hasLastFocus = true; return; }
-
-        Vector3 delta = focus - lastFocus;
-        lastFocus = focus;
-        if (delta.sqrMagnitude < 1e-10f) return;
-
         Transform target = ActiveTransform;
-        if (!target) return;
+        if (!target || !hasGrab || !cam) return;
 
-        target.position = Clamp(target.position + delta);
+        Transform c = cam.transform;
+        target.position = Clamp(c.position + c.rotation * grabLocal);
+    }
+
+    /// <summary>Empieza a sostener algo, conservando dónde está respecto a la vista.</summary>
+    void Grab(Transform t)
+    {
+        if (!t || !cam) { hasGrab = false; return; }
+        Transform c = cam.transform;
+        grabLocal = Quaternion.Inverse(c.rotation) * (t.position - c.position);
+        hasGrab   = true;
     }
 
     /// <summary>Lo que ahora mismo viaja con la cámara: la previsualización si la hay, y
@@ -209,6 +211,7 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
             previewMat.SetColor(BaseColorId, new Color(c.r, c.g, c.b, 0.45f));
         }
         previewGhost.SetActive(true);
+        Grab(previewGhost.transform);
         ShowCancel(true);
         RefreshPlaceLabel();
     }
@@ -218,20 +221,20 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
         if (previewGhost) Destroy(previewGhost);
         previewGhost = null;
         armedAtom = -1;
+        hasGrab   = false;
         ShowCancel(false);
         if (selector) selector.ClearHighlight();  // quita el resaltado cyan del slot
         RefreshPlaceLabel();
     }
 
-    /// <summary>El punto al que mira la cámara: exactamente lo que hay bajo la cruz.
-    ///
-    /// Antes se lanzaba un rayo contra un plano horizontal, pero con la rotación ya libre
-    /// ese rayo puede no cortar el plano —o cortarlo a la espalda— cuando se mira desde
-    /// abajo. El punto de enfoque siempre existe y siempre está en el centro de pantalla.</summary>
+    /// <summary>Justo delante de la vista, a la distancia a la que se sostiene. Es lo que
+    /// hay bajo la cruz, y por eso la cruz dice la verdad sin depender de que haya un
+    /// suelo debajo al que apuntar.</summary>
     Vector3 CrosshairPoint()
     {
-        if (orbit) return Clamp(orbit.FocusPoint);
-        return new Vector3(0f, atomScale * 0.5f, 0f);
+        if (!cam) return new Vector3(0f, atomScale * 0.5f, 0f);
+        Transform c = cam.transform;
+        return Clamp(c.position + c.forward * holdDistance);
     }
 
     // ── El botón de colocar, según lo que haya ────────────────────────────────
@@ -257,6 +260,7 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
         if (!selected) return;
         editing    = true;
         moveOrigin = selected.transform.position;
+        Grab(selected.transform);
         ShowCancel(true);
         RefreshPlaceLabel();
     }
@@ -275,6 +279,7 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
     {
         if (!editing) return;
         editing = false;
+        hasGrab = false;
         ShowCancel(false);
 
         if (selected)

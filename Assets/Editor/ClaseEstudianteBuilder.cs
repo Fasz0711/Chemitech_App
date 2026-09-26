@@ -131,8 +131,6 @@ public static class ClaseEstudianteBuilder
                  22f, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
         badge.SetActive(false);
 
-        var btnVolver = MakeButton(root, "BtnVolverVista", "Ver la vista del docente", PURPLE,
-                                   new Vector2(0.5f, 0f), new Vector2(-300f, 80f), new Vector2(520f, 62f), 23f);
 
         var btnCopiar = MakeButton(root, "BtnCopiar", "Copiar a un universo", CYAN,
                                    new Vector2(0.5f, 0f), new Vector2(300f, 80f), new Vector2(440f, 62f), 23f);
@@ -170,7 +168,6 @@ public static class ClaseEstudianteBuilder
         SetRef(so, "className",      className);
         SetRef(so, "syncLabel",      syncLabel);
         SetRef(so, "followingBadge", badge);
-        SetRef(so, "btnVolverVista", btnVolver);
         SetRef(so, "btnSalir",       btnSalir);
         SetRef(so, "emptyHint",      emptyHint);
         SetRef(so, "btnCopiar",      btnCopiar);

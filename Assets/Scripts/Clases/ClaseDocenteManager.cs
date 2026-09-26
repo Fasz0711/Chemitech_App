@@ -124,7 +124,7 @@ public class ClaseDocenteManager : MonoBehaviour
     // Los tres números se formatean con InvariantCulture: en un celular en español
     // saldrían con coma y el JSON dejaría de ser válido.
     const string VIEW_FMT =
-        @"[{{""action"":""view"",""locked"":false,""yaw"":{0},""pitch"":{1},""distance"":{2}}}]";
+        @"[{{""action"":""view"",""locked"":false,""x"":{0},""y"":{1},""z"":{2},""yaw"":{3},""pitch"":{4}}}]";
     const string CMD_SIN_RESALTADO = @"[{""action"":""highlight""}]";
     // append=true SUMA al resaltado en vez de reemplazarlo. El guion lo necesita: cuando
     // el sodio entrega su electrón al cloro hay que ver los dos marcados a la vez, y con
@@ -307,10 +307,11 @@ public class ClaseDocenteManager : MonoBehaviour
         // que la cámara del docente saltara a la posición almacenada cada vez que pulsaba
         // cualquier botón: se colocaba en un buen ángulo, mostraba agua, y la vista se le
         // iba sola. El docente es quien conduce; su cámara es suya.
-        if (state.camera != null && !cameraRestored)
+        if (!cameraRestored && HasPosition(state.camera))
         {
             cameraRestored = true;
-            if (cam) cam.SetView(state.camera.yaw, state.camera.pitch, state.camera.distance);
+            var c = state.camera;
+            if (cam) cam.SetView(new Vector3(c.x, c.y, c.z), c.yaw, c.pitch);
         }
 
         RefreshControls(state);
@@ -521,10 +522,13 @@ public class ClaseDocenteManager : MonoBehaviour
         if (!cam) { ShowNotice("No encuentro la cámara."); return; }
 
         var inv = System.Globalization.CultureInfo.InvariantCulture;
+        Vector3 p = cam.ViewPosition;
         Apply(string.Format(VIEW_FMT,
+            p.x.ToString("0.###", inv),
+            p.y.ToString("0.###", inv),
+            p.z.ToString("0.###", inv),
             cam.ViewYaw.ToString("0.##", inv),
-            cam.ViewPitch.ToString("0.##", inv),
-            cam.ViewDistance.ToString("0.##", inv)));
+            cam.ViewPitch.ToString("0.##", inv)));
     }
 
     void Show(string alias)
@@ -632,6 +636,12 @@ public class ClaseDocenteManager : MonoBehaviour
     /// que se dibuja lo que llega del servidor, y tiene que serlo: si no, lo publicado
     /// volvería con otro tamaño y el universo daría un salto en cada comando.</summary>
     float WorldToAngstrom => worldScale > 0f ? 1f / worldScale : 1f;
+
+    /// <summary>¿El estado trae una vista de verdad? Mientras el servidor no guarde la
+    /// posición, los tres valores llegan en cero y aplicarlos teletransportaría a quien
+    /// entra al origen, dentro de las moléculas. Sin posición, no se toca la cámara.</summary>
+    static bool HasPosition(CameraDTO c)
+        => c != null && (c.x != 0f || c.y != 0f || c.z != 0f);
 
     /// <summary>El mismo corte con el que se mandan los grupos a detectar, para que la
     /// cuenta de fragmentos y lo que se detecta hablen de lo mismo.</summary>

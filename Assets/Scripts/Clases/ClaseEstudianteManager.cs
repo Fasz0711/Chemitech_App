@@ -14,11 +14,11 @@ using TMPro;
 ///
 /// Lo que el alumno hace con su cámara es LOCAL: no viaja al servidor ni afecta a nadie.
 ///
-/// LA CÁMARA DEL ALUMNO NO SE BLOQUEA NUNCA. Cuando el docente pulsa "todos a mi vista",
-/// el alumno SALTA UNA VEZ a esa orientación y desde ahí sigue siendo libre de girar y
-/// acercarse. Antes se le reescribía la cámara cada frame mientras durase el bloqueo, y
-/// eso dejaba al alumno mirando una pantalla que no respondía; poder rodear la molécula
-/// mientras el docente explica es media gracia de que esto sea 3D.
+/// LA CÁMARA DEL ALUMNO NO SE BLOQUEA NUNCA. Cuando el docente pulsa "Todos a mi vista",
+/// el alumno SALTA UNA VEZ a su punto de vista y desde ahí vuelve a ser libre de moverse.
+/// Antes se le reescribía la cámara cada frame mientras durase el bloqueo, y eso dejaba
+/// al alumno mirando una pantalla que no respondía; poder rodear la molécula mientras el
+/// docente explica es media gracia de que esto sea 3D.
 /// </summary>
 public class ClaseEstudianteManager : MonoBehaviour
 {
@@ -35,7 +35,6 @@ public class ClaseEstudianteManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI className;
     [SerializeField] private TextMeshProUGUI syncLabel;
     [SerializeField] private GameObject      followingBadge;   // "Siguiendo la vista del docente"
-    [SerializeField] private Button          btnVolverVista;
     [SerializeField] private Button          btnSalir;
     [SerializeField] private Button          btnCopiar;
     [SerializeField] private GameObject      emptyHint;        // "El docente aún no ha puesto nada"
@@ -74,8 +73,10 @@ public class ClaseEstudianteManager : MonoBehaviour
 
     const float NOTICE_SECONDS = 3.5f;
 
-    // Última vista que mandó el docente, para el botón "ver su vista".
-    float docYaw = 35f, docPitch = 28f, docDistance = 16f;
+    // Última vista que mandó el docente.
+    Vector3 docPos;
+    float   docYaw, docPitch;
+    int     docSeq;
 
     // Se salta solo cuando la vista del docente CAMBIA. El estado completo llega en cada
     // sondeo, así que sin esta comparación se saltaría cada dos segundos y el alumno no
@@ -88,7 +89,6 @@ public class ClaseEstudianteManager : MonoBehaviour
     void Start()
     {
         if (btnSalir)        btnSalir.onClick.AddListener(Leave);
-        if (btnVolverVista)  btnVolverVista.onClick.AddListener(SnapToTeacherView);
         if (btnCopiar)       btnCopiar.onClick.AddListener(CopyToUniverse);
         if (tapCatcher)      tapCatcher.Tapped += HandleTap;
 
@@ -228,32 +228,33 @@ public class ClaseEstudianteManager : MonoBehaviour
     {
         if (camera == null) return;
 
+        // Sin posición no hay vista que compartir: el servidor todavía no la guarda y los
+        // tres valores llegan en cero. Saltar ahí metería al alumno dentro de las
+        // moléculas, en el origen.
+        Vector3 pos = new Vector3(camera.x, camera.y, camera.z);
+        if (pos == Vector3.zero) return;
+
         bool first   = !hasDocView;
         bool changed = !first
-                    && (!Mathf.Approximately(docYaw,      camera.yaw)
-                     || !Mathf.Approximately(docPitch,    camera.pitch)
-                     || !Mathf.Approximately(docDistance, camera.distance));
+                    && (camera.viewSeq != docSeq            // el docente volvió a pulsar
+                     || docPos != pos
+                     || !Mathf.Approximately(docYaw,   camera.yaw)
+                     || !Mathf.Approximately(docPitch, camera.pitch));
 
-        docYaw      = camera.yaw;
-        docPitch    = camera.pitch;
-        docDistance = camera.distance;
-        hasDocView  = true;
+        docPos     = pos;
+        docYaw     = camera.yaw;
+        docPitch   = camera.pitch;
+        docSeq     = camera.viewSeq;
+        hasDocView = true;
 
-        // El botón de ver la vista del docente está SIEMPRE disponible: es la salida para
-        // el alumno que se fue a mirar por detrás y quiere reencontrar lo que se señala,
-        // y también para quien entra a mitad de clase.
-        if (btnVolverVista) btnVolverVista.gameObject.SetActive(true);
-
-        // AL ENTRAR NO SE SALTA. Hoy el servidor sirve una cámara por defecto que no es la
-        // de nadie, y saltar a ella dejaría al alumno mirando desde demasiado lejos nada
-        // más entrar. Cuando el backend mande la vista real del docente, quitar el "first"
-        // de 'changed' hace que quien llegue tarde también se alinee solo.
-        if (changed) { SnapToTeacherView(); FlashBadge(); }
+        // AL ENTRAR TAMBIÉN SE SALTA: quien llega tarde empieza mirando lo mismo que el
+        // resto en vez de tener que buscarlo. A partir de ahí se mueve libremente.
+        if (first || changed) { SnapToTeacherView(); if (!first) FlashBadge(); }
     }
 
     void SnapToTeacherView()
     {
-        if (cam) cam.SetView(docYaw, docPitch, docDistance);
+        if (cam && hasDocView) cam.SetView(docPos, docYaw, docPitch);
     }
 
     /// <summary>Avisa un momento de que la vista la acaba de mover el docente, para que el

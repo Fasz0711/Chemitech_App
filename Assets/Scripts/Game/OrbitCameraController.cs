@@ -1,141 +1,130 @@
 using UnityEngine;
 
 /// <summary>
-/// Cámara orbital 3D para la zona de juego: gira alrededor de un punto objetivo,
-/// hace pan sobre el plano, zoom y "recentrar". Todo con suavizado.
-/// La API pública la invocan los controles del HUD (arrastrar, d-pad, flechas, Recentrar).
+/// Cámara en PRIMERA PERSONA: gira sobre sí misma y se desplaza por el espacio.
+///
+/// Antes orbitaba alrededor de un punto (posición = objetivo − adelante × distancia), y
+/// eso se sentía como tercera persona: girar describía un arco alrededor de un centro
+/// invisible del que no se podía uno separar. Ahora la cámara ES el punto de vista.
+///
+///   • Arrastrar          → gira la vista (yaw y pitch), sin moverse del sitio.
+///   • D-pad              → avanza, retrocede y se desplaza a los lados, SIEMPRE EN
+///                          HORIZONTAL: mirar hacia abajo no te hace descender.
+///   • Flechas verticales → suben y bajan. Es la única forma de cambiar de altura.
+///   • Recentrar          → vuelve al punto y al ángulo de partida.
+///
+/// EL NOMBRE SE QUEDA como estaba a propósito: cambiarlo obliga a renombrar el archivo,
+/// y las tres escenas referencian este script por el GUID de su .meta. No compensa el
+/// riesgo por un nombre. Ya no orbita nada.
 /// </summary>
 public class OrbitCameraController : MonoBehaviour
 {
-    [Header("Valores por defecto (Recentrar vuelve aquí)")]
-    [SerializeField] private float defYaw      = 35f;
-    [SerializeField] private float defPitch    = 28f;
-    [SerializeField] private float defDistance = 16f;
-    [SerializeField] private Vector3 defTarget = Vector3.zero;
+    [Header("Punto de partida (Recentrar vuelve aquí)")]
+    // Equivale exactamente al encuadre que daba la cámara orbital con objetivo (0, 0.55, 0),
+    // yaw 35, pitch 28 y distancia 8: al pasar a primera persona la vista inicial no cambia.
+    [SerializeField] private Vector3 defPosition = new Vector3(-4.05f, 4.31f, -5.79f);
+    [SerializeField] private float   defYaw      = 35f;
+    [SerializeField] private float   defPitch    = 28f;
 
     [Header("Límites")]
-    // Rotación libre: se puede mirar la escena desde arriba y también desde abajo.
-    // Se corta en ±85 y no en ±90 a propósito: justo en el polo la proyección de
-    // 'forward' sobre el plano vale cero y el desplazamiento lateral se quedaría sin
-    // dirección que seguir.
-    [SerializeField] private float minPitch  = -85f;
-    [SerializeField] private float maxPitch  =  85f;
-    [SerializeField] private float minDist   = 6f;
-    [SerializeField] private float maxDist   = 34f;
+    // Rotación libre. Se corta en ±85 y no en ±90 porque justo en el polo la dirección
+    // horizontal de avance se queda sin definir.
+    [SerializeField] private float minPitch   = -85f;
+    [SerializeField] private float maxPitch   =  85f;
+    // Caja por la que se puede volar. Generosa respecto a la zona de construcción, para
+    // poder mirar el conjunto desde fuera sin perderse.
+    [SerializeField] private float boundsHalf = 40f;
+    [SerializeField] private float minY       = -15f;
+    [SerializeField] private float maxY       =  30f;
 
     [Header("Sensibilidad")]
     [SerializeField] private float rotSpeed  = 0.22f;
-    [SerializeField] private float panSpeed  = 6f;
-    [SerializeField] private float zoomSpeed = 14f;
+    [SerializeField] private float panSpeed  = 6f;    // unidades/segundo en el plano
     [SerializeField] private float vertSpeed = 6f;
     [SerializeField] private float smooth    = 12f;
 
-    [Header("Límite vertical (subir/bajar cámara)")]
-    [SerializeField] private float minTargetY = -1f;
-    [SerializeField] private float maxTargetY = 14f;
+    // Estado deseado (al que se interpola) y estado actual (el que se aplica).
+    Vector3 desPos, curPos;
+    float   desYaw, curYaw, desPitch, curPitch;
 
-    // Estado deseado (al que se interpola)
-    float   desYaw, desPitch, desDist;
-    Vector3 desTarget;
-    // Estado actual (aplicado al transform)
-    float   curYaw, curPitch, curDist;
-    Vector3 curTarget;
-
-    /// <summary>Altura (Y) del punto de enfoque actual de la cámara.</summary>
-    public float FocusHeight => curTarget.y;
-
-    /// <summary>El punto al que mira la cámara: lo que hay justo bajo la cruz central.
-    /// La colocación lo sigue, así que mover la cámara es lo que mueve el átomo.</summary>
-    public Vector3 FocusPoint => curTarget;
-
-    // La vista a la que se DIRIGE la cámara, no la interpolada. Es lo que hay que mandar
-    // cuando el docente comparte su vista: si se leyera la actual, pulsar el botón justo
-    // después de girar mandaría un fotograma intermedio del suavizado.
-    public float ViewYaw      => desYaw;
-    public float ViewPitch    => desPitch;
-    public float ViewDistance => desDist;
+    /// <summary>La vista a la que se DIRIGE la cámara, no la interpolada. Es lo que hay
+    /// que compartir: si se leyera la actual, pulsar el botón justo después de girar
+    /// mandaría un fotograma intermedio del suavizado.</summary>
+    public Vector3 ViewPosition => desPos;
+    public float   ViewYaw      => desYaw;
+    public float   ViewPitch    => desPitch;
 
     void Awake()
     {
-        desYaw = curYaw = defYaw;
+        desPos   = curPos   = defPosition;
+        desYaw   = curYaw   = defYaw;
         desPitch = curPitch = defPitch;
-        desDist = curDist = defDistance;
-        desTarget = curTarget = defTarget;
         Apply();
     }
 
-    /// <summary>Arrastre del puntero → órbita (yaw/pitch).</summary>
+    /// <summary>Arrastre del puntero → gira la vista en el sitio.</summary>
     public void Rotate(Vector2 delta)
     {
-        desYaw   += delta.x * rotSpeed;
-        desPitch  = Mathf.Clamp(desPitch - delta.y * rotSpeed, minPitch, maxPitch);
+        desYaw  += delta.x * rotSpeed;
+        desPitch = Mathf.Clamp(desPitch - delta.y * rotSpeed, minPitch, maxPitch);
     }
 
-    /// <summary>dir.x = strafe (der/izq), dir.y = avance/retroceso sobre el plano.</summary>
+    /// <summary>dir.x = lateral, dir.y = adelante/atrás. SOLO EN HORIZONTAL.
+    ///
+    /// La dirección sale del YAW y no de 'forward' a propósito: con 'forward', mirar al
+    /// suelo y avanzar te hundiría, y la altura dejaría de estar bajo control. Aquí
+    /// avanzar es avanzar, y subir se pide aparte.</summary>
     public void PanScreen(Vector2 dir)
     {
-        Vector3 right = transform.right;
+        float rad = desYaw * Mathf.Deg2Rad;
+        Vector3 fwd   = new Vector3(Mathf.Sin(rad), 0f, Mathf.Cos(rad));
+        Vector3 right = new Vector3(fwd.z, 0f, -fwd.x);
 
-        // Mirando casi en vertical, 'forward' apenas tiene componente horizontal y
-        // normalizarlo daría una dirección sin sentido. Ahí el "hacia delante" de la
-        // pantalla es la vertical de la cámara, que sí apunta a algún lado del plano.
-        Vector3 flat = Vector3.ProjectOnPlane(transform.forward, Vector3.up);
-        if (flat.sqrMagnitude < 0.0001f) flat = Vector3.ProjectOnPlane(transform.up, Vector3.up);
-        Vector3 fwd = flat.normalized;
-        Vector3 move  = (right * dir.x + fwd * dir.y) * panSpeed * Time.deltaTime * (desDist * 0.12f);
-        desTarget += move;
+        desPos += (right * dir.x + fwd * dir.y) * panSpeed * Time.deltaTime;
+        ClampPos();
     }
 
-    /// <summary>sign &gt; 0 acerca, &lt; 0 aleja.</summary>
-    public void Zoom(float sign)
-    {
-        desDist = Mathf.Clamp(desDist - sign * zoomSpeed * Time.deltaTime, minDist, maxDist);
-    }
-
-    /// <summary>Establece la distancia de zoom directamente (para slider de UI).</summary>
-    public void SetZoomDistance(float distance)
-    {
-        desDist = Mathf.Clamp(distance, minDist, maxDist);
-    }
-
-    /// <summary>Fija la orientación completa. Lo usa la escena de clase para "seguir la
-    /// vista del docente" y para el botón de volver a ella: el suavizado de LateUpdate
-    /// hace que el salto se vea como un movimiento, no como un corte.</summary>
-    public void SetView(float yaw, float pitch, float distance)
-    {
-        desYaw   = yaw;
-        desPitch = Mathf.Clamp(pitch, minPitch, maxPitch);
-        desDist  = Mathf.Clamp(distance, minDist, maxDist);
-    }
-
-    /// <summary>sign &gt; 0 sube la cámara, &lt; 0 la baja (mueve el punto objetivo en Y).</summary>
+    /// <summary>sign &gt; 0 sube, &lt; 0 baja.</summary>
     public void MoveVertical(float sign)
     {
-        desTarget.y = Mathf.Clamp(desTarget.y + sign * vertSpeed * Time.deltaTime, minTargetY, maxTargetY);
+        desPos.y += sign * vertSpeed * Time.deltaTime;
+        ClampPos();
+    }
+
+    /// <summary>Coloca la vista entera. Lo usa la clase para traer a los alumnos a la
+    /// vista del docente: el suavizado hace que el salto se vea como un movimiento y no
+    /// como un corte.</summary>
+    public void SetView(Vector3 position, float yaw, float pitch)
+    {
+        desPos   = position;
+        desYaw   = yaw;
+        desPitch = Mathf.Clamp(pitch, minPitch, maxPitch);
+        ClampPos();
     }
 
     public void Recenter()
     {
-        desYaw    = defYaw;
-        desPitch  = defPitch;
-        desDist   = defDistance;
-        desTarget = defTarget;
+        desPos   = defPosition;
+        desYaw   = defYaw;
+        desPitch = defPitch;
+    }
+
+    void ClampPos()
+    {
+        desPos.x = Mathf.Clamp(desPos.x, -boundsHalf, boundsHalf);
+        desPos.y = Mathf.Clamp(desPos.y, minY, maxY);
+        desPos.z = Mathf.Clamp(desPos.z, -boundsHalf, boundsHalf);
     }
 
     void LateUpdate()
     {
         float t = 1f - Mathf.Exp(-smooth * Time.deltaTime);
-        curYaw    = Mathf.LerpAngle(curYaw, desYaw, t);
-        curPitch  = Mathf.Lerp(curPitch, desPitch, t);
-        curDist   = Mathf.Lerp(curDist, desDist, t);
-        curTarget = Vector3.Lerp(curTarget, desTarget, t);
+        curYaw   = Mathf.LerpAngle(curYaw, desYaw, t);
+        curPitch = Mathf.Lerp(curPitch, desPitch, t);
+        curPos   = Vector3.Lerp(curPos, desPos, t);
         Apply();
     }
 
     void Apply()
-    {
-        Quaternion rot = Quaternion.Euler(curPitch, curYaw, 0f);
-        Vector3 pos = curTarget - (rot * Vector3.forward) * curDist;
-        transform.SetPositionAndRotation(pos, rot);
-    }
+        => transform.SetPositionAndRotation(curPos, Quaternion.Euler(curPitch, curYaw, 0f));
 }

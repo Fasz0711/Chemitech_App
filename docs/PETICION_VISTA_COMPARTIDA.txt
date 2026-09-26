@@ -1,10 +1,11 @@
 ================================================================================
 PETICIÓN AL BACKEND: "TODOS A MI VISTA"
-ChemiTech · frontend -> backend · 2026-09-26
+ChemiTech · frontend -> backend · 2026-09-26 (rev. 2: primera persona)
 ================================================================================
 
 Es un cambio pequeño y aislado. El cliente ya está hecho y funcionando; solo le
-falta que el servidor guarde tres números que hoy ignora.
+falta que el servidor guarde la posición de la cámara y un contador, que hoy no
+existen.
 
 
 ================================================================================
@@ -25,15 +26,31 @@ rodear la molécula mientras el docente explica es media gracia de que esto sea
 2. LO QUE FALTA (lo único)
 ================================================================================
 
-Que la acción `view` ACEPTE Y GUARDE yaw, pitch y distance:
+Que la acción `view` ACEPTE Y GUARDE la POSICIÓN de la cámara además del ángulo,
+y que esa posición viaje en `state.camera`:
 
     [{"action":"view", "locked": false,
-      "yaw": 41.5, "pitch": 22.0, "distance": 7.3}]
+      "x": -4.05, "y": 4.31, "z": -5.79,
+      "yaw": 41.5, "pitch": 22.0}]
 
-  - Son los que ya viajan en `state.camera`; lo que falta es poder ESCRIBIRLOS.
+    "camera": { "locked": false,
+                "x": -4.05, "y": 4.31, "z": -5.79,
+                "yaw": 41.5, "pitch": 22.0,
+                "distance": 16.0, "focusMoleculeId": "", "focusAtomId": -1 }
+
+  - x, y, z en las MISMAS unidades que la escena (ångströms).
+  - yaw y pitch en grados, como ya viajan.
+  - `distance` puede quedarse donde está por compatibilidad; el cliente ya no lo
+    usa (ver abajo). No hace falta borrarlo del contrato.
   - `locked` sigue existiendo y el cliente lo manda en false. No lo usa para
     nada más; si algún día se quiere el seguimiento continuo, el campo está.
-  - Grados y unidades de mundo, tal cual se leen hoy de `state.camera`.
+
+POR QUÉ POSICIÓN Y NO distance  [ESTO CAMBIÓ RESPECTO A LO QUE IBA A PEDIRSE]
+  La cámara pasó a ser de PRIMERA PERSONA. Antes orbitaba alrededor de un punto
+  central, y ahí "distancia al centro" describía la vista entera. Ahora la cámara
+  ES el punto de vista: gira sobre sí misma y se desplaza por el espacio, así que
+  no hay centro del que alejarse y `distance` no describe nada.
+  Una vista queda definida por DÓNDE ESTÁS y HACIA DÓNDE MIRAS. Nada más.
 
 VALIDACIÓN SUGERIDA: cualquier float finito. Si algo viene raro, mejor recortar
 que rechazar: que el comando falle por un decimal deja al docente sin su botón
@@ -43,36 +60,45 @@ HOY: el contrato (Fase 2 §3, línea 180) solo documenta
 `[{"action":"view","locked":true}]`, sin coordenadas, así que lo que se fija no
 es la vista del docente sino la que el servidor tenga por defecto (35 / 28 / 16).
 
-MIENTRAS TANTO NO SE ROMPE NADA: el cliente manda ya los tres campos. Si el
+MIENTRAS TANTO NO SE ROMPE NADA: el cliente manda ya los cinco campos. Si el
 servidor los ignora, el comando sigue siendo un `view` válido y el botón
 simplemente no hace nada visible. Ningún error, ninguna escena corrupta.
 
 
 ================================================================================
-3. LO QUE SERÍA BUENO, PERO NO BLOQUEA
+3. HACE FALTA TAMBIÉN: UN CONTADOR
 ================================================================================
 
-UN CONTADOR EN camera, p. ej. `"viewSeq": 7`, que suba en uno cada vez que el
-docente empuja su vista.
+    "camera": { ..., "viewSeq": 7 }
 
-EL PROBLEMA QUE RESUELVE: el alumno salta cuando los tres números CAMBIAN. Si el
-docente pulsa el botón dos veces sin haber movido la cámara, los números son
-idénticos y quien se haya ido a mirar por detrás no vuelve. Con el contador, el
-salto se dispara siempre.
+Un entero que suba en UNO cada vez que el docente empuja su vista, aunque mande
+exactamente los mismos números que la vez anterior.
 
-SIN ÉL TAMPOCO ES UN AGUJERO: el alumno tiene un botón "Ver la vista del
-docente" siempre visible que lo lleva a la última vista empujada. El contador
-solo evita tener que pedírselo de viva voz.
+EL PROBLEMA QUE RESUELVE: el alumno salta cuando la vista CAMBIA. Si el docente
+pulsa el botón dos veces sin haber movido la cámara entremedias, los valores son
+idénticos, el cliente no detecta nada y quien se haya ido a mirar por detrás NO
+VUELVE. El docente pulsa, no pasa nada, y no entiende por qué.
+
+ESTO ERA OPCIONAL Y YA NO LO ES. En la versión anterior de esta petición había
+una red de seguridad: un botón en el alumno para volver a la vista del docente.
+Se ha retirado por decisión de producto —la vista la comparte el docente, no la
+pide el alumno—, así que el contador pasa a ser la única forma de que el botón
+funcione siempre. Sin él, funciona solo cuando el docente ha movido la cámara
+desde la última vez.
 
 
 ================================================================================
 4. CÓMO SE COMPRUEBA
 ================================================================================
 
-  1. El docente gira a un ángulo cualquiera y pulsa "Todos a mi vista".
-  2. En /state, `camera.yaw/pitch/distance` valen lo que tenía el docente.
-  3. El alumno salta a esa orientación en <=3 s, y JUSTO DESPUÉS puede arrastrar
-     para girar sin que se le devuelva la vista.
+  1. El docente se coloca en cualquier sitio y pulsa "Todos a mi vista".
+  2. En /state, `camera.x/y/z/yaw/pitch` valen lo que tenía el docente, y
+     `viewSeq` ha subido en uno.
+  3. El alumno salta a ESE MISMO punto de vista en <=3 s, y JUSTO DESPUÉS puede
+     arrastrar y usar el d-pad sin que se le devuelva la vista.
+  4. El docente pulsa OTRA VEZ sin haberse movido: `viewSeq` vuelve a subir y el
+     alumno que se había ido vuelve a saltar. (Esto es lo que el contador
+     compra; sin él, el paso 4 no hace nada.)
 
 ================================================================================
 FIN
