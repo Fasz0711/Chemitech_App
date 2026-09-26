@@ -96,6 +96,10 @@ public class ClaseDocenteManager : MonoBehaviour
     [SerializeField] private TextMeshProUGUI sceneSummary;   // qué reconoció el servidor
     [SerializeField] private GameObject      editTint;       // tinte sutil al construir
 
+    [Header("Explicación de molécula")]
+    [SerializeField] private Button     btnExplicar;
+    [SerializeField] private GameObject explanationPanel;
+
     [Header("Render")]
     [SerializeField] private float worldScale    = 1f;
     [SerializeField] private float atomSize      = 0.9f;
@@ -142,6 +146,11 @@ public class ClaseDocenteManager : MonoBehaviour
     bool      busy;
     bool      addMode;      // los botones de molécula suman en vez de reemplazar
     bool      universeMode; // false = pizarra (el modo en el que se entra)
+
+    // Molécula tocada. Vacía si el toque cayó en el vacío, o si el átomo es uno que el
+    // docente acaba de colocar y todavía NO se ha publicado: hasta que el servidor lo
+    // resuelve no hay molécula que explicar, solo átomos sueltos.
+    string    tappedMolecule = "";
 
     // El recuento de topes se refresca a intervalos, no cada frame: agrupar es O(n²) y
     // con 60 átomos serían 1800 comparaciones por frame para un texto que cambia poco.
@@ -199,6 +208,12 @@ public class ClaseDocenteManager : MonoBehaviour
 
         if (btnModo)      btnModo.onClick.AddListener(ToggleMode);
         if (btnPublicar)  btnPublicar.onClick.AddListener(Publish);
+        if (btnExplicar)  btnExplicar.onClick.AddListener(OpenExplanation);
+        if (explanationPanel) explanationPanel.SetActive(false);
+
+        // Tocar un átomo dice a qué molécula pertenece, tanto conduciendo como
+        // construyendo. Es lo que enciende el botón de explicar.
+        if (placement) placement.AtomTapped += OnAtomTapped;
 
         // El diario del docente NO se llena de moléculas de demostración: está dando
         // clase, no jugando. Quitar el userPublicId no serviría —desde el retrofit de
@@ -231,7 +246,41 @@ public class ClaseDocenteManager : MonoBehaviour
         RefreshLimits();
     }
 
-    void OnDestroy() => sceneRenderer?.Dispose();
+    void OnDestroy()
+    {
+        if (placement) placement.AtomTapped -= OnAtomTapped;
+        sceneRenderer?.Dispose();
+    }
+
+    // ── Explicación de una molécula ────────────────────────────────────────────
+
+    void OnAtomTapped(Atom3D atom)
+    {
+        tappedMolecule = atom ? sceneRenderer?.MoleculeOf(atom.id) ?? "" : "";
+        RefreshExplainButton();
+    }
+
+    void RefreshExplainButton()
+    {
+        if (!btnExplicar) return;
+
+        bool hay = explanationPanel
+                && sceneRenderer != null
+                && sceneRenderer.MoleculeInfo(tappedMolecule) != null;
+
+        if (btnExplicar.gameObject.activeSelf != hay) btnExplicar.gameObject.SetActive(hay);
+    }
+
+    void OpenExplanation()
+    {
+        if (sceneRenderer == null || !explanationPanel) return;
+
+        var m = sceneRenderer.MoleculeInfo(tappedMolecule);
+        if (m == null) return;
+
+        ExplanationContext.SetFromScene(m);
+        explanationPanel.SetActive(true);
+    }
 
     // ── Estado ─────────────────────────────────────────────────────────────────
 
@@ -318,6 +367,7 @@ public class ClaseDocenteManager : MonoBehaviour
         RefreshControls(state);
         RebuildHighlightButtons(state);
         RefreshSummary(state);
+        RefreshExplainButton();
     }
 
     void RefreshControls(ClassStateResponse state)

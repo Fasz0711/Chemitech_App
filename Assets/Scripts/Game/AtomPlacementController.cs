@@ -411,24 +411,30 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
         return EventSystem.current && EventSystem.current.IsPointerOverGameObject(pointerId);
     }
 
+    /// <summary>Un toque que resolvió a un átomo, o null si cayó en el vacío. Se avisa
+    /// SIEMPRE, también mientras se conduce la clase: ahí no se puede mover nada, pero
+    /// tocar una molécula tiene que poder abrir su explicación.</summary>
+    public event System.Action<Atom3D> AtomTapped;
+
     void HandleTap(Vector3 screenPos)
     {
-        if (!Interactive) return;
         // Ni colocando ni moviendo se cambia de átomo: el toque es para soltar, no para
         // saltar a otro y dejarse el anterior a medio mover.
         if (!cam || previewGhost != null || editing) return;
 
-        Ray ray = cam.ScreenPointToRay(screenPos);
-        if (Physics.Raycast(ray, out RaycastHit hit, 500f))
-        {
-            var atom = hit.collider.GetComponentInParent<Atom3D>();
-            if (atom) { Select(atom); return; }
-        }
+        Atom3D atom = null;
+        if (Physics.Raycast(cam.ScreenPointToRay(screenPos), out RaycastHit hit, 500f))
+            atom = hit.collider.GetComponentInParent<Atom3D>();
 
-        var near = NearestAtomOnScreen(screenPos, TapTolerancePx());
-        if (near) { Select(near); return; }
+        // El dedo tapa el átomo que quiere tocar, así que un rayo exacto falla más de lo
+        // que parece; si no acertó, vale el más cercano en pantalla.
+        if (!atom) atom = NearestAtomOnScreen(screenPos, TapTolerancePx());
 
-        Deselect();
+        AtomTapped?.Invoke(atom);
+
+        if (!Interactive) return;   // conduciendo: se avisa, pero no se selecciona
+        if (atom) Select(atom);
+        else      Deselect();
     }
 
     float TapTolerancePx() => Mathf.Max(45f, Screen.height * 0.06f);

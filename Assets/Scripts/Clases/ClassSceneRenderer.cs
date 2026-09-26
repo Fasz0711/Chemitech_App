@@ -50,6 +50,12 @@ public class ClassSceneRenderer
     // que parte de tocar un átomo y necesita saber qué molécula dejar encendida.
     readonly Dictionary<int, string> atomMolecule = new Dictionary<int, string>();
 
+    // "m1" -> la molécula entera tal como la mandó el servidor. Se guarda porque el
+    // estado YA TRAE la química que hace falta para explicarla —en, charge, kind y
+    // negativeEnd viajan en cada sondeo desde la Fase 2— y tirarla al dibujar obligaría
+    // a volver a pedírsela al servidor para algo que acaba de llegar.
+    readonly Dictionary<string, SceneMoleculeDTO> moleculeById = new Dictionary<string, SceneMoleculeDTO>();
+
     string isolated = "";
 
     readonly BondRenderer bondRenderer;   // null en modo editable: los pinta BondManager
@@ -141,7 +147,11 @@ public class ClassSceneRenderer
                 atomMolecule[ids[i]] = m.id;
             }
 
-            if (!string.IsNullOrEmpty(m.id)) moleculeAtomIds[m.id] = ids;
+            if (!string.IsNullOrEmpty(m.id))
+            {
+                moleculeAtomIds[m.id] = ids;
+                moleculeById[m.id]    = m;
+            }
 
             if (m.bonds != null)
                 foreach (var b in m.bonds)
@@ -232,6 +242,11 @@ public class ClassSceneRenderer
     public string MoleculeOf(int atomId)
         => atomMolecule.TryGetValue(atomId, out var id) ? id : "";
 
+    /// <summary>La molécula completa, con su nombre, su fórmula, su SMILES y la química
+    /// de cada átomo y cada enlace. Null si ese id no está en la escena.</summary>
+    public SceneMoleculeDTO MoleculeInfo(string moleculeId)
+        => !string.IsNullOrEmpty(moleculeId) && moleculeById.TryGetValue(moleculeId, out var m) ? m : null;
+
     public string IsolatedMolecule => isolated;
 
     /// <summary>Deja encendida una molécula y atenúa el resto. Pasar "" lo restablece.
@@ -261,6 +276,7 @@ public class ClassSceneRenderer
         bonds.Clear();
         byId.Clear();
         moleculeAtomIds.Clear();
+        moleculeById.Clear();
         atomMolecule.Clear();
         isolated = "";
 

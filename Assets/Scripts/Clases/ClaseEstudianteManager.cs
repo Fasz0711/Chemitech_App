@@ -38,6 +38,8 @@ public class ClaseEstudianteManager : MonoBehaviour
     [SerializeField] private Button          btnSalir;
     [SerializeField] private Button          btnCopiar;
     [SerializeField] private GameObject      emptyHint;        // "El docente aún no ha puesto nada"
+    [SerializeField] private Button          btnExplicar;      // "Ver explicación"
+    [SerializeField] private GameObject      explanationPanel; // la pantalla de capas
     [SerializeField] private GameObject      noticeRoot;
     [SerializeField] private TextMeshProUGUI noticeText;
 
@@ -90,6 +92,9 @@ public class ClaseEstudianteManager : MonoBehaviour
     {
         if (btnSalir)        btnSalir.onClick.AddListener(Leave);
         if (btnCopiar)       btnCopiar.onClick.AddListener(CopyToUniverse);
+        if (btnExplicar)     btnExplicar.onClick.AddListener(OpenExplanation);
+        if (explanationPanel) explanationPanel.SetActive(false);
+        RefreshExplainButton();
         if (tapCatcher)      tapCatcher.Tapped += HandleTap;
 
         if (className) className.text = ClassContext.HasClass ? ClassContext.ClassName : "Clase";
@@ -143,6 +148,37 @@ public class ClaseEstudianteManager : MonoBehaviour
         string molecule = sceneRenderer.MoleculeOf(atom.id);
         bool alreadyIsolated = sceneRenderer.IsolatedMolecule == molecule;
         sceneRenderer.SetIsolated(alreadyIsolated ? "" : molecule);
+        RefreshExplainButton();
+    }
+
+    /// <summary>El botón aparece con una molécula aislada y desaparece al soltarla. No
+    /// hay una selección aparte: aislar YA es elegir una molécula, y añadir un segundo
+    /// gesto para lo mismo sería pedirle al alumno que aprenda dos.
+    ///
+    /// Si la pantalla de explicación no está montada en la escena, el botón no se ofrece:
+    /// más vale que no esté a que esté y no haga nada.</summary>
+    void RefreshExplainButton()
+    {
+        if (!btnExplicar) return;
+
+        bool hay = explanationPanel
+                && sceneRenderer != null
+                && sceneRenderer.MoleculeInfo(sceneRenderer.IsolatedMolecule) != null;
+
+        if (btnExplicar.gameObject.activeSelf != hay) btnExplicar.gameObject.SetActive(hay);
+    }
+
+    void OpenExplanation()
+    {
+        if (sceneRenderer == null || !explanationPanel) return;
+
+        var m = sceneRenderer.MoleculeInfo(sceneRenderer.IsolatedMolecule);
+        if (m == null) return;
+
+        // Desde la pizarra la química viaja con la molécula, así que la pantalla se abre
+        // con todo lo que necesita y sin pedirle nada al servidor.
+        ExplanationContext.SetFromScene(m);
+        explanationPanel.SetActive(true);
     }
 
     // Con la pantalla bloqueada o la app de fondo no hay nadie mirando: seguir sondeando
@@ -216,6 +252,7 @@ public class ClaseEstudianteManager : MonoBehaviour
         if (emptyHint) emptyHint.SetActive(empty);
 
         ApplyCamera(state.camera);
+        RefreshExplainButton();
     }
 
     /// <summary>Recibe la vista del docente. Salta a ella UNA VEZ, solo si es distinta de
