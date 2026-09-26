@@ -25,7 +25,12 @@ public class ApiManager : MonoBehaviour
         
     //LAPTOP
     // const string BASE_URL = "http://192.168.18.10:8000/api"; 
-    const string BASE_URL = "http://127.0.0.1:8000/api";
+
+    // LOCALHOST
+    // const string BASE_URL = "http://127.0.0.1:8000/api";
+
+    //RENDER
+    const string BASE_URL = "https://chemitechbackend.onrender.com/api";
 
 
     // Tiempo de espera (s) para la detección de moléculas. Si el servicio de IA no

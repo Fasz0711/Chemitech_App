@@ -31,11 +31,22 @@ public class OrbitCameraController : MonoBehaviour
     // horizontal de avance se queda sin definir.
     [SerializeField] private float minPitch   = -85f;
     [SerializeField] private float maxPitch   =  85f;
-    // Caja por la que se puede volar. Generosa respecto a la zona de construcción, para
-    // poder mirar el conjunto desde fuera sin perderse.
-    [SerializeField] private float boundsHalf = 40f;
-    [SerializeField] private float minY       = -15f;
-    [SerializeField] private float maxY       =  30f;
+    // Caja por la que se puede volar, PEGADA A LA PLATAFORMA QUE SE VE (26 de lado, medio
+    // lado 13). Solo 1 unidad de margen por fuera del borde: el límite se alcanza justo
+    // al asomarse, no después de un rato volando hacia la nada.
+    //
+    // Empezó en 40 / -15 / 30, que dejaba alejarse a tres veces el borde hasta que la
+    // plataforma quedaba de canto en el horizonte y no había referencia para volver.
+    // Aun con 18 se seguía saliendo, así que se ciñe al borde real.
+    //
+    // En vertical se queda POR ENCIMA DEL SUELO y bastante por debajo de lo que daba el
+    // techo anterior. El suelo no se cruza: a ras de la plataforma esta se ve de canto —
+    // no tiene grosor— y la vista se parte en dos por una línea. Medio metro por encima
+    // se sigue pudiendo mirar una molécula desde abajo, porque los átomos se apoyan a
+    // 0.55 y hacia arriba.
+    [SerializeField] private float boundsHalf = 14f;
+    [SerializeField] private float minY       = 0.5f;
+    [SerializeField] private float maxY       = 10f;
 
     [Header("Sensibilidad")]
     [SerializeField] private float rotSpeed  = 0.22f;

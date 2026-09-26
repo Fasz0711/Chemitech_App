@@ -82,6 +82,8 @@ public class ClassSceneRenderer
         Clear();
         if (molecules == null) return;
 
+        float lift = FloorLift(molecules);
+
         // Ids globales: los del JSON son locales a cada molécula (0..n-1), y con varias
         // moléculas en escena se pisarían entre ellas.
         int nextInternalId = 0;
@@ -119,7 +121,7 @@ public class ClassSceneRenderer
                 // offset en vez de centrada en él.
                 Vector3 local = a.position != null ? a.position.ToVector3() : Vector3.zero;
                 Vector3 scene = (local - Vector3.one * 0.5f) * mScale + offset;
-                Vector3 world = scene * worldScale;
+                Vector3 world = scene * worldScale + Vector3.up * lift;
 
                 if (sink != null)
                 {
@@ -153,6 +155,49 @@ public class ClassSceneRenderer
         }
 
         bondRenderer?.SetBonds(bonds);
+    }
+
+    /// <summary>Cuánto hay que subir la escena ENTERA para que ningún átomo atraviese la
+    /// plataforma.
+    ///
+    /// El servidor centra cada molécula en su offset, así que la mitad inferior queda con
+    /// Y negativa: un agua del catálogo llega con el oxígeno justo en y=0 y se ve medio
+    /// enterrada en el suelo. Lo construido a mano no tiene el problema, porque al
+    /// colocarlo ya se apoya encima; de ahí que solo pase "a veces".
+    ///
+    /// Se eleva TODO con el mismo desplazamiento, nunca átomo por átomo ni molécula por
+    /// molécula: recortar cada uno por su cuenta deformaría la molécula, y subir cada
+    /// fragmento por separado destruiría la disposición que el docente montó, que es
+    /// justo lo que el contrato se molesta en conservar.
+    ///
+    /// Mismo criterio que "copiar a un universo", que ya resolvía esto al otro lado.</summary>
+    float FloorLift(SceneMoleculeDTO[] molecules)
+    {
+        float minY = float.MaxValue;
+
+        foreach (var m in molecules)
+        {
+            if (m == null || m.atoms == null) continue;
+            Vector3 offset = m.offset != null ? m.offset.ToVector3() : Vector3.zero;
+            float   mScale = m.scale > 0f ? m.scale : 1f;
+
+            foreach (var a in m.atoms)
+            {
+                if (a == null) continue;
+                Vector3 local = a.position != null ? a.position.ToVector3() : Vector3.zero;
+                float y = ((local - Vector3.one * 0.5f) * mScale + offset).y * worldScale;
+                if (y < minY) minY = y;
+            }
+        }
+
+        if (minY == float.MaxValue) return 0f;
+
+        // El átomo más bajo tiene que apoyarse sobre el suelo, no atravesarlo: su centro
+        // va a la altura de su propio radio.
+        float floor = atomSize * 0.5f;
+
+        // Solo se sube, nunca se baja: lo que el docente colocó en alto se queda en alto.
+        return Mathf.Max(0f, floor - minY);
     }
 
     /// <summary>Enciende el resaltado de los átomos que indica el estado.
