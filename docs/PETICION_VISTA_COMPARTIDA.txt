@@ -1,0 +1,79 @@
+================================================================================
+PETICIÓN AL BACKEND: "TODOS A MI VISTA"
+ChemiTech · frontend -> backend · 2026-09-26
+================================================================================
+
+Es un cambio pequeño y aislado. El cliente ya está hecho y funcionando; solo le
+falta que el servidor guarde tres números que hoy ignora.
+
+
+================================================================================
+1. QUÉ SE QUIERE
+================================================================================
+
+Un botón del docente que traiga a los 25 alumnos a la orientación que él tiene
+en ese momento. UN EMPUJÓN, NO UN CANDADO: tras el salto, cada alumno sigue
+pudiendo girar y acercarse por su cuenta.
+
+POR QUÉ NO EL `locked` QUE YA EXISTE. Con locked, el cliente del alumno le
+reescribía la cámara CADA FRAME y la pantalla dejaba de responder al dedo. Poder
+rodear la molécula mientras el docente explica es media gracia de que esto sea
+3D, así que el bloqueo continuo se retira del uso.
+
+
+================================================================================
+2. LO QUE FALTA (lo único)
+================================================================================
+
+Que la acción `view` ACEPTE Y GUARDE yaw, pitch y distance:
+
+    [{"action":"view", "locked": false,
+      "yaw": 41.5, "pitch": 22.0, "distance": 7.3}]
+
+  - Son los que ya viajan en `state.camera`; lo que falta es poder ESCRIBIRLOS.
+  - `locked` sigue existiendo y el cliente lo manda en false. No lo usa para
+    nada más; si algún día se quiere el seguimiento continuo, el campo está.
+  - Grados y unidades de mundo, tal cual se leen hoy de `state.camera`.
+
+VALIDACIÓN SUGERIDA: cualquier float finito. Si algo viene raro, mejor recortar
+que rechazar: que el comando falle por un decimal deja al docente sin su botón
+delante del salón.
+
+HOY: el contrato (Fase 2 §3, línea 180) solo documenta
+`[{"action":"view","locked":true}]`, sin coordenadas, así que lo que se fija no
+es la vista del docente sino la que el servidor tenga por defecto (35 / 28 / 16).
+
+MIENTRAS TANTO NO SE ROMPE NADA: el cliente manda ya los tres campos. Si el
+servidor los ignora, el comando sigue siendo un `view` válido y el botón
+simplemente no hace nada visible. Ningún error, ninguna escena corrupta.
+
+
+================================================================================
+3. LO QUE SERÍA BUENO, PERO NO BLOQUEA
+================================================================================
+
+UN CONTADOR EN camera, p. ej. `"viewSeq": 7`, que suba en uno cada vez que el
+docente empuja su vista.
+
+EL PROBLEMA QUE RESUELVE: el alumno salta cuando los tres números CAMBIAN. Si el
+docente pulsa el botón dos veces sin haber movido la cámara, los números son
+idénticos y quien se haya ido a mirar por detrás no vuelve. Con el contador, el
+salto se dispara siempre.
+
+SIN ÉL TAMPOCO ES UN AGUJERO: el alumno tiene un botón "Ver la vista del
+docente" siempre visible que lo lleva a la última vista empujada. El contador
+solo evita tener que pedírselo de viva voz.
+
+
+================================================================================
+4. CÓMO SE COMPRUEBA
+================================================================================
+
+  1. El docente gira a un ángulo cualquiera y pulsa "Todos a mi vista".
+  2. En /state, `camera.yaw/pitch/distance` valen lo que tenía el docente.
+  3. El alumno salta a esa orientación en <=3 s, y JUSTO DESPUÉS puede arrastrar
+     para girar sin que se le devuelva la vista.
+
+================================================================================
+FIN
+================================================================================

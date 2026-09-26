@@ -48,6 +48,13 @@ public class OrbitCameraController : MonoBehaviour
     /// La colocación lo sigue, así que mover la cámara es lo que mueve el átomo.</summary>
     public Vector3 FocusPoint => curTarget;
 
+    // La vista a la que se DIRIGE la cámara, no la interpolada. Es lo que hay que mandar
+    // cuando el docente comparte su vista: si se leyera la actual, pulsar el botón justo
+    // después de girar mandaría un fotograma intermedio del suavizado.
+    public float ViewYaw      => desYaw;
+    public float ViewPitch    => desPitch;
+    public float ViewDistance => desDist;
+
     void Awake()
     {
         desYaw = curYaw = defYaw;

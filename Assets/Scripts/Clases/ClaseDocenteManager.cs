@@ -116,8 +116,15 @@ public class ClaseDocenteManager : MonoBehaviour
     const string SHOW_FMT =
         @"[{{""action"":""show"",""molecules"":[""{0}""],""replace"":{1}}}]";
     const string CMD_LIMPIAR  = @"[{""action"":""clear""}]";
-    const string CMD_FIJAR    = @"[{""action"":""view"",""locked"":true}]";
-    const string CMD_LIBERAR  = @"[{""action"":""view"",""locked"":false}]";
+
+    // "Todos a mi vista": manda la orientación ACTUAL del docente una sola vez. No es un
+    // candado. locked va en false a propósito: encenderlo dejaría al alumno clavado a la
+    // vista del docente para siempre, que es justo lo que se quiso quitar.
+    //
+    // Los tres números se formatean con InvariantCulture: en un celular en español
+    // saldrían con coma y el JSON dejaría de ser válido.
+    const string VIEW_FMT =
+        @"[{{""action"":""view"",""locked"":false,""yaw"":{0},""pitch"":{1},""distance"":{2}}}]";
     const string CMD_SIN_RESALTADO = @"[{""action"":""highlight""}]";
     // append=true SUMA al resaltado en vez de reemplazarlo. El guion lo necesita: cuando
     // el sodio entrega su electrón al cloro hay que ver los dos marcados a la vez, y con
@@ -155,7 +162,7 @@ public class ClaseDocenteManager : MonoBehaviour
     string pendingPrompt  = "";
     int    pendingBaseVersion;
     bool      leaving;
-    bool      cameraLocked;
+    bool      cameraRestored;   // la vista guardada se aplica una vez, al entrar
     string    classStatus = "waiting";
     Coroutine noticeCo;
 
@@ -173,7 +180,8 @@ public class ClaseDocenteManager : MonoBehaviour
         if (inputPrompt)         inputPrompt.onSubmit.AddListener(_ => SendPrompt());
         if (btnLimpiar)          btnLimpiar.onClick.AddListener(() => Apply(CMD_LIMPIAR));
         if (btnQuitarResaltado)  btnQuitarResaltado.onClick.AddListener(() => Apply(CMD_SIN_RESALTADO));
-        if (btnFijarVista)       btnFijarVista.onClick.AddListener(ToggleView);
+        if (btnFijarVista)       btnFijarVista.onClick.AddListener(PushView);
+        if (lblFijarVista)       lblFijarVista.text = "Todos a mi vista";
         if (btnIniciar)          btnIniciar.onClick.AddListener(StartClass);
         if (btnTerminar)         btnTerminar.onClick.AddListener(() => { if (stopModal) stopModal.SetActive(true); });
         if (btnStopCancel)       btnStopCancel.onClick.AddListener(() => { if (stopModal) stopModal.SetActive(false); });
@@ -295,9 +303,13 @@ public class ClaseDocenteManager : MonoBehaviour
         bool empty = state.molecules == null || state.molecules.Length == 0;
         if (emptyHint) emptyHint.SetActive(empty);
 
-        if (state.camera != null)
+        // La vista guardada se recupera SOLO al entrar. Aplicarla en cada estado hacía
+        // que la cámara del docente saltara a la posición almacenada cada vez que pulsaba
+        // cualquier botón: se colocaba en un buen ángulo, mostraba agua, y la vista se le
+        // iba sola. El docente es quien conduce; su cámara es suya.
+        if (state.camera != null && !cameraRestored)
         {
-            cameraLocked = state.camera.locked;
+            cameraRestored = true;
             if (cam) cam.SetView(state.camera.yaw, state.camera.pitch, state.camera.distance);
         }
 
@@ -308,8 +320,6 @@ public class ClaseDocenteManager : MonoBehaviour
 
     void RefreshControls(ClassStateResponse state)
     {
-        if (lblFijarVista) lblFijarVista.text = cameraLocked ? "Liberar vista" : "Fijar vista";
-
         bool running = classStatus == "running";
         bool ended   = classStatus == "ended";
 
@@ -501,7 +511,21 @@ public class ClaseDocenteManager : MonoBehaviour
         if (lblModoSumar) lblModoSumar.text = sumMode ? "Resaltar: sumando" : "Resaltar: solo uno";
     }
 
-    void ToggleView() => Apply(cameraLocked ? CMD_LIBERAR : CMD_FIJAR);
+    /// <summary>Trae a todos los alumnos a la vista que el docente tiene ahora mismo.
+    ///
+    /// Es un EMPUJÓN, no un candado: después de saltar, cada alumno sigue pudiendo girar
+    /// y acercarse por su cuenta. Poder mirar la molécula por el otro lado mientras el
+    /// docente explica es media gracia de que esto sea 3D.</summary>
+    void PushView()
+    {
+        if (!cam) { ShowNotice("No encuentro la cámara."); return; }
+
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        Apply(string.Format(VIEW_FMT,
+            cam.ViewYaw.ToString("0.##", inv),
+            cam.ViewPitch.ToString("0.##", inv),
+            cam.ViewDistance.ToString("0.##", inv)));
+    }
 
     void Show(string alias)
         => Apply(string.Format(SHOW_FMT, alias, addMode ? "false" : "true"));

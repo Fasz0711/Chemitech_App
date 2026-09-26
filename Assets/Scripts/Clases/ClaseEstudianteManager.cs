@@ -13,7 +13,12 @@ using TMPro;
 /// detección — la química llega ya resuelta del servidor.
 ///
 /// Lo que el alumno hace con su cámara es LOCAL: no viaja al servidor ni afecta a nadie.
-/// Si el docente fija la vista (camera.locked), la suya se alinea y deja de ser libre.
+///
+/// LA CÁMARA DEL ALUMNO NO SE BLOQUEA NUNCA. Cuando el docente pulsa "todos a mi vista",
+/// el alumno SALTA UNA VEZ a esa orientación y desde ahí sigue siendo libre de girar y
+/// acercarse. Antes se le reescribía la cámara cada frame mientras durase el bloqueo, y
+/// eso dejaba al alumno mirando una pantalla que no respondía; poder rodear la molécula
+/// mientras el docente explica es media gracia de que esto sea 3D.
 /// </summary>
 public class ClaseEstudianteManager : MonoBehaviour
 {
@@ -69,9 +74,16 @@ public class ClaseEstudianteManager : MonoBehaviour
 
     const float NOTICE_SECONDS = 3.5f;
 
-    // Última vista que mandó el docente, para el botón "volver a su vista".
+    // Última vista que mandó el docente, para el botón "ver su vista".
     float docYaw = 35f, docPitch = 28f, docDistance = 16f;
-    bool  cameraLocked;
+
+    // Se salta solo cuando la vista del docente CAMBIA. El estado completo llega en cada
+    // sondeo, así que sin esta comparación se saltaría cada dos segundos y el alumno no
+    // podría moverse: sería el bloqueo de antes con otro nombre.
+    bool  hasDocView;
+    Coroutine badgeCo;
+
+    const float BADGE_SECONDS = 2.5f;
 
     void Start()
     {
@@ -97,9 +109,6 @@ public class ClaseEstudianteManager : MonoBehaviour
     void Update()
     {
         sceneRenderer?.UpdateVisuals();
-
-        // Con la vista fijada, la cámara del alumno se mantiene en la del docente.
-        if (cameraLocked && cam) cam.SetView(docYaw, docPitch, docDistance);
     }
 
     void OnDestroy()
@@ -209,25 +218,59 @@ public class ClaseEstudianteManager : MonoBehaviour
         ApplyCamera(state.camera);
     }
 
+    /// <summary>Recibe la vista del docente. Salta a ella UNA VEZ, solo si es distinta de
+    /// la última que se recibió: pulsar "todos a mi vista" cambia los tres números, y eso
+    /// es lo que dispara el salto.
+    ///
+    /// 'camera.locked' se IGNORA a propósito. El docente comparte su vista de un empujón,
+    /// no encadena al alumno a ella.</summary>
     void ApplyCamera(CameraDTO camera)
     {
         if (camera == null) return;
 
-        docYaw       = camera.yaw;
-        docPitch     = camera.pitch;
-        docDistance  = camera.distance;
-        cameraLocked = camera.locked;
+        bool first   = !hasDocView;
+        bool changed = !first
+                    && (!Mathf.Approximately(docYaw,      camera.yaw)
+                     || !Mathf.Approximately(docPitch,    camera.pitch)
+                     || !Mathf.Approximately(docDistance, camera.distance));
 
-        if (followingBadge) followingBadge.SetActive(cameraLocked);
-        // Con la vista fija no tiene sentido ofrecer "volver a ella": ya estás.
-        if (btnVolverVista) btnVolverVista.gameObject.SetActive(!cameraLocked);
+        docYaw      = camera.yaw;
+        docPitch    = camera.pitch;
+        docDistance = camera.distance;
+        hasDocView  = true;
 
-        if (cameraLocked) SnapToTeacherView();
+        // El botón de ver la vista del docente está SIEMPRE disponible: es la salida para
+        // el alumno que se fue a mirar por detrás y quiere reencontrar lo que se señala,
+        // y también para quien entra a mitad de clase.
+        if (btnVolverVista) btnVolverVista.gameObject.SetActive(true);
+
+        // AL ENTRAR NO SE SALTA. Hoy el servidor sirve una cámara por defecto que no es la
+        // de nadie, y saltar a ella dejaría al alumno mirando desde demasiado lejos nada
+        // más entrar. Cuando el backend mande la vista real del docente, quitar el "first"
+        // de 'changed' hace que quien llegue tarde también se alinee solo.
+        if (changed) { SnapToTeacherView(); FlashBadge(); }
     }
 
     void SnapToTeacherView()
     {
         if (cam) cam.SetView(docYaw, docPitch, docDistance);
+    }
+
+    /// <summary>Avisa un momento de que la vista la acaba de mover el docente, para que el
+    /// alumno no crea que la aplicación se le fue sola.</summary>
+    void FlashBadge()
+    {
+        if (!followingBadge) return;
+        followingBadge.SetActive(true);
+        if (badgeCo != null) StopCoroutine(badgeCo);
+        badgeCo = StartCoroutine(HideBadgeAfter());
+    }
+
+    IEnumerator HideBadgeAfter()
+    {
+        yield return new WaitForSeconds(BADGE_SECONDS);
+        badgeCo = null;
+        if (followingBadge) followingBadge.SetActive(false);
     }
 
     // ── Copiar a un universo ───────────────────────────────────────────────────

@@ -181,7 +181,7 @@ public static class ClaseDocenteBuilder
                                     new Vector2(0.5f, 0.5f), new Vector2(-60f, 0f), new Vector2(300f, 68f), 22f);
         var lblModo    = btnModo.GetComponentInChildren<TextMeshProUGUI>(true);
 
-        var btnFijar   = MakeButton(bar.transform, "BtnFijarVista", "Fijar vista", PURPLE,
+        var btnFijar   = MakeButton(bar.transform, "BtnFijarVista", "Todos a mi vista", PURPLE,
                                     new Vector2(0.5f, 0.5f), new Vector2(260f, 0f), new Vector2(260f, 68f), 24f);
         var lblFijar   = btnFijar.GetComponentInChildren<TextMeshProUGUI>(true);
         var btnLimpiar = MakeButton(bar.transform, "BtnLimpiar", "Limpiar", RED,

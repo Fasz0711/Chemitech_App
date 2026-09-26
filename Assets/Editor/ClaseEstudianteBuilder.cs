@@ -126,12 +126,12 @@ public static class ClaseEstudianteBuilder
         SetRT(badge, new Vector2(0.5f, 1f), new Vector2(0f, -130f), new Vector2(620f, 56f));
         var bImg = badge.AddComponent<Image>();
         bImg.sprite = rounded; bImg.type = Image.Type.Sliced; bImg.color = CYAN;
-        MakeText(badge.transform, "Text", "Siguiendo la vista del docente",
+        MakeText(badge.transform, "Text", "El docente movio la vista",
                  new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(600f, 50f),
                  22f, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
         badge.SetActive(false);
 
-        var btnVolver = MakeButton(root, "BtnVolverVista", "Volver a la vista del docente", PURPLE,
+        var btnVolver = MakeButton(root, "BtnVolverVista", "Ver la vista del docente", PURPLE,
                                    new Vector2(0.5f, 0f), new Vector2(-300f, 80f), new Vector2(520f, 62f), 23f);
 
         var btnCopiar = MakeButton(root, "BtnCopiar", "Copiar a un universo", CYAN,
