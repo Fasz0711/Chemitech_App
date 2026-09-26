@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -34,11 +35,18 @@ public static class ReticleCrossTool
     public static void Build()
     {
         var scene = SceneManager.GetActiveScene();
-        int done = 0;
 
+        // Se BUSCA TODO PRIMERO y se reconstruye después. Reconstruir dentro del propio
+        // recorrido destruye hijos que ese mismo recorrido ya tiene en la lista, y al
+        // llegar a ellos leer su nombre revienta con MissingReferenceException: la
+        // herramienta moría a medias y sin llegar a guardar.
+        var found = new List<GameObject>();
         foreach (var root in scene.GetRootGameObjects())
             foreach (var t in root.GetComponentsInChildren<Transform>(true))
-                if (t.name == RETICLE) { Rebuild(t.gameObject); done++; }
+                if (t && t.name == RETICLE) found.Add(t.gameObject);
+
+        foreach (var go in found) if (go) Rebuild(go);
+        int done = found.Count;
 
         if (done == 0)
         {
