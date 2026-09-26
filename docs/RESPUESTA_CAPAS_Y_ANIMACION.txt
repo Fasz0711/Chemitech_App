@@ -1,0 +1,251 @@
+================================================================================
+CAPAS, TARJETA 2D Y ANIMACIÓN — RESPUESTA DEL BACKEND
+ChemiTech · backend -> frontend · 2026-09-26
+================================================================================
+
+Respuesta a PROPUESTA_CAPAS_Y_ANIMACION.txt. Se lee al lado de esa, y **sustituye
+sus secciones 6.1, 8 (la decisión de no partirlo), 9 y 10**: lo que se decide está
+aquí.
+
+VERIFICADO CONTRA EL CÓDIGO, no de memoria. Las tres afirmaciones centrales de la
+propuesta son ciertas:
+  - los campos de química ya viajan en cada sondeo y ningún script los lee;
+  - el diario NO los tiene (StructureAtomInfo solo lleva type y position,
+    StructureBondInfo solo begin/end/order);
+  - structure-2d no existe en ninguna parte del repo, ni Compute2DCoords.
+
+Y hay un hallazgo que reordena el entregable, más un hueco conceptual que la
+propuesta no ve. Empiezo por los dos.
+
+
+================================================================================
+A. EL PLAN DE VALIDACIÓN NO PIDE ANIMACIÓN  ->  SE PARTE EN DOS  [DECIDIDO]
+================================================================================
+
+La propia sección 0 cita el plan textualmente:
+
+    "Capas activables sobre el modelo 3D (símbolos, electronegatividad, tipo de
+     enlace con δ+/δ−) junto a una tarjeta con la fórmula estructural en 2D"
+
+NO HAY ANIMACIÓN AHÍ. La animación es una aportación de la propuesta, buena pero
+NO un requisito del plan.
+
+Por eso la decisión de la sección 8 —"entran las dos juntas"— tiene un problema:
+**apuesta el entregable obligatorio al opcional.** Si los guiones de animación no
+llegan, no hay NADA de este ítem, y lo que se queda fuera es un punto del plan de
+validación que el cliente podría cubrir casi sin backend.
+
+La propia sección 10 lo deja dicho "por si el calendario aprieta". Se va más
+lejos: **partirlo no es un compromiso, es alinearse con el requisito.**
+
+    ENTREGA 1  capas + tarjeta 2D      <- ESTO es el ítem del plan
+    ENTREGA 2  animación               <- mejora, detrás, y con el punto C resuelto
+
+Decidido por el autor el 2026-09-26. La sección 8 queda corregida en ese punto;
+todas sus demás casillas siguen en pie.
+
+
+================================================================================
+B. EL HUECO QUE LA PROPUESTA NO VE: LAS PRIMITIVAS SUPONEN UNA ESCENA
+================================================================================
+
+`StepPrimitive` referencia **fromMoleculeId + fromAtomId**, y su propio docstring
+explica por qué:
+
+    "transfer (Na -> Cl) y attract (H···O entre dos aguas) van de una molécula a
+     OTRA. Un solo moleculeId no alcanza."
+
+O sea que las cuatro primitivas están diseñadas para la ESCENA DE CLASE, donde las
+moléculas tienen id (m1, m2...). Una explicación POR MOLÉCULA no tiene escena ni
+ids.
+
+Y el problema no es de nombres, es de alcance. De los tres momentos de animación
+que identifica el guion de la lección:
+
+    el electrón del sodio al cloro .......... SÍ cabe (la red es UNA molécula
+                                              de 27 iones, con sus índices)
+    la atracción entre dos aguas ............ NO cabe: son DOS moléculas
+    las aguas separando los iones ........... NO cabe: son varias
+
+**El 6.1, tal como está propuesto, no puede alojar dos de los tres guiones que la
+lección necesita.** Hay que decidir (no está decidido):
+
+    (a) la explicación monta una MINI-ESCENA propia, con sus ids, y las
+        primitivas se reusan tal cual; o
+    (b) esas dos animaciones se quedan SOLO en la interacción de Fase 5, que es
+        colectiva y sí tiene escena, y la explicación por molécula anima
+        únicamente lo intramolecular.
+
+La (b) es más barata y respeta la separación que la propia sección 1 propone. La
+(a) da una experiencia mejor desde el diario. El backend no decide esto solo: es
+de los dos, y hay que resolverlo ANTES de escribir la entrega 2.
+
+
+================================================================================
+C. ENTREGA 1: LO QUE HACE EL BACKEND  [DECIDIDO]
+================================================================================
+
+C.1 NO SE CREA UN ENDPOINT NUEVO. SE ENRIQUECE EL QUE YA HAY.
+--------------------------------------------------------------------------------
+El 6.1 pide `GET /molecules/{smiles}/explanation`. No hace falta: **ya existe casi
+entero**. `GET /api/detection/by-smiles?smiles=...` devuelve nombre, fórmula,
+descriptores, solubilidad y `structure { atoms, bonds }`. Le faltan exactamente
+cuatro campos y la 2D.
+
+    atoms[]  gana   en        electronegatividad de Pauling
+                    charge    carga formal
+    bonds[]  gana   kind      "nonpolar" | "polar" | "ionic"
+                    negativeEnd   índice del átomo con δ−, o -1 si no aplica
+    structure gana  structure2d   coordenadas 2D (ver C.2)
+
+MISMOS NOMBRES Y MISMOS TIPOS que en la escena de clase, a propósito: que el
+cliente escriba DOS renderizadores para lo mismo sería la forma más segura de que
+se separen.
+
+>>> Y CON ESTO EL DIARIO SE ARREGLA GRATIS. El diario ya incrusta un
+    MoleculeDetailResponse completo por entrada, así que en cuanto esos campos
+    estén, la misma pantalla abierta desde el diario tiene su electronegatividad
+    y sus δ. Cierra el 2.3b y el 6.2 SIN un endpoint nuevo.
+
+C.2 LA 2D: COORDENADAS, Y LA CONDICIÓN NO NEGOCIABLE ES LA PARIDAD DE ÍNDICES
+--------------------------------------------------------------------------------
+Se acepta la recomendación del frontend: coordenadas, no PNG. El motivo es el que
+dan, y es el correcto: con un PNG la tarjeta es un dibujo al lado; con
+coordenadas, tocar el oxígeno en la tarjeta puede encender el oxígeno en el 3D, y
+ESE GESTO es la comparación de representaciones que pide el plan.
+
+La condición: **la 2D y la 3D salen del MISMO objeto de RDKit, con el mismo orden
+de átomos.** Si cada una se calcula de un `mol` distinto, los índices divergen en
+silencio y el puente señala el átomo equivocado — la misma familia de fallo que
+convirtió el CO2 en CH4O2: nada falla, solo se dibuja otra cosa.
+Consecuencia práctica: `structure2d.atoms[i]` es **el mismo átomo** que
+`structure.atoms[i]`, incluidos los hidrógenos. El cliente puede usar el índice
+como clave entre las dos vistas sin ningún mapeo.
+
+C.3 LA FORMA, CON ?smiles= COMO QUERY Y NO EN LA RUTA
+--------------------------------------------------------------------------------
+`/molecules/{canonicalSmiles}/explanation` se partiría con un SMILES que lleve
+`/`. Ninguna de las 18 moléculas del catálogo lo tiene hoy, pero el 2-buteno
+canonicaliza a `C/C=C/C`. El proyecto ya tomó esta decisión cuando nació
+`/detection/by-smiles?smiles=`; ser inconsistente ahora sería peor que el riesgo.
+
+FORMA OBJETIVO (propuesta; el contrato definitivo saldrá volcado del servidor
+real cuando esté construido, como el resto de los contratos del proyecto):
+
+    GET /api/detection/by-smiles?smiles=O
+
+    "structure": {
+      "atoms": [
+        { "type": "O", "position": {"x":0.5,"y":0.31,"z":0.5}, "en": 3.44, "charge": 0 },
+        { "type": "H", "position": {"x":1.0,"y":0.69,"z":0.5}, "en": 2.20, "charge": 0 }
+      ],
+      "bonds": [
+        { "beginAtomId": 0, "endAtomId": 1, "order": 1,
+          "kind": "polar", "negativeEnd": 0 }
+      ],
+      "structure2d": {
+        "atoms": [ {"x":0.50,"y":0.50}, {"x":0.79,"y":0.68} ]
+      }
+    }
+
+C.4 SIN AUTENTICACIÓN
+--------------------------------------------------------------------------------
+Responde la pregunta 5 de la sección 9: **no la necesita.** Sigue el precedente de
+`/by-smiles`, que funciona sin token y trata el enriquecimiento por usuario
+(`discoveredAt`) como opcional. Es química de catálogo, no dato de usuario, así
+que es cacheable y la pizarra y el diario usan exactamente lo mismo.
+
+
+================================================================================
+D. LO QUE PUEDEN EMPEZAR HOY, SIN ESPERAR AL BACKEND
+================================================================================
+
+**El render de las cuatro capas EN LA PIZARRA no necesita nada nuevo.** Los cuatro
+campos (`en`, `charge`, `kind`, `negativeEnd`) y los cuatro interruptores de
+`overlays` llegan en cada sondeo desde la Fase 2. Verificado: están en el estado y
+ningún script los lee.
+
+Lo único que espera al backend es:
+    - la tarjeta 2D (no existe todavía);
+    - la misma pantalla abierta DESDE EL DIARIO (le faltan los cuatro campos).
+
+O sea que la selección de molécula (5.1), el modal (5.2), las tres capas de 3D
+(5.3), el glifo δ (5.4) y el botón del diario (5.6) son trabajo de cliente que no
+depende de una sola línea de servidor.
+
+
+================================================================================
+E. LAS CINCO PREGUNTAS DE LA SECCIÓN 9, RESPONDIDAS
+================================================================================
+
+  [x] 1. ¿6.1 como endpoint propio, o componer de piezas?
+         NINGUNA DE LAS DOS: se enriquece `/detection/by-smiles`, que ya trae casi
+         todo. Una sola llamada para el cliente, cero endpoints nuevos, y el
+         diario arreglado de paso. Ver C.1.
+
+  [x] 2. El formato de la 2D -> COORDENADAS, con paridad de índices con la 3D.
+         Ver C.2. Es lo que convierte la tarjeta en un puente y no en una
+         ilustración.
+
+  [x] 3. ¿Cuántos guiones son realistas? -> TRES, no seis, y son los que el guion
+         de la lección ya identifica: el electrón Na->Cl, la atracción entre dos
+         aguas, y las aguas separando la red. Con eso quedan cubiertos los dos
+         tipos de enlace de la lección. El resto de moléculas abre el modal sin
+         botón de reproducir, que la propia propuesta ya acepta (6.1,
+         `hasInteraction: false`).
+         OJO: dos de esos tres choca con el punto B. Hay que resolverlo primero.
+
+  [x] 4. ¿Registrar que un alumno abrió la explicación? -> NO. Contradice la
+         decisión "es local" de la sección 8, exige DDL en la base compartida con
+         el frontend, y la evidencia de la tesis es el postest, no la telemetría.
+         Si algún día se quiere, lo barato es un contador en `user_statistics`, no
+         un registro de eventos nuevo.
+
+  [x] 5. ¿Autenticación? -> NO. Ver C.4.
+
+
+================================================================================
+F. LOS HUECOS QUE HAY QUE TAPAR, Y DE QUIÉN SON
+================================================================================
+
+  BACKEND
+    [ ] La tabla de electronegatividad y la regla de tipo de enlace viven en el
+        módulo `classroom` (chemistry_settings.py) y ahora las necesita
+        `detection`. Hay que moverlas a un sitio compartido ANTES de escribir,
+        no después: es la clase de dependencia cruzada que después nadie deshace.
+    [ ] Los cuatro campos + structure2d en la estructura (C.1, C.2).
+    [ ] Los guiones de animación no existen Y NO HAY DE DÓNDE SALGAN: sin
+        esquema, sin validación y sin sitio donde guardarlos.
+        `Molecule.structure_data` (JSONB, hoy solo con la red de NaCl) es el sitio
+        natural, igual que la red.
+    [ ] Coste del diario: ya recalcula química por entrada; añadir la 2D es
+        barato (Compute2DCoords no es un embedding 3D), pero si alguna vez pesa,
+        `structure_data` es el sitio para cachearla.
+
+  FRONTEND
+    [ ] El glifo δ (2.3a). Bloquea el DISEÑO de la capa de tipo de enlace, así que
+        va antes, no al final.
+    [ ] Todo lo de la sección D, que no depende del backend.
+
+  A ACORDAR ENTRE LOS DOS
+    [ ] El punto B: mini-escena con ids, o animación intramolecular solamente.
+    [ ] Confirmar los tres guiones de E.3.
+
+
+================================================================================
+G. CALENDARIO — UNA CORRECCIÓN A FAVOR
+================================================================================
+
+La sección 10 pone tres cosas delante de esto:
+    1. el despliegue en Render          -> HECHO (y verificado con 25 alumnos)
+    2. el script de exportación          -> HECHO (scripts.export_classroom)
+    3. el ensayo de 20 minutos           -> PENDIENTE
+
+**Las dos primeras ya están.** Así que el único bloqueo real es el ensayo con dos
+celulares, y esto puede empezar antes de lo que la propuesta asumía. El ensayo
+sigue siendo el camino crítico: es la única prueba que descubre lo que ninguno de
+los dos lados ve por separado.
+
+================================================================================
+FIN
+================================================================================

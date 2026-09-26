@@ -1,0 +1,343 @@
+================================================================================
+COMPARACIÓN DE REPRESENTACIONES: CAPAS, TARJETA 2D Y ANIMACIÓN
+ChemiTech · frontend -> backend · 2026-09-26
+================================================================================
+
+PROPUESTA PARA REVISAR ANTES DE ESCRIBIR CÓDIGO.
+Lo marcado [DECIDIDO] ya se acordó con el autor. Lo marcado [PROPUESTO] es lo que
+el frontend sugiere y el backend puede discutir. Lo que falta decidir está en la
+sección 9, como casillas sin marcar.
+
+Autocontenido: se puede leer sin el resto de la documentación.
+
+
+================================================================================
+0. LO QUE PIDE EL PLAN DE VALIDACIÓN, TAL CUAL
+================================================================================
+
+  "Comparación de representaciones. Capas activables sobre el modelo 3D
+   (símbolos, electronegatividad, tipo de enlace con δ+/δ−) junto a una tarjeta
+   con la fórmula estructural en 2D, para relacionar la notación del libro con
+   la forma espacial."
+
+El punto pedagógico es el PUENTE: el alumno ve H–O–H en el cuaderno y una forma
+doblada en la pantalla, y tiene que entender que son la misma cosa. Las capas son
+lo que hace explícito por qué esa forma importa —dónde está el δ−, qué enlace es
+polar— y la animación es lo que explica CÓMO se llegó ahí.
+
+
+================================================================================
+1. EL HALLAZGO QUE CAMBIA EL PLANTEAMIENTO
+================================================================================
+
+LO QUE SE PIDE NO ES LA "INTERACCIÓN" DE LA FASE 5. Son dos cosas distintas que
+se llaman igual, y conviene separarlas antes de escribir nada:
+
+  LA INTERACCIÓN DE FASE 5 (ya en el contrato)
+    Es ESTADO DE LA ESCENA DE CLASE. Vive en `state.interaction`, con `step` y
+    `totalSteps`; la conduce el DOCENTE y la ven los 25 a la vez. Sirve para
+    "ahora todos miran cómo el sodio entrega su electrón".
+
+  LO QUE PIDE ESTA PROPUESTA
+    Es una explicación POR MOLÉCULA que abre CADA UNO cuando quiere, sin
+    coordinación y sin permiso del docente. El autor lo dijo explícitamente:
+    "los estudiantes pueden abrir este modal... no importa que el profesor esté
+    explicando". Y tiene que funcionar TAMBIÉN DESDE EL DIARIO, donde no hay
+    clase, ni docente, ni escena.
+
+NO SE EXCLUYEN: la de Fase 5 es el momento colectivo del guion; esta es el
+"¿y esto por qué?" individual. Pero la de Fase 5 NO SIRVE para esto, porque está
+atada a una clase en curso y a un comando del docente.
+
+CONSECUENCIA: hace falta un recurso nuevo, por molécula, que se pueda pedir con
+una clase abierta o sin ella. Se propone en la sección 6.
+
+
+================================================================================
+2. QUÉ EXISTE HOY  (verificado contra el código, no de memoria)
+================================================================================
+
+2.1 YA LLEGA EN CADA SONDEO, Y NADIE LO USA
+--------------------------------------------------------------------------------
+El backend puso a viajar esto desde la Fase 2 "para que cuando la enciendas no
+tengas que esperar otra versión". Está ahí y el cliente lo ignora:
+
+    atoms[].en            electronegatividad de Pauling
+    atoms[].charge        carga formal
+    bonds[].kind          "nonpolar" | "polar" | "ionic"
+    bonds[].negativeEnd   ÍNDICE DEL ÁTOMO que lleva el δ−
+    canonicalSmiles       la semilla de la fórmula 2D
+
+    overlays { labels, electronegativity, bondTypes, structure2D }
+              ^ las CUATRO capas que pide el plan, ya declaradas
+
+    Verbo del docente: [{"action":"overlay","layer":"labels","visible":true}]
+
+VERIFICADO: `overlays` llega en el estado y NINGÚN script lo lee. Lo mismo con
+`annotations` y `attractions`. Son cañerías puestas y sin conectar.
+
+2.2 NO EXISTE EN NINGUNO DE LOS DOS LADOS
+--------------------------------------------------------------------------------
+    Render de las capas (cliente) ................... no empezado
+    GET /molecules/structure-2d ..................... Fase 4, no hecha
+    Guiones de interacción (primitivas) ............. Fase 5, no empezada
+    Predicciones y reveal ........................... Fase 5, no empezada
+    Selección de una MOLÉCULA como unidad ........... no existe
+
+2.3 DOS COSAS QUE VAN A MORDER SI NO SE MIRAN AHORA
+--------------------------------------------------------------------------------
+(a) EL CARÁCTER δ NO EXISTE EN LA FUENTE.
+    Verificado: U+03B4 no está en Fredoka-Medium SDF y la tabla de fallback está
+    VACÍA. `δ+` y `δ−` saldrían en blanco, igual que pasó con los emojis. Este
+    proyecto ya pagó esa lección una vez.
+    Se resuelve como se resolvió entonces (sprite, o una fuente con fallback),
+    pero hay que decidirlo antes de diseñar la capa, no al final.
+
+(b) EL DIARIO NO TIENE LA QUÍMICA QUE LAS CAPAS NECESITAN.
+    La estructura que alimenta su visor 3D es:
+
+        JournalAtom { type, position }                  <- sin en, sin charge
+        JournalBond { beginAtomId, endAtomId, order }   <- sin kind, sin negativeEnd
+
+    En clase esa química SÍ viaja; en el diario NO. Abrir la misma pantalla desde
+    el diario daría electronegatividad vacía y ningún δ. Es la sección 6.2.
+
+
+================================================================================
+3. EL MODELO: UN SOLO MODAL, DOS PUERTAS  [DECIDIDO]
+================================================================================
+
+Hay UNA pantalla de explicación de molécula. Se abre desde dos sitios:
+
+    DESDE LA PIZARRA   el alumno (o el docente) toca un átomo, aparece un botón
+                       "Ver explicación", y se abre para ESA molécula.
+    DESDE EL DIARIO    en el detalle de una molécula descubierta, el mismo botón.
+
+Es la misma pantalla con la misma información, y por eso el diario no necesita
+ganar una pantalla nueva: reusa esta. Que sea la misma también importa para la
+tesis — el alumno ve lo mismo en clase que cuando repasa solo.
+
+LO QUE MUESTRA, todo junto y a la vez:
+
+    EL MODELO 3D de esa molécula, rotable.
+    LA TARJETA 2D con la fórmula estructural, al lado.
+    LAS CUATRO CAPAS, cada una con su interruptor:
+        · símbolos           etiqueta con el elemento sobre cada átomo
+        · electronegatividad el valor de Pauling, y el degradado que lo hace
+                             comparable de un vistazo
+        · tipo de enlace     color por kind + δ+/δ− en los extremos del polar
+        · fórmula 2D         enciende y apaga la tarjeta
+    LA ANIMACIÓN, con un botón de reproducir.
+
+POR QUÉ 2D Y 3D A LA VEZ Y NO EN PESTAÑAS: el objetivo es que el alumno RELACIONE
+las dos notaciones. Si tiene que cambiar de pestaña para comparar, la comparación
+depende de su memoria, que es justo lo que se está intentando construir.
+
+
+================================================================================
+4. CÓMO SE USA
+================================================================================
+
+  1. En la pizarra, el alumno toca un átomo del agua. La molécula se aísla (esto
+     ya funciona hoy) y aparece el botón "Ver explicación".
+
+  2. Lo pulsa. Se abre el modal con el agua en 3D, su fórmula 2D al lado, y las
+     capas apagadas.
+
+  3. Enciende "tipo de enlace": los dos O–H se colorean como polares y aparecen
+     δ− sobre el oxígeno y δ+ sobre los hidrógenos.
+
+  4. Pulsa reproducir. La animación muestra cómo se forma el enlace y hacia dónde
+     se desplaza la carga.
+
+  5. Cierra. Vuelve a la pizarra exactamente donde estaba. El docente no se ha
+     enterado y no se ha interrumpido nada.
+
+  6. Esa noche, en el diario, abre el agua y pulsa el mismo botón. Ve lo mismo.
+
+NADA DE ESTO VIAJA AL SERVIDOR. Es local, como el aislamiento: abrir la
+explicación no cambia lo que ven los demás ni deja rastro en la clase.
+
+
+================================================================================
+5. LO QUE CAMBIA EN EL FRONTEND
+================================================================================
+
+5.1 Seleccionar una MOLÉCULA, no solo un átomo
+    Hoy tocar un átomo lo aísla (alumno) o lo selecciona para moverlo (docente).
+    El cliente ya sabe a qué molécula pertenece cada átomo —`MoleculeOf(atomId)`
+    existe y funciona—, así que falta el botón, no el dato.
+
+5.2 La pantalla de explicación
+    Un modal, no una escena: tiene que abrirse encima de la pizarra y devolver al
+    alumno exactamente donde estaba, sin recargar ni perder la vista.
+    El visor 3D se puede reusar: el diario ya tiene uno (MoleculeViewer3D) que
+    renderiza a textura y se rota arrastrando.
+
+5.3 Las cuatro capas
+    Se dibujan del dato que YA llega (2.1). Ninguna necesita backend nuevo salvo
+    la 2D.
+      · símbolos y electronegatividad: etiquetas sobre el átomo, con Billboard.
+      · tipo de enlace: color del cilindro por `kind`, y δ± colocado usando
+        `negativeEnd` — el extremo marcado es δ−, el otro δ+.
+
+5.4 δ+ y δ− que se vean  [ver 2.3a]
+    Hay que resolver el glifo antes de diseñar la capa.
+
+5.5 Reproducir la animación
+    Las primitivas de Fase 5 (move, transfer, bond, attract) se interpolan entre
+    el estado inicial y el final de cada paso. El acuerdo de Fase 5 ya dice que
+    CADA PASO DEFINE SU ESTADO FINAL y la animación es solo la transición: quien
+    llega tarde dibuja el estado directo. Aquí vale igual — si la animación no
+    se puede reproducir, el modal sigue siendo útil con capas y tarjeta.
+
+5.6 El botón en el diario
+    El detalle de molécula ya tiene su sitio; solo se le añade el botón.
+
+
+================================================================================
+6. LO QUE CAMBIA EN EL BACKEND
+================================================================================
+
+6.1 UN RECURSO POR MOLÉCULA, QUE NO DEPENDA DE UNA CLASE  [PROPUESTO]
+--------------------------------------------------------------------------------
+Es lo único grande, y nace del hallazgo de la sección 1: esto tiene que funcionar
+sin clase abierta (desde el diario), así que no puede salir de `state`.
+
+    GET /api/molecules/{canonicalSmiles}/explanation
+
+    {
+      "canonicalSmiles": "O",
+      "name": "Agua",
+      "formula": "H2O",
+      "structure2D": { ... },          <- ver 6.3
+      "atoms": [ { "type": "O", "position": {...}, "en": 3.44, "charge": 0 } ],
+      "bonds": [ { "beginAtomId": 0, "endAtomId": 1, "order": 1,
+                   "kind": "polar", "negativeEnd": 0 } ],
+      "interaction": {                 <- el guion de la animación, Fase 5
+        "id": "h2o-formacion", "totalSteps": 3,
+        "primitives": [ ... ]
+      },
+      "hasInteraction": true
+    }
+
+  - `atoms` y `bonds` con la MISMA forma que en la escena de clase. Que el
+    cliente tenga que escribir dos renderizadores para lo mismo sería la forma
+    más segura de que se separen.
+  - `hasInteraction` en false para una molécula sin guion: el modal se abre igual,
+    con capas y tarjeta, y sin botón de reproducir. La mayoría de las moléculas
+    del catálogo no van a tener guion, y eso está bien.
+  - Se identifica por SMILES canónico porque es lo que tiene el diario. En la
+    pizarra el cliente también lo tiene: viaja en cada molécula del estado.
+
+6.2 LA QUÍMICA QUE LE FALTA AL DIARIO  [PROPUESTO]
+--------------------------------------------------------------------------------
+Si 6.1 existe, el diario se resuelve solo: pide la explicación por SMILES y ya
+trae `en`, `charge`, `kind` y `negativeEnd`.
+ALTERNATIVA, si 6.1 se parte en trozos: añadir esos cuatro campos a la estructura
+que ya devuelve `GET /journal`. Menos endpoints, pero deja el guion fuera.
+
+6.3 LA FÓRMULA 2D: EN QUÉ FORMATO  [ABIERTO — decide el backend]
+--------------------------------------------------------------------------------
+`GET /molecules/structure-2d` es Fase 4 y todavía no existe, así que el formato
+está sin decidir. Lo que el cliente puede consumir, de más fácil a menos:
+
+    PNG (o el binario en base64)   Se pinta tal cual. Cero trabajo de cliente.
+                                   Se ve mal al ampliar y no se puede recolorear
+                                   para que combine con las capas.
+    COORDENADAS 2D + enlaces       El cliente la dibuja. Se puede resaltar el
+                                   mismo átomo en la tarjeta Y en el 3D a la vez,
+                                   que es exactamente el puente que pide el plan.
+                                   Más trabajo de cliente.
+    SVG                            NO. Unity no lo renderiza sin un paquete extra;
+                                   sería meter una dependencia por una imagen.
+
+RECOMENDACIÓN DEL FRONTEND: coordenadas. Es lo único que permite que tocar el
+oxígeno en la tarjeta encienda el oxígeno en el 3D, y ese gesto ES la comparación
+de representaciones. Con un PNG la tarjeta es un dibujo al lado, no un puente.
+
+6.4 LOS GUIONES DE ANIMACIÓN  (Fase 5)
+--------------------------------------------------------------------------------
+Las cuatro primitivas ya están en el contrato (move, transfer, bond, attract).
+Lo que falta es que existan guiones escritos para las moléculas de la lección.
+Con seis basta para el taller: agua, oxígeno, CO2, amoníaco, cloruro de sodio y
+metano. El guion de la clase (docs/guion-listas-para-backend.txt) ya identifica
+los tres momentos donde la animación entra: el electrón del sodio al cloro, la
+atracción entre dos aguas, y las aguas separando los iones de la red.
+
+
+================================================================================
+7. LO QUE NO CAMBIA
+================================================================================
+
+  - La escena de clase, el sondeo, los comandos y el roster: intactos.
+  - La interacción de Fase 5 SIGUE EXISTIENDO como estado de escena para el
+    momento colectivo del guion. Esta propuesta no la sustituye.
+  - Abrir la explicación no viaja al servidor ni afecta a los demás.
+  - El alumno sigue sin poder editar la escena de clase.
+
+
+================================================================================
+8. DECISIONES YA TOMADAS CON EL AUTOR
+================================================================================
+
+  [x] ENTRAN LAS DOS JUNTAS: capas + tarjeta 2D + animación. No se parte en un
+      entregable "solo capas" aunque las capas se podrían hacer hoy sin backend.
+      Consecuencia asumida: esto NO puede empezar hasta que la Fase 5 tenga
+      guiones, porque sin ellos el botón de reproducir no tiene qué reproducir.
+  [x] Una sola pantalla, abierta desde la pizarra y desde el diario.
+  [x] El botón aparece al seleccionar un átomo de la molécula.
+  [x] El alumno la abre cuando quiere, sin depender del docente.
+  [x] Es local: no viaja al servidor ni cambia lo que ven los demás.
+  [x] El diario no gana una pantalla nueva: reusa esta.
+
+
+================================================================================
+9. PREGUNTAS ABIERTAS PARA EL BACKEND
+================================================================================
+
+  [ ] ¿EXISTE 6.1 como endpoint propio, o preferís que el cliente componga la
+      explicación de piezas que ya existen (/detection/by-smiles + structure-2d +
+      un endpoint de guion)? Una llamada es más simple para el cliente; tres son
+      más reutilizables.
+
+  [ ] EL FORMATO DE LA 2D (6.3). Es la que más cambia el trabajo de los dos
+      lados, y la que decide si la tarjeta es un puente o una ilustración.
+
+  [ ] ¿CUÁNTOS GUIONES DE ANIMACIÓN son realistas? Si seis es mucho, decid
+      cuáles: con el agua y el cloruro de sodio se cubren los dos tipos de enlace
+      de la lección, y el modal funciona sin guion para el resto.
+
+  [ ] ¿HAY QUE REGISTRAR que un alumno abrió la explicación? Como evidencia de
+      la tesis sería un dato interesante —quién exploró y cuánto—, pero es
+      telemetría nueva y no estaba en el plan. El frontend no lo da por hecho.
+
+  [ ] ¿LA EXPLICACIÓN NECESITA AUTENTICACIÓN? Desde el diario el alumno está
+      logueado; desde la pizarra también. Pero si el recurso es público se puede
+      cachear, y son datos de catálogo, no de usuario.
+
+
+================================================================================
+10. CALENDARIO — LÉASE ANTES DE EMPEZAR
+================================================================================
+
+ESTO NO ESTÁ EN LA LISTA DE LO QUE FALTA PARA EL TALLER. Es funcionalidad nueva y
+depende de DOS fases que no están empezadas por ninguno de los dos lados.
+
+Lo que sigue siendo el camino crítico, y no cambia:
+    1. El despliegue en Render.
+    2. El script de exportación de la evidencia.
+    3. EL ENSAYO DE 20 MINUTOS con dos celulares y el guion en la mano.
+
+El punto 3 es la única prueba que descubre lo que ninguno de los dos lados ve por
+separado. Si esto entra, entra DETRÁS de esos tres, no delante.
+
+Y una nota sobre la decisión de la sección 8: esperar a tener las dos cosas
+significa que si la Fase 5 no llega, NO HAY NADA de este ítem. La alternativa que
+se descartó —soltar primero el modal con capas y tarjeta, que no necesita más que
+la 2D— habría cubierto la mitad del ítem 2 del plan de validación con trabajo de
+cliente. Queda dicho por si el calendario aprieta y conviene reconsiderarlo.
+
+================================================================================
+FIN
+================================================================================
