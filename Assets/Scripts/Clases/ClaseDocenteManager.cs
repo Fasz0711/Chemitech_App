@@ -286,6 +286,7 @@ public class ClaseDocenteManager : MonoBehaviour
     {
         currentVersion = state.version;
         classStatus    = state.status;
+        LogState(state);
 
         sceneRenderer.Render(state.molecules);
         sceneRenderer.ApplyHighlights(state.highlights);
@@ -545,6 +546,28 @@ public class ClaseDocenteManager : MonoBehaviour
     void RefreshAddModeLabel()
     {
         if (lblModoAgregar) lblModoAgregar.text = addMode ? "Modo: agregar" : "Modo: reemplazar";
+    }
+
+    /// <summary>Deja en la consola qué llegó de verdad: por molécula, su nombre, cuántos
+    /// átomos y CUÁNTOS ENLACES.
+    ///
+    /// Existe porque "los enlaces desaparecieron al publicar" tiene dos causas posibles
+    /// que se ven idénticas en pantalla —que el servidor no los mandara, o que el cliente
+    /// no los dibujara— y sin este renglón no hay forma de saber cuál fue. El cliente no
+    /// puede dibujar lo que no recibe.</summary>
+    static void LogState(ClassStateResponse state)
+    {
+        var sb = new System.Text.StringBuilder("[Pizarra] v").Append(state.version).Append(" ->");
+        if (state.molecules == null || state.molecules.Length == 0) sb.Append(" (escena vacia)");
+        else
+            foreach (var m in state.molecules)
+            {
+                if (m == null) continue;
+                sb.Append(" [").Append(string.IsNullOrEmpty(m.name) ? "sin nombre" : m.name)
+                  .Append(": ").Append(m.atoms != null ? m.atoms.Length : 0).Append(" atomos, ")
+                  .Append(m.bonds != null ? m.bonds.Length : 0).Append(" enlaces]");
+            }
+        Debug.Log(sb.ToString());
     }
 
     /// <summary>Qué hay en la pizarra, según el SERVIDOR. Es la única forma que tiene el
