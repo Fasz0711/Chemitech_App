@@ -178,14 +178,40 @@ e) LOS ENLACES VIENEN CON SU TIPO YA CALCULADO, también en lo construido a mano
 El de moléculas subió de 4 a 12 justamente por esto: construyendo a mano,
 "molécula" = fragmento conectado, así que 6 átomos sueltos son 6 fragmentos.
 
-CÓDIGOS, todos con la forma de siempre {"detail": "ERR_..."}:
+CÓDIGOS, todos con la forma de siempre {"detail": "ERR_..."}. CADA FALLO TIENE SU
+PROPIO CÓDIGO: pueden mostrar un mensaje distinto para cada uno y no tienen que
+adivinar.
 
-  409 ERR_SCENE_FULL          más de 12 fragmentos
-  422 ERR_MOLECULE_TOO_BIG    un fragmento con más de 30 átomos pesados
-  422 ERR_UNKNOWN_MOLECULE    un elemento fuera de los 24 del catálogo
-  422 ERR_INVALID_ACTION      más de 60 átomos, o el JSON mal formado, o una
-                              coordenada que no es un número
-  409 ERR_STALE_SCENE         baseVersion viejo (igual que siempre)
+  409 ERR_SCENE_FULL              más de 12 fragmentos
+  422 ERR_TOO_MANY_ATOMS          más de 60 átomos en la escena
+  422 ERR_MOLECULE_TOO_BIG        un fragmento con más de 30 átomos pesados
+  422 ERR_UNKNOWN_MOLECULE        un elemento fuera de los 24 del catálogo.
+                                  OJO: el símbolo se compara TAL CUAL se escribe
+                                  en química, así que "o" en minúscula es un
+                                  elemento que no existe. Manden "O", "Na", "Cl".
+  422 ERR_ACTIONS_JSON_MALFORMED  el campo actionsJson llegó y NO era JSON.
+                                  Es un problema de SERIALIZACIÓN de su lado
+                                  (comillas escapadas dos veces, el string
+                                  cortado), no del vocabulario de acciones.
+  422 ERR_INVALID_ACTION          el JSON está bien formado pero la acción no
+                                  existe o le falta/sobra algo. SOLO esto.
+  409 ERR_STALE_SCENE             baseVersion viejo (igual que siempre)
+
+  >>> ESTOS DOS CÓDIGOS SON NUEVOS (26/09). Antes ERR_INVALID_ACTION significaba
+      las tres cosas a la vez, y eso costó una clase de depuración: con dos
+      átomos en pantalla el mensaje mandó a revisar el tope de 60, que no tenía
+      nada que ver. Si su cliente ya trata los códigos desconocidos con un
+      mensaje genérico, no tienen que hacer nada urgente; pero ahora pueden
+      decirle al docente qué pasó de verdad.
+
+  >>> Y EL SERVIDOR AHORA LOGUEA el payload rechazado con el motivo exacto. Si
+      algo se rechaza y no entienden por qué, la consola del backend lo dice.
+
+PUBLICAR CON LA PIZARRA VACÍA ES VÁLIDO  [CAMBIO DEL 26/09]
+  `{"action":"setAtoms","atoms":[]}` vacía la escena de los alumnos. Antes se
+  exigía al menos un átomo y era un callejón sin salida: el docente borraba
+  todo, pulsaba publicar y recibía "acción inválida". Si publicar es el estado
+  completo, el estado vacío es un estado.
 
   >>> AVISEN EN EL UNIVERSO, NO AL PUBLICAR. Lleven la cuenta de átomos y
       fragmentos mientras el docente construye y avísenle al acercarse al tope.
@@ -268,6 +294,10 @@ avisen: es un número en el servidor, no un rediseño.
   [ ] Un rechazo al publicar deja el indicador de "cambios sin publicar"
       encendido: la escena de los alumnos no cambió, así que sigue habiendo algo
       pendiente.
+  [ ] Cada código de error de la §3 tiene su mensaje. En particular, NO mencionen
+      el tope de átomos salvo con ERR_TOO_MANY_ATOMS.
+  [ ] Publicar con la pizarra vacía se manda igual (`atoms: []`) y no se bloquea
+      en el cliente.
 
 ================================================================================
 FIN

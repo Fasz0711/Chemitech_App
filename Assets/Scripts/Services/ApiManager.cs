@@ -368,7 +368,11 @@ public class ApiManager : MonoBehaviour
             source      = source,       // "button" o "prompt"
             promptText  = promptText,   // lo que escribió el docente; queda como evidencia
         });
-        Debug.Log($"[API] POST {BASE_URL}/classes/{classId}/commands/apply - {actionsJson}");
+        // Se registra EL SOBRE, no el actionsJson suelto. Es donde se vería un escapado
+        // doble, que llega al servidor como ERR_ACTIONS_JSON_MALFORMED; imprimiendo solo
+        // el actionsJson crudo el log se ve bien aunque lo enviado esté mal, y no hay
+        // forma de saber de qué lado está el problema.
+        Debug.Log($"[API] POST {BASE_URL}/classes/{classId}/commands/apply\n{body}");
 
         StartCoroutine(PostAuthed($"/classes/{classId}/commands/apply", body,
             json => onSuccess?.Invoke(JsonUtility.FromJson<ClassStateResponse>(json)),

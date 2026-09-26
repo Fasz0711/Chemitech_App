@@ -617,19 +617,25 @@ public class ClaseDocenteManager : MonoBehaviour
     {
         if (busy || !placement) return;
 
-        var atoms  = placement.GetOrderedAtoms();
-        var counts = SetAtomsCommand.Count(atoms, ClusterDistance);
+        var atoms = placement.GetOrderedAtoms();
 
-        // El servidor también lo valida, pero rechaza el comando ENTERO. Avisar aquí le
-        // ahorra al docente descubrirlo delante del salón.
-        if (counts.OverLimit) { ShowNotice(SetAtomsCommand.WarningFor(counts)); return; }
+        // Solo se frena por el total de átomos, que es un número EXACTO. Los fragmentos y
+        // los átomos pesados por fragmento se cuentan con el corte del cliente, que no es
+        // el del servidor: bloquear con una aproximación puede negar una publicación que
+        // el servidor habría aceptado, y el docente no tendría forma de saber que el "no"
+        // se lo inventó su propio teléfono. Esos dos los decide el servidor, que ahora
+        // devuelve un código distinto para cada uno.
+        if (atoms.Count > SetAtomsCommand.MAX_TOTAL_ATOMS)
+        {
+            ShowNotice($"Son demasiados átomos: {atoms.Count} de {SetAtomsCommand.MAX_TOTAL_ATOMS}.");
+            return;
+        }
 
-        // Un universo vacío se publica como 'clear', no como una lista de cero átomos:
-        // es el verbo que ya existe para eso y evita depender de un caso que el contrato
-        // no describe.
-        Apply(atoms.Count == 0
-            ? CMD_LIMPIAR
-            : SetAtomsCommand.Build(atoms, WorldToAngstrom));
+        // Un universo vacío SE PUBLICA IGUAL, como una lista de cero átomos: publicar es
+        // "esto es lo que hay ahora", y lo que hay ahora es nada. Sustituirlo por 'clear'
+        // funcionaba, pero hacía que vaciar la pizarra pasara por otro camino distinto al
+        // de cualquier otra publicación.
+        Apply(SetAtomsCommand.Build(atoms, WorldToAngstrom));
     }
 
     /// <summary>De unidades de mundo a ångströms. Es el INVERSO exacto del factor con el
@@ -758,12 +764,22 @@ public class ClaseDocenteManager : MonoBehaviour
         {
             case "ERR_STALE_SCENE":        return "La escena cambió. Vuelve a intentarlo.";
             case "ERR_SCENE_FULL":         return $"La pizarra está llena ({SetAtomsCommand.MAX_FRAGMENTS} moléculas). Junta o quita algunas.";
-            case "ERR_UNKNOWN_MOLECULE":   return "No reconocí esa molécula. Revisa que todos los átomos sean del catálogo.";
+            case "ERR_UNKNOWN_MOLECULE":   return "Hay un elemento que el servidor no reconoce.";
             case "ERR_MOLECULE_TOO_BIG":   return $"Esa molécula es demasiado grande ({SetAtomsCommand.MAX_HEAVY_PER_FRAGMENT} átomos pesados como máximo).";
             case "ERR_SCENE_REFERENCE":    return "Eso no está en la escena.";
-            // Al publicar, este es también el que llega al pasarse del total de átomos:
-            // el contrato no los distingue, así que el mensaje tiene que cubrir los dos.
-            case "ERR_INVALID_ACTION":     return $"No se pudo aplicar. Si estabas publicando, revisa que no pases de {SetAtomsCommand.MAX_TOTAL_ATOMS} átomos.";
+            // Desde el 26/09 el servidor separa los tres motivos que antes compartían
+            // ERR_INVALID_ACTION. Ya no hay que deducir cuál fue por el número de átomos.
+            case "ERR_TOO_MANY_ATOMS":
+                return $"Son demasiados átomos: el máximo es {SetAtomsCommand.MAX_TOTAL_ATOMS}.";
+
+            // Esto NO es culpa del docente ni de lo que construyó: el actionsJson salió
+            // mal formado de aquí. Se dice tal cual para que nadie pierda la clase
+            // buscando qué molécula estaba mal.
+            case "ERR_ACTIONS_JSON_MALFORMED":
+                return "Fallo del cliente al preparar el comando. Repórtalo: no es lo que construiste.";
+
+            case "ERR_INVALID_ACTION":
+                return "El servidor no reconoció la acción.";
             case "ERR_CLASS_ALREADY_ENDED":return "La clase ya terminó.";
             case "ERR_CLASS_NOT_RUNNING":  return "La clase todavía no ha empezado.";
             case "ERR_NOT_CLASS_OWNER":    return "Esta clase es de otro docente.";
