@@ -148,24 +148,12 @@ public static class ExplicacionPanelTool
                  new Vector2(0f, 0.5f), new Vector2(60f, -300f), new Vector2(700f, 30f),
                  19f, new Color(1f, 1f, 1f, 0.55f), TextAlignmentOptions.Center, FontStyles.Normal);
 
-        // Dos animaciones, dos botones. La de la izquierda se DEDUCE de la química de la
-        // molécula y existe para todas; la de la derecha es un guion escrito y solo
-        // aparece en las dos que lo tienen. Cuentan cosas distintas, así que no se
-        // sustituyen: una explica cómo se forma ESTA molécula, la otra por qué dos aguas
-        // se atraen.
-        var btnPlay = MakeButton(card.transform, "BtnPlay", "Ver cómo se forma", GREEN,
-                                 new Vector2(0f, 0.5f), new Vector2(60f, -344f), new Vector2(330f, 56f), 21f);
-        btnPlay.gameObject.SetActive(false);
-
-        var btnPlayExtra = MakeButton(card.transform, "BtnPlayExtra", "Ver más", PURPLE,
-                                      new Vector2(0f, 0.5f), new Vector2(410f, -344f), new Vector2(350f, 56f), 20f);
-        btnPlayExtra.gameObject.SetActive(false);
-
-        // El texto del paso. Es MEDIA EXPLICACIÓN: la animación muestra qué pasa y esta
-        // línea dice por qué, así que tiene su propio sitio y no comparte con la pista.
+        // EL TEXTO DEL PASO. Es MEDIA EXPLICACIÓN: la animación muestra qué pasa y esta
+        // línea dice por qué. Ocupa el ancho entero bajo el modelo y es grande a
+        // propósito: se lee a la vez que se mira la animación, no después.
         var caption = MakeText(card.transform, "Caption", "",
-                               new Vector2(0f, 0.5f), new Vector2(60f, -398f), new Vector2(700f, 60f),
-                               21f, Hex("BFE9F2"), TextAlignmentOptions.Center, FontStyles.Normal);
+                               new Vector2(0f, 0.5f), new Vector2(60f, -368f), new Vector2(700f, 104f),
+                               26f, Hex("BFE9F2"), TextAlignmentOptions.Center, FontStyles.Normal);
 
         // ── Tarjeta 2D a la derecha ───────────────────────────────────────────
         var card2D = EnsureChild(card.transform, "Card2D");
@@ -204,6 +192,13 @@ public static class ExplicacionPanelTool
         var tglBonds   = MakeToggle(card.transform, "TglBondTypes", "Tipo de enlace (δ+ / δ−)",
                                     new Vector2(-60f, -652f));
 
+        // El botón vive CON LOS INTERRUPTORES, no bajo el modelo. La columna derecha es
+        // todo lo que se toca y la izquierda todo lo que se mira; mezclarlas obligaba al
+        // texto del paso a compartir sitio con un botón.
+        var btnPlay = MakeButton(card.transform, "BtnPlay", "Ver cómo se forma", GREEN,
+                                 new Vector2(1f, 1f), new Vector2(-60f, -724f), new Vector2(360f, 58f), 22f);
+        btnPlay.gameObject.SetActive(false);
+
         var comp = Ensure<ExplanationPanel>(panel);
 
         // ── Cableado ──────────────────────────────────────────────────────────
@@ -214,6 +209,8 @@ public static class ExplicacionPanelTool
         Set(vso, "bondMaterial", bondMat);
         Set(vso, "labelFont",    fnt);
         Set(vso, "target",       raw);
+        SetFloat(vso, "atomScale",     0.58f);
+        SetFloat(vso, "electronScale", 0.30f);
         vso.ApplyModifiedProperties();
 
         var pso = new SerializedObject(comp);
@@ -228,7 +225,6 @@ public static class ExplicacionPanelTool
         Set(pso, "structure2D",          flat);
         Set(pso, "btnClose",             btnClose);
         Set(pso, "btnPlay",              btnPlay);
-        Set(pso, "btnPlayExtra",         btnPlayExtra);
         Set(pso, "captionLabel",         caption);
         pso.ApplyModifiedProperties();
 
@@ -291,6 +287,13 @@ public static class ExplicacionPanelTool
         tgl.graphic       = checkImg;
         tgl.isOn          = false;
         return tgl;
+    }
+
+    static void SetFloat(SerializedObject so, string prop, float value)
+    {
+        var p = so.FindProperty(prop);
+        if (p == null) { problems.Add($"El campo '{prop}' no existe en {so.targetObject.GetType().Name}."); return; }
+        p.floatValue = value;
     }
 
     static void Set(SerializedObject so, string prop, Object value)

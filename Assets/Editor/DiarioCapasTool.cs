@@ -57,38 +57,48 @@ public static class DiarioCapasTool
             return;
         }
 
-        // El visor se encoge y sube: las tres filas necesitan la mitad inferior.
+        // TODO TIENE QUE CABER EN 660 DE ALTO (el panel va de -330 a +330). La versión
+        // anterior dejaba el botón en -352 y el texto del paso en -404, o sea FUERA: el
+        // botón se veía igual porque nada lo recorta, pero el texto caía sobre el fondo,
+        // fuera de la tarjeta, y parecía que no se mostraba. En la pizarra no pasaba
+        // porque allí la tarjeta es mucho más alta.
         var viewer = FindDeep(panel.transform, "Viewer");
-        if (viewer) SetRT(viewer, new Vector2(0.5f, 0.5f), new Vector2(0f, 110f), new Vector2(470f, 410f));
+        if (viewer) SetRT(viewer, new Vector2(0.5f, 0.5f), new Vector2(0f, 152f), new Vector2(440f, 336f));
         else problems.Add("No encontré el 'Viewer' dentro de ViewerPanel.");
 
+        var viewerComp = FindInScene<MoleculeViewer3D>(scene);
+        if (viewerComp)
+        {
+            var vso = new SerializedObject(viewerComp);
+            SetFloat(vso, "atomScale",     0.58f);
+            SetFloat(vso, "electronScale", 0.30f);
+            vso.ApplyModifiedProperties();
+        }
+        else problems.Add("No encontré MoleculeViewer3D en la escena.");
+
         var hint = FindDeep(panel.transform, "Hint");
-        if (hint) SetRT(hint, new Vector2(0.5f, 0.5f), new Vector2(0f, -122f), new Vector2(600f, 30f));
+        if (hint) SetRT(hint, new Vector2(0.5f, 0.5f), new Vector2(0f, -34f), new Vector2(600f, 22f));
+
+        // El texto del paso va PEGADO AL MODELO, que es lo que describe.
+        var caption = MakeText(panel.transform, "Caption", "",
+                               new Vector2(0.5f, 0.5f), new Vector2(0f, -96f), new Vector2(620f, 80f),
+                               20f, Hex("BFE9F2"), TextAlignmentOptions.Center, FontStyles.Normal);
+        caption.enableWordWrapping = true;   // son dos líneas, no una
 
         MakeText(panel.transform, "LayersCaption", "Capas",
-                 new Vector2(0.5f, 0.5f), new Vector2(-250f, -158f), new Vector2(160f, 30f),
-                 19f, DIM, TextAlignmentOptions.Left, FontStyles.Bold);
+                 new Vector2(0.5f, 0.5f), new Vector2(-250f, -152f), new Vector2(160f, 26f),
+                 18f, DIM, TextAlignmentOptions.Left, FontStyles.Bold);
 
         var tglSymbols = MakeToggle(panel.transform, "TglSymbols", "Símbolos",
-                                    new Vector2(0f, -196f));
+                                    new Vector2(0f, -186f));
         var tglEn      = MakeToggle(panel.transform, "TglElectronegativity", "Electronegatividad",
-                                    new Vector2(0f, -250f));
+                                    new Vector2(0f, -228f));
         var tglBonds   = MakeToggle(panel.transform, "TglBondTypes", "Tipo de enlace (δ+ / δ−)",
-                                    new Vector2(0f, -304f));
+                                    new Vector2(0f, -270f));
 
-        // Dos animaciones: la deducida de la química (todas las moléculas) y el guion
-        // escrito, que solo tienen dos. Cuentan cosas distintas y por eso conviven.
         var btnPlay = MakeButton(panel.transform, "BtnPlay", "Ver cómo se forma",
-                                 new Vector2(-145f, -352f), new Vector2(280f, 48f));
+                                 new Vector2(0f, -312f), new Vector2(320f, 36f));
         btnPlay.gameObject.SetActive(false);
-
-        var btnPlayExtra = MakeButton(panel.transform, "BtnPlayExtra", "Ver más",
-                                      new Vector2(145f, -352f), new Vector2(280f, 48f));
-        btnPlayExtra.gameObject.SetActive(false);
-
-        var caption = MakeText(panel.transform, "Caption", "",
-                               new Vector2(0.5f, 0.5f), new Vector2(0f, -398f), new Vector2(620f, 52f),
-                               19f, Hex("BFE9F2"), TextAlignmentOptions.Center, FontStyles.Normal);
 
         var mgr = FindInScene<MoleculeDetailManager>(scene);
         if (!mgr) problems.Add("No encontré MoleculeDetailManager.");
@@ -99,7 +109,6 @@ public static class DiarioCapasTool
             Set(so, "tglElectronegativity", tglEn);
             Set(so, "tglBondTypes",         tglBonds);
             Set(so, "btnPlay",              btnPlay);
-            Set(so, "btnPlayExtra",         btnPlayExtra);
             Set(so, "captionLabel",         caption);
             so.ApplyModifiedProperties();
         }
@@ -136,27 +145,34 @@ public static class DiarioCapasTool
     static Toggle MakeToggle(Transform parent, string name, string label, Vector2 pos)
     {
         var go = EnsureChild(parent, name);
-        SetRT(go, new Vector2(0.5f, 0.5f), pos, new Vector2(560f, 48f));
+        SetRT(go, new Vector2(0.5f, 0.5f), pos, new Vector2(560f, 42f));
 
         var box = EnsureChild(go.transform, "Box");
-        SetRT(box, new Vector2(0f, 0.5f), Vector2.zero, new Vector2(40f, 40f));
+        SetRT(box, new Vector2(0f, 0.5f), Vector2.zero, new Vector2(34f, 34f));
         var boxImg = Ensure<Image>(box);
         boxImg.sprite = rounded; boxImg.type = Image.Type.Sliced; boxImg.color = CARD;
 
         var check = EnsureChild(box.transform, "Check");
-        SetRT(check, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(22f, 22f));
+        SetRT(check, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(18f, 18f));
         var checkImg = Ensure<Image>(check);
         checkImg.sprite = rounded; checkImg.type = Image.Type.Sliced; checkImg.color = CYAN;
 
         MakeText(go.transform, "Label", label,
-                 new Vector2(0f, 0.5f), new Vector2(54f, 0f), new Vector2(500f, 40f),
-                 21f, Color.white, TextAlignmentOptions.Left, FontStyles.Normal);
+                 new Vector2(0f, 0.5f), new Vector2(46f, 0f), new Vector2(500f, 36f),
+                 19f, Color.white, TextAlignmentOptions.Left, FontStyles.Normal);
 
         var tgl = Ensure<Toggle>(go);
         tgl.targetGraphic = boxImg;
         tgl.graphic       = checkImg;
         tgl.isOn          = false;
         return tgl;
+    }
+
+    static void SetFloat(SerializedObject so, string prop, float value)
+    {
+        var p = so.FindProperty(prop);
+        if (p == null) { problems.Add($"El campo '{prop}' no existe en {so.targetObject.GetType().Name}."); return; }
+        p.floatValue = value;
     }
 
     static void Set(SerializedObject so, string prop, Object value)

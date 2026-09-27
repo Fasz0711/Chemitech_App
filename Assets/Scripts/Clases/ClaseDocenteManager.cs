@@ -106,6 +106,10 @@ public class ClaseDocenteManager : MonoBehaviour
     [SerializeField] private float bondThickness = 0.09f;
     [SerializeField] private float bondSpacing   = 0.20f;
 
+    [Tooltip("Mitad del lado de la plataforma. Si la escena que manda el servidor no cabe, " +
+             "las moléculas se recolocan dentro. 0 lo desactiva.")]
+    [SerializeField] private float layoutHalf    = 11.5f;
+
     [Header("Ajustes")]
     [SerializeField] private float rosterSeconds = 5f;
 
@@ -228,7 +232,7 @@ public class ClaseDocenteManager : MonoBehaviour
         // como antes de la fusión.
         sceneRenderer = new ClassSceneRenderer(sceneRoot, atomMaterial, bondMaterial,
                                                worldScale, atomSize, bondThickness, bondSpacing,
-                                               placement);
+                                               placement, labelFont: null, layoutHalf: layoutHalf);
 
         SetMode(false);   // se entra conduciendo, no construyendo
         RefreshUnpublished();

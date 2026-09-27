@@ -77,6 +77,18 @@ public class MoleculeAnimation
 
     public AnimationStep[] steps;
 
+    /// <summary>Solo lo usa el cliente. Cuánto se separan los átomos ANTES de empezar.
+    ///
+    /// Los 'atoms' de arriba son las posiciones FINALES, no las de partida, y esto no es
+    /// un capricho: el visor encuadra la escena por su extensión total, así que si se le
+    /// dieran las posiciones separadas encuadraría sobre ellas y la molécula terminaría
+    /// ocupando la mitad —con las esferas del mismo tamaño— y los enlaces se perderían.
+    /// Se encuadra sobre el final, que es lo que hay que ver bien, y se separa después.
+    ///
+    /// 0 o 1 = no se separa nada. Los guiones del servidor no lo mandan y no lo necesitan:
+    /// sus posiciones iniciales ya son las que quieren.</summary>
+    public float separation;
+
     public bool Has => steps != null && steps.Length > 0 && atoms != null && atoms.Length > 0;
 }
 
@@ -128,6 +140,11 @@ public class AnimationPrimitive
     /// enlace pueda colorearlo. Sin esto un enlace creado a mitad de animación saldría
     /// gris aunque fuera polar.</summary>
     public string bondKind;
+
+    /// <summary>Solo "bond": el índice del átomo con δ−, o -1. Sin esto, un enlace que
+    /// nace durante la animación no trae sus δ y la capa de tipo de enlace se queda sin
+    /// nada que encender justo después de mostrar cómo se formó ese enlace.</summary>
+    public int bondNegativeEnd;
 }
 
 [Serializable]

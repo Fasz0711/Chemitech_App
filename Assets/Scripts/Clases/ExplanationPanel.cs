@@ -40,7 +40,6 @@ public class ExplanationPanel : MonoBehaviour
 
     [Header("Animación")]
     [SerializeField] private Button          btnPlay;      // cómo se forma (deducida)
-    [SerializeField] private Button          btnPlayExtra; // el guion escrito, si lo hay
     [SerializeField] private TextMeshProUGUI captionLabel;
 
     [Header("Salir")]
@@ -57,8 +56,7 @@ public class ExplanationPanel : MonoBehaviour
         if (tglElectronegativity) tglElectronegativity.onValueChanged.AddListener(_ => ApplyLayers());
         if (tglBondTypes)         tglBondTypes.onValueChanged.AddListener(_ => ApplyLayers());
 
-        if (btnPlay)      btnPlay.onClick.AddListener(() => PlayAnimation(generic));
-        if (btnPlayExtra) btnPlayExtra.onClick.AddListener(() => PlayAnimation(ExplanationContext.Animation));
+        if (btnPlay) btnPlay.onClick.AddListener(() => PlayAnimation(generic));
         player = new AnimationPlayer(viewer, this);
     }
 
@@ -89,7 +87,6 @@ public class ExplanationPanel : MonoBehaviour
         RefreshCard();
 
         if (captionLabel) captionLabel.text = "";
-        if (btnPlayExtra) btnPlayExtra.gameObject.SetActive(false);
 
         // La animación de CÓMO SE FORMA se deduce de la química de esta molécula, así que
         // está disponible para todas sin que nadie escriba un guion.
@@ -98,7 +95,9 @@ public class ExplanationPanel : MonoBehaviour
                                          ExplanationContext.Name);
         if (btnPlay) btnPlay.gameObject.SetActive(generic != null);
 
-        ResolveAnimation();
+        // Siempre se reactiva al abrir: si la pantalla se cerró a mitad de una animación,
+        // el botón se quedaba apagado y ya no se podía volver a pulsar.
+        SetPlayButtons(true);
     }
 
     void OnDisable()
@@ -136,62 +135,23 @@ public class ExplanationPanel : MonoBehaviour
 
     // ── Animación ─────────────────────────────────────────────────────────────
 
-    /// <summary>Consigue el guion, si esta molécula tiene.
-    ///
-    /// Desde el universo y el diario ya viene en el contexto, porque esos entran por
-    /// /detection/by-smiles. DESDE LA PIZARRA NO: allí el contexto se llena del estado de
-    /// la clase, que no incluye guiones, así que hay que pedirlo. Se hace en segundo
-    /// plano y el botón aparece cuando llega: la pantalla ya es útil sin él.</summary>
-    void ResolveAnimation()
-    {
-        if (ExplanationContext.Animation != null) { OfferPlay(ExplanationContext.Animation); return; }
-
-        string smiles = ExplanationContext.CanonicalSmiles;
-        if (string.IsNullOrEmpty(smiles)) return;
-
-        ApiManager.Instance.GetMoleculeBySmiles(smiles,
-            onSuccess: resp =>
-            {
-                // Se pudo haber cerrado mientras llegaba, o haber abierto OTRA molécula.
-                if (!gameObject.activeInHierarchy) return;
-                if (resp?.molecule == null) return;
-                if (resp.molecule.canonicalSmiles != ExplanationContext.CanonicalSmiles) return;
-
-                if (resp.molecule.hasAnimation && resp.molecule.animation != null
-                                               && resp.molecule.animation.Has)
-                {
-                    ExplanationContext.Animation = resp.molecule.animation;
-                    OfferPlay(resp.molecule.animation);
-                }
-            },
-            onError: (code, detail) => { /* sin guion la pantalla sigue sirviendo */ });
-    }
-
-    /// <summary>Ofrece el guion ESCRITO como una segunda animación, con su propio título.
-    ///
-    /// No sustituye a la genérica: cuentan cosas distintas. La genérica explica cómo se
-    /// forma ESTA molécula; el guion del agua explica por qué dos aguas se atraen, que es
-    /// otra pregunta y necesita una segunda molécula que ninguna fórmula puede colocar.</summary>
-    void OfferPlay(MoleculeAnimation animation)
-    {
-        if (!btnPlayExtra || animation == null || !animation.Has) return;
-
-        var label = btnPlayExtra.GetComponentInChildren<TextMeshProUGUI>(true);
-        if (label) label.text = string.IsNullOrEmpty(animation.title) ? "Ver más" : animation.title;
-
-        btnPlayExtra.gameObject.SetActive(true);
-    }
-
     void PlayAnimation(MoleculeAnimation animation)
     {
         if (player == null || animation == null) return;
         if (!player.Load(animation)) return;
 
         // Las capas se apagan al reproducir: durante la animación lo que importa es el
-        // movimiento, y tres capas de etiquetas encima lo tapan.
+        // movimiento, y tres capas de etiquetas encima lo tapan. Los δ además APARECEN
+        // como parte de la explicación en el último paso, así que enseñarlos desde el
+        // principio contaría el final antes de tiempo.
+        //
+        // Se dejan HABILITADOS aunque ahora mismo no haya nada que mostrar: la escena de
+        // la animación empieza sin enlaces y los estrena en el primer paso, así que en
+        // cuanto empiece habrá δ. Deshabilitarlos aquí los dejaba muertos toda la
+        // animación aunque los datos ya hubieran llegado.
         SetToggle(tglSymbols, true, true);
-        SetToggle(tglElectronegativity, false, viewer && viewer.HasElectronegativity);
-        SetToggle(tglBondTypes, false, viewer && viewer.HasBondTypes);
+        SetToggle(tglElectronegativity, false, true);
+        SetToggle(tglBondTypes, false, true);
         ApplyLayers();
 
         SetPlayButtons(false);
@@ -201,8 +161,7 @@ public class ExplanationPanel : MonoBehaviour
 
     void SetPlayButtons(bool on)
     {
-        if (btnPlay)      btnPlay.interactable      = on;
-        if (btnPlayExtra) btnPlayExtra.interactable = on;
+        if (btnPlay) btnPlay.interactable = on;
     }
 
     IEnumerator FollowCaption()
@@ -213,6 +172,36 @@ public class ExplanationPanel : MonoBehaviour
             yield return null;
         }
         if (captionLabel) captionLabel.text = player?.Caption ?? "";
+
+        // Se reactiva AQUÍ y no solo al terminar: si la animación se corta —al cerrar, o
+        // al soltar la molécula— el callback de fin no llega y el botón se quedaba muerto.
+        SetPlayButtons(true);
+
+        // Y se vuelve a mirar qué capas tienen datos: la escena que quedó al final de la
+        // animación no es la misma con la que se abrió la pantalla.
+        RefreshLayerAvailability();
+    }
+
+    /// <summary>Habilita cada capa según si HAY algo que mostrar, sin cambiar lo que el
+    /// usuario tenga encendido.</summary>
+    void RefreshLayerAvailability()
+    {
+        SetUsable(tglElectronegativity, viewer && viewer.HasElectronegativity);
+        SetUsable(tglBondTypes,         viewer && viewer.HasBondTypes);
+    }
+
+    static void SetUsable(Toggle t, bool usable)
+    {
+        if (!t) return;
+        t.interactable = usable;
+        if (!usable) t.isOn = false;
+
+        var label = t.GetComponentInChildren<TextMeshProUGUI>(true);
+        if (label)
+        {
+            var c = label.color;
+            label.color = new Color(c.r, c.g, c.b, usable ? 1f : 0.35f);
+        }
     }
 
     void ApplyLayers()
@@ -234,6 +223,13 @@ public class ExplanationPanel : MonoBehaviour
     {
         if (!card2D) return;
 
+        // LA TARJETA NO SE ESCONDE NUNCA. Antes desaparecía cuando no había fórmula —le
+        // pasa a lo que el servidor no reconoce— y entonces los interruptores de la
+        // derecha se quedaban flotando sobre el fondo, sin marco y sin alinearse con
+        // nada. Que el hueco esté y diga qué falta es información; que desaparezca es un
+        // desajuste de maquetación.
+        card2D.SetActive(true);
+
         bool drawn = structure2D && structure2D.Show(ExplanationContext.Flat2D,
                                                      ExplanationContext.Atoms,
                                                      ExplanationContext.Bonds);
@@ -241,11 +237,15 @@ public class ExplanationPanel : MonoBehaviour
         string formula = ExplanationContext.Formula ?? "";
         if (card2DText)
         {
-            card2DText.gameObject.SetActive(!drawn && !string.IsNullOrEmpty(formula));
-            card2DText.text = formula;
-        }
+            card2DText.gameObject.SetActive(!drawn);
+            card2DText.text = string.IsNullOrEmpty(formula) ? "Sin fórmula" : formula;
 
-        card2D.SetActive(drawn || !string.IsNullOrEmpty(formula));
+            // "Sin fórmula" no es un dato, es la ausencia de uno: se dice más bajito y
+            // más pequeño para que no compita con las fórmulas de verdad.
+            bool hay = !string.IsNullOrEmpty(formula);
+            card2DText.fontSize = hay ? 64f : 30f;
+            card2DText.color    = hay ? Color.white : new Color(1f, 1f, 1f, 0.45f);
+        }
     }
 
     public void Close() => gameObject.SetActive(false);

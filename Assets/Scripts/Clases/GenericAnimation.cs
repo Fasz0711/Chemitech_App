@@ -23,17 +23,17 @@ using UnityEngine;
 /// </summary>
 public static class GenericAnimation
 {
-    // Cuánto se separan los átomos en el estado inicial. Lo justo para que se vea que se
-    // acercan; más y la molécula sale de cuadro al empezar.
-    const float SEPARACION = 2.0f;
+    // Cuánto se separan los átomos al empezar. Con el encuadre hecho sobre las posiciones
+    // FINALES, 1.45 es lo que cabe sin salirse: el visor deja un 30% de margen.
+    const float SEPARACION = 1.45f;
 
     // Cuánto se desplaza el par en un enlace polar. No es 1 a propósito: sigue COMPARTIDO,
     // solo que más cerca de uno. Si llegara al átomo sería un enlace iónico.
     const float DESPLAZAMIENTO_POLAR = 0.34f;
 
-    const int MS_ACERCARSE = 1400;
-    const int MS_COMPARTIR  = 900;
-    const int MS_DESPLAZAR  = 1100;
+    const int MS_ACERCARSE = 1600;
+    const int MS_COMPARTIR  = 1000;
+    const int MS_DESPLAZAR  = 1400;
 
     /// <summary>Construye el guion, o null si la molécula no da para contar nada (un
     /// átomo suelto, o una estructura sin enlaces).</summary>
@@ -43,17 +43,17 @@ public static class GenericAnimation
     {
         if (atoms == null || bonds == null || atoms.Count < 2 || bonds.Count == 0) return null;
 
-        // ── Estado inicial: los mismos átomos, separados ──────────────────────
-        Vector3 centro = Vector3.zero;
-        foreach (var a in atoms) centro += a.position;
-        centro /= atoms.Count;
-
+        // Los átomos se dan en su posición FINAL, no en la de partida. El visor encuadra
+        // por la extensión de lo que recibe, así que darle la separada encuadraría sobre
+        // ella y la molécula acabaría a la mitad de tamaño con las esferas iguales: los
+        // enlaces se perdían, y se notaba sobre todo en las moléculas alargadas. El
+        // reproductor los separa después, ya encuadrado.
         var partida = new JournalAtom[atoms.Count];
         for (int i = 0; i < atoms.Count; i++)
             partida[i] = new JournalAtom
             {
                 type     = atoms[i].element,
-                position = Vec(centro + (atoms[i].position - centro) * SEPARACION),
+                position = Vec(atoms[i].position),
                 en       = atoms[i].en,
                 charge   = atoms[i].charge,
             };
@@ -73,7 +73,8 @@ public static class GenericAnimation
             acercarse.Add(new AnimationPrimitive
             {
                 kind = "bond", fromAtom = b.beginAtomId, toAtom = b.endAtomId,
-                order = Mathf.Max(1, b.order), bondKind = b.kind, durationMs = 0,
+                order = Mathf.Max(1, b.order), bondKind = b.kind,
+                bondNegativeEnd = b.negativeEnd, durationMs = 0,
             });
 
         pasos.Add(new AnimationStep
@@ -152,8 +153,9 @@ public static class GenericAnimation
         {
             id     = "generico",
             title  = string.IsNullOrEmpty(moleculeName) ? "Cómo se forma" : "Cómo se forma " + moleculeName,
-            atoms  = partida,
-            bonds  = new JournalBond[0],   // nacen en el paso 1
+            atoms      = partida,
+            bonds      = new JournalBond[0],   // nacen en el paso 1
+            separation = SEPARACION,
             steps  = pasos.ToArray(),
         };
     }

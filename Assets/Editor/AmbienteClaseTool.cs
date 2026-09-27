@@ -3,6 +3,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using TMPro;
 using Object = UnityEngine.Object;
 
 /// <summary>
@@ -106,6 +107,21 @@ public static class AmbienteClaseTool
         var p  = so.FindProperty("effects");
         if (p != null) p.boolValue = hasDetection;
         so.ApplyModifiedProperties();
+
+        // El símbolo sobre cada átomo. En la pizarra del docente lo pone el sistema de
+        // colocación, pero el alumno no pasa por ahí: sus esferas las crea el renderer y
+        // salían sin nombre. La fuente es contenido de escena, así que se cablea aquí.
+        var fnt = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/Fredoka-Medium SDF.asset");
+        if (!fnt) problems.Add("No encontré la fuente Fredoka-Medium SDF.");
+
+        var alumno = FindInScene<ClaseEstudianteManager>(scene);
+        if (alumno && fnt)
+        {
+            var aso = new SerializedObject(alumno);
+            var prop = aso.FindProperty("labelFont");
+            if (prop == null) problems.Add("El campo 'labelFont' no existe en ClaseEstudianteManager.");
+            else { prop.objectReferenceValue = fnt; aso.ApplyModifiedProperties(); }
+        }
 
         // La zona en la que se puede colocar se ajusta a la plataforma que ahora SE VE.
         // Estaba en 24 de cuando el contrato exigía ångströms reales y la lección del

@@ -105,23 +105,24 @@ public static class SetAtomsCommand
         return c;
     }
 
-    /// <summary>El aviso a mostrar, o "" si no hay nada que avisar. Habla de lo que el
-    /// docente puede hacer, no del error que va a recibir.</summary>
+    /// <summary>El aviso a mostrar, o "" si no hay nada que avisar.
+    ///
+    /// SOLO AVISA DEL TOTAL DE ÁTOMOS, que es lo único que se puede contar EXACTO. Los
+    /// fragmentos se cuentan aquí con un corte de cercanía fijo, y eso miente en cuanto la
+    /// escena no está a la escala que ese corte supone: con una red de cloruro de sodio en
+    /// pantalla, sus 27 iones caen cada uno en su propio grupo y el aviso decía
+    /// "36 grupos de 12" mientras el servidor contaba UNA molécula. Un número alarmante y
+    /// falso delante de 25 alumnos es peor que no avisar.
+    ///
+    /// Los fragmentos y los átomos pesados los decide el servidor, que ahora devuelve un
+    /// código propio para cada caso y un mensaje que sí es cierto.</summary>
     public static string WarningFor(Counts c)
     {
         if (c.total > MAX_TOTAL_ATOMS)
             return $"Te pasaste del máximo: {c.total} átomos de {MAX_TOTAL_ATOMS}. Quita algunos antes de publicar.";
-        if (c.fragments > MAX_FRAGMENTS)
-            return $"Demasiados grupos sueltos: {c.fragments} de {MAX_FRAGMENTS}. Junta o quita algunos.";
-        if (c.biggestHeavy > MAX_HEAVY_PER_FRAGMENT)
-            return $"Una molécula es demasiado grande: {c.biggestHeavy} átomos pesados de {MAX_HEAVY_PER_FRAGMENT}.";
 
         if (c.total >= MAX_TOTAL_ATOMS - WARN_MARGIN)
             return $"Quedan {MAX_TOTAL_ATOMS - c.total} átomos disponibles.";
-        if (c.fragments >= MAX_FRAGMENTS - 2)
-            return $"Quedan {MAX_FRAGMENTS - c.fragments} grupos disponibles.";
-        if (c.biggestHeavy >= MAX_HEAVY_PER_FRAGMENT - WARN_MARGIN)
-            return $"Esa molécula ya casi llena el máximo ({c.biggestHeavy} de {MAX_HEAVY_PER_FRAGMENT}).";
 
         return "";
     }

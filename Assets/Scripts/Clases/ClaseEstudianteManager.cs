@@ -30,6 +30,7 @@ public class ClaseEstudianteManager : MonoBehaviour
     [SerializeField] private Transform sceneRoot;       // padre de átomos y enlaces
     [SerializeField] private Material  atomMaterial;
     [SerializeField] private Material  bondMaterial;
+    [SerializeField] private TMP_FontAsset labelFont;   // el símbolo sobre cada átomo
 
     [Header("HUD")]
     [SerializeField] private TextMeshProUGUI className;
@@ -48,6 +49,10 @@ public class ClaseEstudianteManager : MonoBehaviour
     [SerializeField] private float atomSize      = 0.9f;
     [SerializeField] private float bondThickness = 0.09f;
     [SerializeField] private float bondSpacing   = 0.20f;
+
+    [Tooltip("Mitad del lado de la plataforma. Tiene que ser EL MISMO valor que en la " +
+             "pizarra del docente, o cada uno vería las moléculas en un sitio distinto.")]
+    [SerializeField] private float layoutHalf    = 11.5f;
 
     [Header("Copiar a un universo")]
     [Tooltip("Ångström -> unidades del universo. Un enlace simple mide ~1 Å y en la zona " +
@@ -115,7 +120,8 @@ public class ClaseEstudianteManager : MonoBehaviour
 
         if (!sceneRoot) sceneRoot = transform;
         sceneRenderer = new ClassSceneRenderer(sceneRoot, atomMaterial, bondMaterial,
-                                          worldScale, atomSize, bondThickness, bondSpacing);
+                                          worldScale, atomSize, bondThickness, bondSpacing,
+                                          sink: null, labelFont: labelFont, layoutHalf: layoutHalf);
 
         if (!ClassContext.HasClass) { Leave(); return; }
 

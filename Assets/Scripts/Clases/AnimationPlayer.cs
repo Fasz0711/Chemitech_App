@@ -63,6 +63,13 @@ public class AnimationPlayer
 
         var st = new JournalStructure { atoms = script.atoms, bonds = script.bonds };
         viewer.Show(st);
+
+        // El encuadre ya está hecho sobre las posiciones finales; ahora se separan. Como
+        // Show deja las posiciones CENTRADAS en el centroide, separarlas es multiplicar:
+        // cada átomo se aleja del centro en la misma proporción.
+        if (script.separation > 1f)
+            for (int i = 0; i < viewer.AtomCount; i++)
+                viewer.SetAtomPosition(i, viewer.GetAtomPosition(i) * script.separation);
     }
 
     /// <summary>Reproduce desde el principio.</summary>
@@ -71,6 +78,7 @@ public class AnimationPlayer
         Stop();
         if (script == null || host == null) return;
         ShowBase();
+        if (viewer) viewer.AutoSpin = false;   // se devuelve al terminar o al parar
         playing = host.StartCoroutine(Run(onFinished));
     }
 
@@ -78,6 +86,7 @@ public class AnimationPlayer
     {
         if (playing != null && host != null) host.StopCoroutine(playing);
         playing = null;
+        if (viewer) viewer.AutoSpin = true;
     }
 
     /// <summary>Deja la escena como al final del paso indicado, SIN animar. Lo usa
@@ -105,12 +114,17 @@ public class AnimationPlayer
 
             yield return AnimateStep(step);
 
-            // Respiro entre pasos: sin él, el texto de uno se lee encima del siguiente.
-            float pausa = Mathf.Max(0.35f, step.durationMs / 1000f * 0.25f);
-            yield return new WaitForSecondsRealtime(pausa);
+            // El paso se queda EL TIEMPO QUE CUESTA LEERLO, no un respiro fijo. El texto
+            // es la mitad de la explicación: si se va antes de terminar la frase, la
+            // animación se ve pero no se entiende, que es justo lo contrario de lo que
+            // se está midiendo. ~18 caracteres por segundo es lectura sin prisa.
+            int letras = Caption != null ? Caption.Length : 0;
+            float lectura = Mathf.Clamp(letras / 18f, 1.4f, 6f);
+            yield return new WaitForSecondsRealtime(lectura);
         }
 
         playing = null;
+        if (viewer) viewer.AutoSpin = true;
         onFinished?.Invoke();
     }
 
@@ -256,7 +270,7 @@ public class AnimationPlayer
 
     IEnumerator BondNow(AnimationPrimitive p)
     {
-        viewer.SetBond(p.fromAtom, p.toAtom, p.order, p.bondKind);
+        viewer.SetBond(p.fromAtom, p.toAtom, p.order, p.bondKind, p.bondNegativeEnd);
         yield break;
     }
 
@@ -290,7 +304,7 @@ public class AnimationPlayer
 
                 case "share":   viewer.SetSharedPair(p.fromAtom, p.toAtom, Mathf.Clamp01(p.amount));
                                 Remember(p.fromAtom, p.toAtom, Mathf.Clamp01(p.amount)); break;
-                case "bond":    viewer.SetBond(p.fromAtom, p.toAtom, p.order, p.bondKind); break;
+                case "bond":    viewer.SetBond(p.fromAtom, p.toAtom, p.order, p.bondKind, p.bondNegativeEnd); break;
                 case "attract": viewer.SpawnAttraction(p.fromAtom, p.toAtom);              break;
             }
         }

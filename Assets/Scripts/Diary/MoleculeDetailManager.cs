@@ -43,11 +43,9 @@ public class MoleculeDetailManager : MonoBehaviour
 
     [Header("Animación")]
     [SerializeField] private Button          btnPlay;       // cómo se forma (deducida)
-    [SerializeField] private Button          btnPlayExtra;  // el guion escrito, si lo hay
     [SerializeField] private TextMeshProUGUI captionLabel;
 
     private MoleculeAnimation generic;   // deducida de la molécula
-    private MoleculeAnimation authored;  // el guion escrito, si el servidor lo trae
 
     private AnimationPlayer player;
 
@@ -63,11 +61,6 @@ public class MoleculeDetailManager : MonoBehaviour
         {
             btnPlay.onClick.AddListener(() => PlayAnimation(generic));
             btnPlay.gameObject.SetActive(false);
-        }
-        if (btnPlayExtra)
-        {
-            btnPlayExtra.onClick.AddListener(() => PlayAnimation(authored));
-            btnPlayExtra.gameObject.SetActive(false);
         }
         if (captionLabel) captionLabel.text = "";
 
@@ -98,48 +91,22 @@ public class MoleculeDetailManager : MonoBehaviour
 
         if (viewer) viewer.Show(m != null ? m.structure : null);
         RefreshLayerToggles();
-        ResolveAnimation(m != null ? m.canonicalSmiles : null);
+        ResolveAnimation();
     }
 
     // ── Animación ────────────────────────────────────────────────────────────────
 
-    /// <summary>Busca si esta molécula tiene guion.
+    /// <summary>Arma la animación de cómo se forma esta molécula.
     ///
-    /// HAY QUE PEDIRLO APARTE: el listado del diario NO trae la animación, a propósito —
-    /// incrusta el detalle completo por entrada y cada molécula arrastraría su guion,
-    /// multiplicando una respuesta que ya es cara. Solo la puebla /detection/by-smiles.
-    ///
-    /// Y tiene que estar aquí: el argumento que decidió el diseño del guion fue que el
-    /// alumno que repasa SOLO, en el diario, pueda ver el puente de hidrógeno. Sin este
-    /// botón esa razón se queda sin cumplir.</summary>
-    private void ResolveAnimation(string canonicalSmiles)
+    /// NO va al servidor: sale de la química que esta pantalla ya tiene dibujada —
+    /// electronegatividad, tipo de enlace y qué extremo lleva el δ−—, así que está
+    /// disponible para todas las moléculas del diario sin pedir nada.</summary>
+    private void ResolveAnimation()
     {
-        authored = null;
-        if (btnPlayExtra) btnPlayExtra.gameObject.SetActive(false);
-
-        // La de "cómo se forma" no depende del servidor: sale de la química que esta
-        // pantalla ya tiene dibujada, así que aparece para todas las moléculas.
-        generic = GenericAnimation.Build(ToExplanationAtoms(), ToExplanationBonds(), nameLabel ? nameLabel.text : "");
+        generic = GenericAnimation.Build(ToExplanationAtoms(), ToExplanationBonds(),
+                                         nameLabel ? nameLabel.text : "");
         if (btnPlay) btnPlay.gameObject.SetActive(generic != null);
-
-        if (string.IsNullOrEmpty(canonicalSmiles)) return;
-
-        ApiManager.Instance.GetMoleculeBySmiles(canonicalSmiles,
-            onSuccess: resp =>
-            {
-                if (!this || resp?.molecule == null) return;
-                if (!resp.molecule.hasAnimation || resp.molecule.animation == null) return;
-                if (!resp.molecule.animation.Has) return;
-
-                authored = resp.molecule.animation;
-                if (btnPlayExtra)
-                {
-                    var lbl = btnPlayExtra.GetComponentInChildren<TextMeshProUGUI>(true);
-                    if (lbl) lbl.text = string.IsNullOrEmpty(authored.title) ? "Ver más" : authored.title;
-                    btnPlayExtra.gameObject.SetActive(true);
-                }
-            },
-            onError: (code, detail) => { /* sin guion la pantalla sigue sirviendo */ });
+        SetPlayButtons(true);
     }
 
     private void PlayAnimation(MoleculeAnimation animation)
@@ -154,8 +121,7 @@ public class MoleculeDetailManager : MonoBehaviour
 
     private void SetPlayButtons(bool on)
     {
-        if (btnPlay)      btnPlay.interactable      = on;
-        if (btnPlayExtra) btnPlayExtra.interactable = on;
+        if (btnPlay) btnPlay.interactable = on;
     }
 
     /// <summary>La estructura del diario, en la forma que entiende el generador. Es la
@@ -207,6 +173,10 @@ public class MoleculeDetailManager : MonoBehaviour
             yield return null;
         }
         if (captionLabel) captionLabel.text = player?.Caption ?? "";
+
+        // Se reactiva aquí y no solo al terminar: si la animación se corta, el callback
+        // de fin no llega y el botón se quedaría muerto.
+        SetPlayButtons(true);
     }
 
     // ── Capas ────────────────────────────────────────────────────────────────────

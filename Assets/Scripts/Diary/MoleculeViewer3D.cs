@@ -28,7 +28,11 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
 
     [Header("Ajustes")]
     [SerializeField] private int   rtSize        = 800;
-    [SerializeField] private float atomScale     = 0.9f;
+    // 0.9 hacía que las esferas casi se tocaran y el enlace no se viera: en un modelo de
+    // bolas y varillas la bola pesa como 0.5-0.6 de la varilla, no como su largo entero.
+    // El enlace NO se alargó —eso falsearía la geometría—; lo que se encogió es la bola.
+    [SerializeField] private float atomScale     = 0.58f;
+    [SerializeField] private float electronScale = 0.30f;
     [SerializeField] private float bondThickness = 0.14f;
     [SerializeField] private float bondSpacing   = 0.22f;
     [SerializeField] private float fitFactor     = 0.70f;
@@ -62,7 +66,7 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
     // El 'kind' va AQUÍ y no en una lista paralela: bondKind es por CILINDRO —un enlace
     // doble añade dos entradas— así que indexarla por enlace se desalinea en cuanto hay
     // un doble, y el enlace siguiente se pintaría del color equivocado.
-    struct BondRec { public int a, b, order; public string kind; }
+    struct BondRec { public int a, b, order; public string kind; public int negativeEnd; }
     readonly List<BondRec> bondRecs = new List<BondRec>();
 
     // Lo que dibuja cada primitiva: el electrón que viaja y las líneas de atracción.
@@ -74,6 +78,11 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
     // saldría disparado a un sitio que no tiene nada que ver.
     Vector3 fitCentroid;
     float   fitScale = 1f;
+
+    /// <summary>El giro lento de reposo. Se apaga durante la animación: seguir un electrón
+    /// que va de un átomo a otro mientras la escena gira sola es pedir demasiado, y peor
+    /// aún si lo que se mueve pasa por detrás justo en ese momento.</summary>
+    public bool AutoSpin { get; set; } = true;
 
     /// <summary>Capas encendidas. El diario las deja apagadas y se ve como siempre.</summary>
     public bool ShowSymbols          { get; private set; } = true;
@@ -157,7 +166,8 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
                 if (b.beginAtomId < 0 || b.beginAtomId >= n) continue;
                 if (b.endAtomId   < 0 || b.endAtomId   >= n) continue;
                 int order = Mathf.Clamp(b.order, 1, 3);
-                bondRecs.Add(new BondRec { a = b.beginAtomId, b = b.endAtomId, order = order, kind = b.kind ?? "" });
+                bondRecs.Add(new BondRec { a = b.beginAtomId, b = b.endAtomId, order = order,
+                                           kind = b.kind ?? "", negativeEnd = b.negativeEnd });
                 SpawnBond(atomTf[b.beginAtomId].localPosition, atomTf[b.endAtomId].localPosition,
                           order, b.kind);
                 SpawnDeltas(b);
@@ -196,7 +206,10 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
         var tmp = lblGo.AddComponent<TextMeshPro>();
         tmp.text = type;
         tmp.font = labelFont;
-        tmp.fontSize = (!string.IsNullOrEmpty(type) && type.Length > 1) ? 5.2f : 6.4f;
+        // El tamaño va CON la esfera: estaba fijado para atomScale 0.9 y al encoger la
+        // bola el símbolo se salía por los bordes.
+        float k = atomScale / 0.9f;
+        tmp.fontSize = ((!string.IsNullOrEmpty(type) && type.Length > 1) ? 5.2f : 6.4f) * k;
         tmp.alignment = TextAlignmentOptions.Center;
         tmp.fontStyle = FontStyles.Bold;
         float lum = 0.299f * col.r + 0.587f * col.g + 0.114f * col.b;
@@ -255,12 +268,12 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
         var tmp = go.AddComponent<TextMeshPro>();
         tmp.text = en.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
         tmp.font = labelFont;
-        tmp.fontSize = 3.6f;
+        tmp.fontSize = 3.6f * (atomScale / 0.9f);
         tmp.alignment = TextAlignmentOptions.Center;
         tmp.color = new Color(0.75f, 0.92f, 1f);
         tmp.GetComponent<RectTransform>().sizeDelta = new Vector2(6f, 3f);
 
-        enLabels.Add(new Pegada { tf = go.transform, atom = atomIndex, up = -0.52f });
+        enLabels.Add(new Pegada { tf = go.transform, atom = atomIndex, up = -0.52f * (atomScale / 0.9f) });
     }
 
     /// <summary>δ− en el extremo que el servidor marca, δ+ en el otro.
@@ -287,14 +300,14 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
         var tmp = go.AddComponent<TextMeshPro>();
         tmp.text = text;
         tmp.font = labelFont;   // la δ sale de la fuente de reserva; sin ella, un hueco
-        tmp.fontSize = 4.4f;
+        tmp.fontSize = 4.4f * (atomScale / 0.9f);
         tmp.fontStyle = FontStyles.Bold;
         tmp.alignment = TextAlignmentOptions.Center;
         tmp.color = text.EndsWith("-") ? new Color(1f, 0.45f, 0.45f)
                                        : new Color(0.55f, 0.75f, 1f);
         tmp.GetComponent<RectTransform>().sizeDelta = new Vector2(5f, 3f);
 
-        deltaLabels.Add(new Pegada { tf = go.transform, atom = atomIndex, up = 0.60f });
+        deltaLabels.Add(new Pegada { tf = go.transform, atom = atomIndex, up = 0.60f * (atomScale / 0.9f) });
     }
 
     // ── Piezas para la animación ──────────────────────────────────────────────
@@ -362,17 +375,35 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
     }
 
     /// <summary>Cambia un enlace: lo crea, le cambia el orden, o lo quita con order 0.</summary>
-    public void SetBond(int a, int b, int order, string kind)
+    /// <summary>Crea un enlace, le cambia el orden, o lo quita con order 0.
+    ///
+    /// 'negativeEnd' es el índice del átomo con δ−, o -1. HACE FALTA AQUÍ: un enlace que
+    /// nace a mitad de animación —la genérica empieza sin ninguno— tiene que traerse sus
+    /// δ, o la capa de tipo de enlace se queda sin nada que encender y el interruptor sale
+    /// deshabilitado justo después de ver cómo se formó el enlace.</summary>
+    public void SetBond(int a, int b, int order, string kind, int negativeEnd = -1)
     {
         int at = bondRecs.FindIndex(r => (r.a == a && r.b == b) || (r.a == b && r.b == a));
 
-        // Al cambiar de orden se conserva el tipo que ya tenía si no llega uno nuevo: un
-        // paso que solo dice "ahora es doble" no debería despintar un enlace polar.
-        string keep = (at >= 0 && string.IsNullOrEmpty(kind)) ? bondRecs[at].kind : (kind ?? "");
+        // Al cambiar de orden se conserva lo que ya tenía si no llega nada nuevo: un paso
+        // que solo dice "ahora es doble" no debería despintar un enlace polar.
+        string keep    = (at >= 0 && string.IsNullOrEmpty(kind)) ? bondRecs[at].kind : (kind ?? "");
+        int    keepNeg = (at >= 0 && negativeEnd < 0) ? bondRecs[at].negativeEnd : negativeEnd;
 
         if (order <= 0) { if (at >= 0) bondRecs.RemoveAt(at); }
-        else if (at >= 0) bondRecs[at] = new BondRec { a = a, b = b, order = order, kind = keep };
-        else              bondRecs.Add(new BondRec { a = a, b = b, order = order, kind = keep });
+        else if (at >= 0) bondRecs[at] = new BondRec { a = a, b = b, order = order, kind = keep, negativeEnd = keepNeg };
+        else
+        {
+            bondRecs.Add(new BondRec { a = a, b = b, order = order, kind = keep, negativeEnd = keepNeg });
+
+            // Solo al NACER: repetir el mismo enlace no debe apilar etiquetas.
+            if (keepNeg >= 0)
+                SpawnDeltas(new ExplanationContext.Bond
+                {
+                    beginAtomId = a, endAtomId = b, order = order,
+                    kind = keep, negativeEnd = keepNeg,
+                });
+        }
 
         RebuildBondTransforms();
     }
@@ -387,7 +418,7 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
         go.transform.SetParent(stageRoot, false);
         go.layer = stageRoot.gameObject.layer;
         go.transform.localPosition = at;
-        go.transform.localScale = Vector3.one * 0.26f;
+        go.transform.localScale = Vector3.one * electronScale;
 
         if (atomMaterial)
         {
@@ -429,7 +460,7 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
             var col = go.GetComponent<Collider>(); if (col) Destroy(col);
             go.transform.SetParent(stageRoot, false);
             go.layer = stageRoot.gameObject.layer;
-            go.transform.localScale = Vector3.one * 0.2f;
+            go.transform.localScale = Vector3.one * electronScale * 0.72f;
 
             if (atomMaterial)
             {
@@ -541,7 +572,7 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
     {
         if (cam == null || stageRoot == null) return;
 
-        if (!dragging && idleSpin != 0f)
+        if (AutoSpin && !dragging && idleSpin != 0f)
             stageRoot.Rotate(cam.transform.up, idleSpin * Time.deltaTime, Space.World);
 
         // Etiquetas: al frente de la esfera, mirando a la cámara (billboard como ZonaJuego)

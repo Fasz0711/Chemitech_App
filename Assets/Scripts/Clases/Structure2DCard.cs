@@ -32,8 +32,14 @@ public class Structure2DCard : MonoBehaviour
     readonly List<Image> atomDots = new List<Image>();
     readonly List<Color> baseColors = new List<Color>();
 
-    /// <summary>Dibuja la tarjeta. Sin coordenadas no hay tarjeta: se apaga y ya. Es el
-    /// caso de la sal, donde una fórmula plana de una red de 27 iones no existe.</summary>
+    /// <summary>Dibuja la tarjeta y dice si pudo. Sin coordenadas no hay nada que dibujar:
+    /// le pasa a la sal, cuya red de 27 iones no tiene fórmula plana, y a lo que el
+    /// servidor no reconoce.
+    ///
+    /// NO TOCA SU PROPIO GameObject. Este componente vive en la tarjeta, así que apagarse
+    /// a sí mismo apagaba el marco entero y dejaba los interruptores de al lado flotando
+    /// sin nada que los alineara. Quién se ve y quién no lo decide la pantalla; esto solo
+    /// dibuja o informa de que no puede.</summary>
     public bool Show(IList<Vector2> flat2D, IList<ExplanationContext.Atom> atoms,
                      IList<ExplanationContext.Bond> bonds)
     {
@@ -41,12 +47,7 @@ public class Structure2DCard : MonoBehaviour
 
         if (!canvasArea || flat2D == null || atoms == null ||
             flat2D.Count == 0 || flat2D.Count != atoms.Count)
-        {
-            gameObject.SetActive(false);
             return false;
-        }
-
-        gameObject.SetActive(true);
 
         // Las coordenadas llegan normalizadas pero no necesariamente llenando el cuadro,
         // así que se reencuadran: se busca su caja y se estira hasta el área disponible
