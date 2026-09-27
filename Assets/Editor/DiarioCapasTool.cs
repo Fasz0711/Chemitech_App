@@ -76,10 +76,15 @@ public static class DiarioCapasTool
         var tglBonds   = MakeToggle(panel.transform, "TglBondTypes", "Tipo de enlace (δ+ / δ−)",
                                     new Vector2(0f, -304f));
 
-        // Reproducir el guion, si esta molécula tiene. Oculto hasta saberlo.
-        var btnPlay = MakeButton(panel.transform, "BtnPlay", "Ver cómo ocurre",
-                                 new Vector2(0f, -352f), new Vector2(300f, 48f));
+        // Dos animaciones: la deducida de la química (todas las moléculas) y el guion
+        // escrito, que solo tienen dos. Cuentan cosas distintas y por eso conviven.
+        var btnPlay = MakeButton(panel.transform, "BtnPlay", "Ver cómo se forma",
+                                 new Vector2(-145f, -352f), new Vector2(280f, 48f));
         btnPlay.gameObject.SetActive(false);
+
+        var btnPlayExtra = MakeButton(panel.transform, "BtnPlayExtra", "Ver más",
+                                      new Vector2(145f, -352f), new Vector2(280f, 48f));
+        btnPlayExtra.gameObject.SetActive(false);
 
         var caption = MakeText(panel.transform, "Caption", "",
                                new Vector2(0.5f, 0.5f), new Vector2(0f, -398f), new Vector2(620f, 52f),
@@ -94,6 +99,7 @@ public static class DiarioCapasTool
             Set(so, "tglElectronegativity", tglEn);
             Set(so, "tglBondTypes",         tglBonds);
             Set(so, "btnPlay",              btnPlay);
+            Set(so, "btnPlayExtra",         btnPlayExtra);
             Set(so, "captionLabel",         caption);
             so.ApplyModifiedProperties();
         }

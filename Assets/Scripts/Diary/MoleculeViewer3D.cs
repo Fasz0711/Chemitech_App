@@ -338,6 +338,27 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
             SpawnBond(atomTf[rec.a].localPosition, atomTf[rec.b].localPosition, rec.order, rec.kind);
         }
         ApplyLayers();
+        RefreshSharedPairs();
+    }
+
+    /// <summary>Recoloca los pares compartidos sobre sus enlaces. Hace falta porque un
+    /// 'move' cambia dónde están los átomos, y el par tiene que seguir al enlace.</summary>
+    void RefreshSharedPairs()
+    {
+        foreach (var kv in sharedPairs)
+        {
+            if (!kv.Value) continue;
+            int a = (int)(kv.Key >> 32), b = (int)(kv.Key & 0xFFFFFFFF);
+            if (a < 0 || a >= atomTf.Count || b < 0 || b >= atomTf.Count) continue;
+
+            // Se conserva la proporción a la que estaba: su posición dentro del enlace es
+            // el dato, y recolocarlo al medio borraría lo que el paso anterior mostró.
+            Vector3 pa = atomTf[a].localPosition, pb = atomTf[b].localPosition;
+            float largo = Vector3.Distance(pa, pb);
+            if (largo < 1e-4f) continue;
+            float t = Mathf.Clamp01(Vector3.Distance(pa, kv.Value.localPosition) / largo);
+            kv.Value.localPosition = Vector3.Lerp(pa, pb, t);
+        }
     }
 
     /// <summary>Cambia un enlace: lo crea, le cambia el orden, o lo quita con order 0.</summary>
@@ -381,6 +402,54 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
         return go.transform;
     }
 
+    // El par compartido de cada enlace, por par de átomos. Se guarda para poder MOVERLO
+    // en un paso posterior en vez de dibujar otro encima.
+    readonly Dictionary<long, Transform> sharedPairs = new Dictionary<long, Transform>();
+
+    static long PairKey(int a, int b) => a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
+
+    /// <summary>El par de electrones de un enlace, y CUÁNTO se ha desplazado.
+    ///
+    /// Es la pieza que distingue compartir de entregar, que es el corazón de la lección:
+    ///   amount 0     el par se queda en medio      -> enlace no polar
+    ///   amount ~0.35 se acerca pero no llega       -> polar, ahí nacen δ− y δ+
+    ///   amount 1     se va del todo al otro átomo  -> iónico, eso SÍ es entregar
+    ///
+    /// Mostrar un polar como si el electrón se fuera enseñaría lo contrario de lo que la
+    /// lección quiere, así que la posición del par NO es decoración: es el dato.</summary>
+    public void SetSharedPair(int a, int b, float amount)
+    {
+        if (a < 0 || a >= atomTf.Count || b < 0 || b >= atomTf.Count) return;
+
+        long key = PairKey(a, b);
+        if (!sharedPairs.TryGetValue(key, out var dot) || !dot)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.name = "SharedPair";
+            var col = go.GetComponent<Collider>(); if (col) Destroy(col);
+            go.transform.SetParent(stageRoot, false);
+            go.layer = stageRoot.gameObject.layer;
+            go.transform.localScale = Vector3.one * 0.2f;
+
+            if (atomMaterial)
+            {
+                var mat = new Material(atomMaterial);
+                mat.SetColor(BaseColorId, new Color(0.60f, 0.88f, 1f));
+                mat.EnableKeyword("_EMISSION");
+                mat.SetColor(Shader.PropertyToID("_EmissionColor"), new Color(0.35f, 0.75f, 1f) * 1.8f);
+                go.GetComponent<Renderer>().sharedMaterial = mat;
+            }
+
+            dot = go.transform;
+            sharedPairs[key] = dot;
+            effectTf.Add(dot);
+        }
+
+        // 0.5 es el punto medio del enlace; 1 es encima del átomo de destino.
+        float t = Mathf.Lerp(0.5f, 1f, Mathf.Clamp01(amount));
+        dot.localPosition = Vector3.Lerp(atomTf[a].localPosition, atomTf[b].localPosition, t);
+    }
+
     /// <summary>La línea punteada de una atracción. NO es un enlace, y esa distinción es
     /// justo lo que la lección enseña en el puente de hidrógeno: se dibuja como una fila
     /// de puntos, no como un cilindro.</summary>
@@ -418,6 +487,7 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
     {
         foreach (var t in effectTf) if (t) Destroy(t.gameObject);
         effectTf.Clear();
+        sharedPairs.Clear();
     }
 
     // ── Capas ─────────────────────────────────────────────────────────────────
@@ -462,7 +532,7 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
             Destroy(stageRoot.GetChild(i).gameObject);
         atomTf.Clear(); labelTf.Clear(); atomRad.Clear();
         enLabels.Clear(); deltaLabels.Clear(); bondRend.Clear(); bondKind.Clear();
-        bondRecs.Clear(); effectTf.Clear();
+        bondRecs.Clear(); effectTf.Clear(); sharedPairs.Clear();
         if (stageRoot) stageRoot.localRotation = Quaternion.identity;
     }
 

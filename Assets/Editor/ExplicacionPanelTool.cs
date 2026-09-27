@@ -148,10 +148,18 @@ public static class ExplicacionPanelTool
                  new Vector2(0f, 0.5f), new Vector2(60f, -300f), new Vector2(700f, 30f),
                  19f, new Color(1f, 1f, 1f, 0.55f), TextAlignmentOptions.Center, FontStyles.Normal);
 
-        // Reproducir: bajo el visor, y oculto hasta que se sepa si hay guion.
-        var btnPlay = MakeButton(card.transform, "BtnPlay", "Ver cómo ocurre", GREEN,
-                                 new Vector2(0f, 0.5f), new Vector2(230f, -344f), new Vector2(360f, 56f), 22f);
+        // Dos animaciones, dos botones. La de la izquierda se DEDUCE de la química de la
+        // molécula y existe para todas; la de la derecha es un guion escrito y solo
+        // aparece en las dos que lo tienen. Cuentan cosas distintas, así que no se
+        // sustituyen: una explica cómo se forma ESTA molécula, la otra por qué dos aguas
+        // se atraen.
+        var btnPlay = MakeButton(card.transform, "BtnPlay", "Ver cómo se forma", GREEN,
+                                 new Vector2(0f, 0.5f), new Vector2(60f, -344f), new Vector2(330f, 56f), 21f);
         btnPlay.gameObject.SetActive(false);
+
+        var btnPlayExtra = MakeButton(card.transform, "BtnPlayExtra", "Ver más", PURPLE,
+                                      new Vector2(0f, 0.5f), new Vector2(410f, -344f), new Vector2(350f, 56f), 20f);
+        btnPlayExtra.gameObject.SetActive(false);
 
         // El texto del paso. Es MEDIA EXPLICACIÓN: la animación muestra qué pasa y esta
         // línea dice por qué, así que tiene su propio sitio y no comparte con la pista.
@@ -220,6 +228,7 @@ public static class ExplicacionPanelTool
         Set(pso, "structure2D",          flat);
         Set(pso, "btnClose",             btnClose);
         Set(pso, "btnPlay",              btnPlay);
+        Set(pso, "btnPlayExtra",         btnPlayExtra);
         Set(pso, "captionLabel",         caption);
         pso.ApplyModifiedProperties();
 

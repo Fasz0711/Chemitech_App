@@ -58,6 +58,7 @@ public class AnimationPlayer
     {
         Step = 0;
         Caption = "";
+        pairPos.Clear();
         if (viewer == null || script == null) return;
 
         var st = new JournalStructure { atoms = script.atoms, bonds = script.bonds };
@@ -87,6 +88,7 @@ public class AnimationPlayer
         if (script == null) return;
 
         ShowBase();
+        pairPos.Clear();
         int target = Mathf.Clamp(step, 0, Total);
         for (int i = 0; i < target; i++) ApplyInstant(script.steps[i]);
         Step = target;
@@ -146,6 +148,7 @@ public class AnimationPlayer
         {
             case "move":     return MoveAtom(p);
             case "transfer": return Transfer(p);
+            case "share":    return Share(p);
             case "bond":     return BondNow(p);
             case "attract":  return AttractNow(p);
             default:         return null;
@@ -165,6 +168,7 @@ public class AnimationPlayer
         {
             case "move":     return from;
             case "transfer":
+            case "share":
             case "bond":
             case "attract":  return from && to;
             default:         return false;
@@ -204,9 +208,55 @@ public class AnimationPlayer
         if (electron) electron.localPosition = hasta;
     }
 
+    /// <summary>El par compartido se desliza desde donde esté hasta su nueva proporción.
+    ///
+    /// Es la primitiva que separa COMPARTIR de ENTREGAR: con amount 0 se queda en medio,
+    /// con ~0.34 se acerca sin llegar, con 1 se va del todo. Animarlo en vez de colocarlo
+    /// de golpe es justo lo que hace visible que el enlace polar es un punto intermedio
+    /// entre los otros dos, y no una categoría suelta.</summary>
+    IEnumerator Share(AnimationPrimitive p)
+    {
+        float desde = LastAmount(p.fromAtom, p.toAtom);
+        float hasta = Mathf.Clamp01(p.amount);
+        float dur   = Secs(p.durationMs);
+
+        for (float t = 0f; t < dur; t += Time.unscaledDeltaTime)
+        {
+            viewer.SetSharedPair(p.fromAtom, p.toAtom, Mathf.Lerp(desde, hasta, Suave(t / dur)));
+            yield return null;
+        }
+        viewer.SetSharedPair(p.fromAtom, p.toAtom, hasta);
+        Remember(p.fromAtom, p.toAtom, hasta);
+    }
+
+    // Dónde está ya el par de cada enlace. Sin esto, un paso que lo mueve arrancaría
+    // siempre desde el medio y se vería un salto hacia atrás.
+    //
+    // Se guarda como POSICIÓN A LO LARGO DEL ENLACE (0 = en el átomo menor, 0.5 = en
+    // medio, 1 = en el mayor) y no como 'amount', porque amount es DIRECCIONAL: el mismo
+    // par descrito desde el otro extremo tiene el valor contrario. Guardar el sentido
+    // dentro del dato es lo que evita que un guion que invierta from/to mande el par al
+    // lado equivocado, que se vería como un error de química y no de código.
+    readonly Dictionary<long, float> pairPos = new Dictionary<long, float>();
+
+    static long Key(int a, int b) => a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
+
+    float LastAmount(int a, int b)
+    {
+        if (!pairPos.TryGetValue(Key(a, b), out float t)) return 0f;
+        float haciaB = (a < b) ? t : 1f - t;      // posición vista desde a -> b
+        return Mathf.Clamp01((haciaB - 0.5f) * 2f);
+    }
+
+    void Remember(int a, int b, float amount)
+    {
+        float haciaB = Mathf.Lerp(0.5f, 1f, Mathf.Clamp01(amount));
+        pairPos[Key(a, b)] = (a < b) ? haciaB : 1f - haciaB;
+    }
+
     IEnumerator BondNow(AnimationPrimitive p)
     {
-        viewer.SetBond(p.fromAtom, p.toAtom, p.order, null);
+        viewer.SetBond(p.fromAtom, p.toAtom, p.order, p.bondKind);
         yield break;
     }
 
@@ -238,8 +288,10 @@ public class AnimationPlayer
                     viewer.SpawnElectron(viewer.GetAtomPosition(p.toAtom));
                     break;
 
-                case "bond":    viewer.SetBond(p.fromAtom, p.toAtom, p.order, null); break;
-                case "attract": viewer.SpawnAttraction(p.fromAtom, p.toAtom);        break;
+                case "share":   viewer.SetSharedPair(p.fromAtom, p.toAtom, Mathf.Clamp01(p.amount));
+                                Remember(p.fromAtom, p.toAtom, Mathf.Clamp01(p.amount)); break;
+                case "bond":    viewer.SetBond(p.fromAtom, p.toAtom, p.order, p.bondKind); break;
+                case "attract": viewer.SpawnAttraction(p.fromAtom, p.toAtom);              break;
             }
         }
     }

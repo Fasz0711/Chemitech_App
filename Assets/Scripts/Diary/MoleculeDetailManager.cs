@@ -42,8 +42,12 @@ public class MoleculeDetailManager : MonoBehaviour
     [SerializeField] private Toggle tglBondTypes;
 
     [Header("Animación")]
-    [SerializeField] private Button          btnPlay;
+    [SerializeField] private Button          btnPlay;       // cómo se forma (deducida)
+    [SerializeField] private Button          btnPlayExtra;  // el guion escrito, si lo hay
     [SerializeField] private TextMeshProUGUI captionLabel;
+
+    private MoleculeAnimation generic;   // deducida de la molécula
+    private MoleculeAnimation authored;  // el guion escrito, si el servidor lo trae
 
     private AnimationPlayer player;
 
@@ -57,8 +61,13 @@ public class MoleculeDetailManager : MonoBehaviour
         player = new AnimationPlayer(viewer, this);
         if (btnPlay)
         {
-            btnPlay.onClick.AddListener(PlayAnimation);
+            btnPlay.onClick.AddListener(() => PlayAnimation(generic));
             btnPlay.gameObject.SetActive(false);
+        }
+        if (btnPlayExtra)
+        {
+            btnPlayExtra.onClick.AddListener(() => PlayAnimation(authored));
+            btnPlayExtra.gameObject.SetActive(false);
         }
         if (captionLabel) captionLabel.text = "";
 
@@ -105,7 +114,14 @@ public class MoleculeDetailManager : MonoBehaviour
     /// botón esa razón se queda sin cumplir.</summary>
     private void ResolveAnimation(string canonicalSmiles)
     {
-        if (btnPlay) btnPlay.gameObject.SetActive(false);
+        authored = null;
+        if (btnPlayExtra) btnPlayExtra.gameObject.SetActive(false);
+
+        // La de "cómo se forma" no depende del servidor: sale de la química que esta
+        // pantalla ya tiene dibujada, así que aparece para todas las moléculas.
+        generic = GenericAnimation.Build(ToExplanationAtoms(), ToExplanationBonds(), nameLabel ? nameLabel.text : "");
+        if (btnPlay) btnPlay.gameObject.SetActive(generic != null);
+
         if (string.IsNullOrEmpty(canonicalSmiles)) return;
 
         ApiManager.Instance.GetMoleculeBySmiles(canonicalSmiles,
@@ -115,18 +131,72 @@ public class MoleculeDetailManager : MonoBehaviour
                 if (!resp.molecule.hasAnimation || resp.molecule.animation == null) return;
                 if (!resp.molecule.animation.Has) return;
 
-                if (player != null && player.Load(resp.molecule.animation) && btnPlay)
-                    btnPlay.gameObject.SetActive(true);
+                authored = resp.molecule.animation;
+                if (btnPlayExtra)
+                {
+                    var lbl = btnPlayExtra.GetComponentInChildren<TextMeshProUGUI>(true);
+                    if (lbl) lbl.text = string.IsNullOrEmpty(authored.title) ? "Ver más" : authored.title;
+                    btnPlayExtra.gameObject.SetActive(true);
+                }
             },
             onError: (code, detail) => { /* sin guion la pantalla sigue sirviendo */ });
     }
 
-    private void PlayAnimation()
+    private void PlayAnimation(MoleculeAnimation animation)
     {
-        if (player == null) return;
-        if (btnPlay) btnPlay.interactable = false;
-        player.Play(onFinished: () => { if (btnPlay) btnPlay.interactable = true; });
+        if (player == null || animation == null) return;
+        if (!player.Load(animation)) return;
+
+        SetPlayButtons(false);
+        player.Play(onFinished: () => SetPlayButtons(true));
         StartCoroutine(FollowCaption());
+    }
+
+    private void SetPlayButtons(bool on)
+    {
+        if (btnPlay)      btnPlay.interactable      = on;
+        if (btnPlayExtra) btnPlayExtra.interactable = on;
+    }
+
+    /// <summary>La estructura del diario, en la forma que entiende el generador. Es la
+    /// misma traducción que hace el visor; se repite aquí porque el generador necesita la
+    /// química ANTES de que nada se dibuje.</summary>
+    private System.Collections.Generic.List<ExplanationContext.Atom> ToExplanationAtoms()
+    {
+        var salida = new System.Collections.Generic.List<ExplanationContext.Atom>();
+        var st = DiaryDetailContext.Current?.molecule?.structure;
+        if (st?.atoms == null) return salida;
+
+        foreach (var a in st.atoms)
+        {
+            if (a == null) continue;
+            var p = a.position;
+            salida.Add(new ExplanationContext.Atom
+            {
+                element  = a.type,
+                position = p != null ? new Vector3(p.x, p.y, p.z) : Vector3.zero,
+                en = a.en, charge = a.charge,
+            });
+        }
+        return salida;
+    }
+
+    private System.Collections.Generic.List<ExplanationContext.Bond> ToExplanationBonds()
+    {
+        var salida = new System.Collections.Generic.List<ExplanationContext.Bond>();
+        var st = DiaryDetailContext.Current?.molecule?.structure;
+        if (st?.bonds == null) return salida;
+
+        foreach (var b in st.bonds)
+        {
+            if (b == null) continue;
+            salida.Add(new ExplanationContext.Bond
+            {
+                beginAtomId = b.beginAtomId, endAtomId = b.endAtomId,
+                order = b.order, kind = b.kind ?? "", negativeEnd = b.negativeEnd,
+            });
+        }
+        return salida;
     }
 
     private IEnumerator FollowCaption()

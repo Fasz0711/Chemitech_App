@@ -39,13 +39,15 @@ public class ExplanationPanel : MonoBehaviour
     [SerializeField] private Structure2DCard structure2D;  // la fórmula estructural dibujada
 
     [Header("Animación")]
-    [SerializeField] private Button          btnPlay;
+    [SerializeField] private Button          btnPlay;      // cómo se forma (deducida)
+    [SerializeField] private Button          btnPlayExtra; // el guion escrito, si lo hay
     [SerializeField] private TextMeshProUGUI captionLabel;
 
     [Header("Salir")]
     [SerializeField] private Button btnClose;
 
-    AnimationPlayer player;
+    AnimationPlayer   player;
+    MoleculeAnimation generic;   // deducida de la molécula; no viene del servidor
 
     void Awake()
     {
@@ -55,7 +57,8 @@ public class ExplanationPanel : MonoBehaviour
         if (tglElectronegativity) tglElectronegativity.onValueChanged.AddListener(_ => ApplyLayers());
         if (tglBondTypes)         tglBondTypes.onValueChanged.AddListener(_ => ApplyLayers());
 
-        if (btnPlay) btnPlay.onClick.AddListener(PlayAnimation);
+        if (btnPlay)      btnPlay.onClick.AddListener(() => PlayAnimation(generic));
+        if (btnPlayExtra) btnPlayExtra.onClick.AddListener(() => PlayAnimation(ExplanationContext.Animation));
         player = new AnimationPlayer(viewer, this);
     }
 
@@ -86,7 +89,15 @@ public class ExplanationPanel : MonoBehaviour
         RefreshCard();
 
         if (captionLabel) captionLabel.text = "";
-        if (btnPlay) btnPlay.gameObject.SetActive(false);
+        if (btnPlayExtra) btnPlayExtra.gameObject.SetActive(false);
+
+        // La animación de CÓMO SE FORMA se deduce de la química de esta molécula, así que
+        // está disponible para todas sin que nadie escriba un guion.
+        generic = GenericAnimation.Build(ExplanationContext.Atoms,
+                                         ExplanationContext.Bonds,
+                                         ExplanationContext.Name);
+        if (btnPlay) btnPlay.gameObject.SetActive(generic != null);
+
         ResolveAnimation();
     }
 
@@ -156,16 +167,25 @@ public class ExplanationPanel : MonoBehaviour
             onError: (code, detail) => { /* sin guion la pantalla sigue sirviendo */ });
     }
 
+    /// <summary>Ofrece el guion ESCRITO como una segunda animación, con su propio título.
+    ///
+    /// No sustituye a la genérica: cuentan cosas distintas. La genérica explica cómo se
+    /// forma ESTA molécula; el guion del agua explica por qué dos aguas se atraen, que es
+    /// otra pregunta y necesita una segunda molécula que ninguna fórmula puede colocar.</summary>
     void OfferPlay(MoleculeAnimation animation)
     {
-        if (!btnPlay || player == null) return;
-        if (!player.Load(animation)) return;
-        btnPlay.gameObject.SetActive(true);
+        if (!btnPlayExtra || animation == null || !animation.Has) return;
+
+        var label = btnPlayExtra.GetComponentInChildren<TextMeshProUGUI>(true);
+        if (label) label.text = string.IsNullOrEmpty(animation.title) ? "Ver más" : animation.title;
+
+        btnPlayExtra.gameObject.SetActive(true);
     }
 
-    void PlayAnimation()
+    void PlayAnimation(MoleculeAnimation animation)
     {
-        if (player == null) return;
+        if (player == null || animation == null) return;
+        if (!player.Load(animation)) return;
 
         // Las capas se apagan al reproducir: durante la animación lo que importa es el
         // movimiento, y tres capas de etiquetas encima lo tapan.
@@ -174,9 +194,15 @@ public class ExplanationPanel : MonoBehaviour
         SetToggle(tglBondTypes, false, viewer && viewer.HasBondTypes);
         ApplyLayers();
 
-        if (btnPlay) btnPlay.interactable = false;
-        player.Play(onFinished: () => { if (btnPlay) btnPlay.interactable = true; });
+        SetPlayButtons(false);
+        player.Play(onFinished: () => SetPlayButtons(true));
         StartCoroutine(FollowCaption());
+    }
+
+    void SetPlayButtons(bool on)
+    {
+        if (btnPlay)      btnPlay.interactable      = on;
+        if (btnPlayExtra) btnPlayExtra.interactable = on;
     }
 
     IEnumerator FollowCaption()

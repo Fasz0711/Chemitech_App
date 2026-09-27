@@ -58,6 +58,12 @@ public class ClassSceneRenderer
 
     string isolated = "";
 
+    // Los resaltados tienen DOS fuentes que no se pisan: los que manda el docente y la
+    // molécula que el alumno acaba de tocar. Se guardan los del servidor porque hay que
+    // volver a aplicarlos cada vez que cambia lo local, y al revés.
+    HighlightDTO[] serverHighlights;
+    string tappedMolecule = "";
+
     readonly BondRenderer bondRenderer;   // null en modo editable: los pinta BondManager
 
     static readonly Color FALLBACK_COLOR = new Color(0.72f, 0.75f, 0.82f);
@@ -221,21 +227,54 @@ public class ClassSceneRenderer
     /// pueda pedir "los enlaces O-H", hay que resaltarlos aquí también.</summary>
     public void ApplyHighlights(HighlightDTO[] highlights)
     {
+        serverHighlights = highlights;
+        RefreshSelection();
+    }
+
+    /// <summary>Resalta la molécula ENTERA que el alumno tocó. Pasar "" lo apaga.
+    ///
+    /// Es LOCAL: no viaja al servidor ni lo ven los demás, igual que el aislamiento. Usa
+    /// el mismo resaltado que produce el botón del docente a propósito — que el gesto del
+    /// alumno y el del docente se vean igual es lo que permite decir "lo que tú tocaste
+    /// es lo que yo estoy marcando".</summary>
+    public void SetTappedMolecule(string moleculeId)
+    {
+        tappedMolecule = moleculeId ?? "";
+        RefreshSelection();
+    }
+
+    public string TappedMolecule => tappedMolecule;
+
+    /// <summary>Apaga todo y vuelve a encender desde las DOS fuentes.
+    ///
+    /// Recalcular desde cero es siempre correcto —el servidor manda el conjunto completo
+    /// de resaltados— y es lo que evita que aplicar una fuente borre la otra: antes, cada
+    /// estado que llegaba del docente apagaba lo que el alumno acababa de tocar.</summary>
+    void RefreshSelection()
+    {
         foreach (var atom in byId.Values) if (atom) atom.SetSelected(false);
-        if (highlights == null) return;
 
-        foreach (var h in highlights)
-        {
-            if (h == null || h.atomIds == null || string.IsNullOrEmpty(h.moleculeId)) continue;
-            if (!moleculeAtomIds.TryGetValue(h.moleculeId, out var ids)) continue;
-
-            foreach (int localId in h.atomIds)
+        if (serverHighlights != null)
+            foreach (var h in serverHighlights)
             {
-                if (localId < 0 || localId >= ids.Length || ids[localId] < 0) continue;
-                if (byId.TryGetValue(ids[localId], out var atom) && atom)
-                    atom.SetSelected(true);
+                if (h == null || h.atomIds == null || string.IsNullOrEmpty(h.moleculeId)) continue;
+                if (!moleculeAtomIds.TryGetValue(h.moleculeId, out var ids)) continue;
+
+                foreach (int localId in h.atomIds)
+                {
+                    if (localId < 0 || localId >= ids.Length || ids[localId] < 0) continue;
+                    if (byId.TryGetValue(ids[localId], out var atom) && atom)
+                        atom.SetSelected(true);
+                }
             }
-        }
+
+        // Lo tocado va DESPUÉS: si el docente resaltó solo los oxígenos y el alumno toca
+        // la molécula, se ve la molécula entera, que es lo que acaba de pedir.
+        if (!string.IsNullOrEmpty(tappedMolecule)
+            && moleculeAtomIds.TryGetValue(tappedMolecule, out var todos))
+            foreach (int id in todos)
+                if (id >= 0 && byId.TryGetValue(id, out var atom) && atom)
+                    atom.SetSelected(true);
     }
 
     /// <summary>Molécula a la que pertenece un átomo, o "" si no se conoce.</summary>
@@ -279,6 +318,9 @@ public class ClassSceneRenderer
         moleculeById.Clear();
         atomMolecule.Clear();
         isolated = "";
+        // Al redibujar, los ids de antes pueden no existir: lo tocado se suelta.
+        tappedMolecule   = "";
+        serverHighlights = null;
 
         // Con sink, los átomos son suyos y los destruye él. Sin sink son estas esferas.
         if (sink != null) sink.ClearAtoms();

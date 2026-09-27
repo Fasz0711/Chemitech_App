@@ -86,12 +86,23 @@ public class ClaseEstudianteManager : MonoBehaviour
     bool  hasDocView;
     Coroutine badgeCo;
 
+    // Dónde va "Copiar a un universo" cuando comparte fila con "Ver explicación". Se LEE
+    // de la escena al arrancar en vez de fijarlo aquí: esa posición está ajustada a mano
+    // y un número escrito en el código la pisaría en cuanto alguien la retocara.
+    RectTransform copyRt;
+    float         copyPairedX;
+
     const float BADGE_SECONDS = 2.5f;
 
     void Start()
     {
         if (btnSalir)        btnSalir.onClick.AddListener(Leave);
         if (btnCopiar)       btnCopiar.onClick.AddListener(CopyToUniverse);
+        if (btnCopiar)
+        {
+            copyRt = btnCopiar.GetComponent<RectTransform>();
+            if (copyRt) copyPairedX = copyRt.anchoredPosition.x;
+        }
         if (btnExplicar)     btnExplicar.onClick.AddListener(OpenExplanation);
         if (explanationPanel) explanationPanel.SetActive(false);
         RefreshExplainButton();
@@ -134,20 +145,35 @@ public class ClaseEstudianteManager : MonoBehaviour
         var camera = cam ? cam.GetComponent<Camera>() : Camera.main;
         if (!camera) return;
 
-        // Tocar el vacío quita el aislamiento: es la salida más natural y evita que un
-        // alumno se quede atascado viendo una sola molécula sin saber cómo volver.
+        // Tocar el vacío suelta la molécula: es la salida más natural y evita que un
+        // alumno se quede atascado sin saber cómo volver.
         if (!Physics.Raycast(camera.ScreenPointToRay(screenPosition), out var hit))
         {
-            sceneRenderer.SetIsolated("");
+            Release();
             return;
         }
 
         var atom = hit.collider ? hit.collider.GetComponent<Atom3D>() : null;
-        if (atom == null) { sceneRenderer.SetIsolated(""); return; }
+        if (atom == null) { Release(); return; }
 
         string molecule = sceneRenderer.MoleculeOf(atom.id);
-        bool alreadyIsolated = sceneRenderer.IsolatedMolecule == molecule;
-        sceneRenderer.SetIsolated(alreadyIsolated ? "" : molecule);
+        if (sceneRenderer.TappedMolecule == molecule) { Release(); return; }
+
+        // Tocar un átomo ilumina LA MOLÉCULA ENTERA, con el mismo resaltado que produce
+        // el botón del docente. El aislamiento se mantiene porque hace otra cosa —atenúa
+        // las demás— y con una sola molécula en la pizarra no se nota, que es justo por
+        // lo que el gesto parecía no hacer nada.
+        sceneRenderer.SetTappedMolecule(molecule);
+        sceneRenderer.SetIsolated(molecule);
+        RefreshExplainButton();
+    }
+
+    /// <summary>Suelta la molécula tocada: se apaga el resaltado, vuelven las demás a su
+    /// brillo y desaparece el botón de explicar.</summary>
+    void Release()
+    {
+        sceneRenderer.SetTappedMolecule("");
+        sceneRenderer.SetIsolated("");
         RefreshExplainButton();
     }
 
@@ -163,16 +189,24 @@ public class ClaseEstudianteManager : MonoBehaviour
 
         bool hay = explanationPanel
                 && sceneRenderer != null
-                && sceneRenderer.MoleculeInfo(sceneRenderer.IsolatedMolecule) != null;
+                && sceneRenderer.MoleculeInfo(sceneRenderer.TappedMolecule) != null;
 
         if (btnExplicar.gameObject.activeSelf != hay) btnExplicar.gameObject.SetActive(hay);
+
+        // Solo: al centro. Acompañado: a su sitio, dejándole hueco al de explicar.
+        if (copyRt)
+        {
+            var pos = copyRt.anchoredPosition;
+            pos.x = hay ? copyPairedX : 0f;
+            copyRt.anchoredPosition = pos;
+        }
     }
 
     void OpenExplanation()
     {
         if (sceneRenderer == null || !explanationPanel) return;
 
-        var m = sceneRenderer.MoleculeInfo(sceneRenderer.IsolatedMolecule);
+        var m = sceneRenderer.MoleculeInfo(sceneRenderer.TappedMolecule);
         if (m == null) return;
 
         // Desde la pizarra la química viaja con la molécula, así que la pantalla se abre

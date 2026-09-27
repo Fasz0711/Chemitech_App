@@ -105,12 +105,29 @@ public class AnimationStep
 [Serializable]
 public class AnimationPrimitive
 {
-    public string kind;          // "move" | "transfer" | "bond" | "attract"
+    public string kind;          // "move" | "transfer" | "bond" | "attract" | "share"
     public int    fromAtom;
     public int    toAtom;
     public JournalVec3 toPosition;   // solo "move": a dónde va
     public int    order;             // solo "bond"; 0 lo quita
     public int    durationMs;
+
+    // ── Campos que SOLO usa el cliente ────────────────────────────────────────
+    // El servidor no los manda nunca y JsonUtility los deja en su valor por defecto, que
+    // es precisamente el que no hace nada. Existen porque la animación GENÉRICA —la que
+    // el cliente deduce de la química de cada molécula, sin guion escrito— necesita
+    // expresar algo que el vocabulario del servidor no tiene: la diferencia entre
+    // COMPARTIR un par de electrones y ENTREGARLO.
+
+    /// <summary>Solo "share": cuánto se desplaza el par compartido hacia 'toAtom'.
+    /// 0 = se queda en medio (enlace no polar), ~0.35 = se acerca sin llegar (polar),
+    /// 1 = se va del todo (iónico). Es la distinción que enseña la lección.</summary>
+    public float amount;
+
+    /// <summary>Solo "bond": el tipo del enlace que nace, para que la capa de tipo de
+    /// enlace pueda colorearlo. Sin esto un enlace creado a mitad de animación saldría
+    /// gris aunque fuera polar.</summary>
+    public string bondKind;
 }
 
 [Serializable]
