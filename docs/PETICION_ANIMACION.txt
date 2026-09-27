@@ -1,0 +1,222 @@
+================================================================================
+PETICIÓN AL BACKEND: LA ANIMACIÓN (ENTREGA 2)
+ChemiTech · frontend -> backend · 2026-09-26
+================================================================================
+
+La entrega 1 está terminada: capas y tarjeta 2D funcionando en la pizarra, en el
+universo y en el diario. Esto es lo que falta para la 2.
+
+EMPIEZA POR LA SECCIÓN 1: hay una decisión pendiente —tu punto B— y este
+documento propone una TERCERA vía que no estaba sobre la mesa. Si la compras, el
+resto del documento es el plan completo. Si no, dímelo y lo reescribo sobre la
+que elijas, porque todo lo demás depende de eso.
+
+
+================================================================================
+0. DE DÓNDE VIENE ESTO
+================================================================================
+
+El usuario tapa un átomo, pulsa "Ver explicación" y ve la molécula en 3D con sus
+capas. Falta el botón de reproducir: cómo se formó, hacia dónde se fue la carga.
+
+Tu punto B detectó el problema: `StepPrimitive` referencia `fromMoleculeId` +
+`fromAtomId`, o sea que está diseñado para LA ESCENA DE CLASE, donde el servidor
+asigna ids (m1, m2…). Una explicación por molécula no tiene escena ni ids.
+
+Y de los tres momentos del guion de la lección:
+
+    el electrón del sodio al cloro ...... SÍ cabe (la red es UNA molécula)
+    la atracción entre dos aguas ........ NO cabe: son DOS moléculas
+    las aguas separando los iones ....... NO cabe: son varias
+
+Diste dos salidas: (a) mini-escena con ids propios, o (b) que esas dos se queden
+solo en la interacción colectiva de Fase 5.
+
+
+================================================================================
+1. LA TERCERA VÍA, Y POR QUÉ LA PREFIERO  [PROPUESTO]
+================================================================================
+
+NI (a) NI (b): QUE LA ANIMACIÓN TRAIGA SU PROPIA LISTA DE ÁTOMOS, y que las
+primitivas referencien ÍNDICES DENTRO DE ESA LISTA. Sin moleculeId. Sin ids.
+
+    "animation": {
+      "atoms": [ ... ],        <- la escenita completa de esta explicación
+      "steps": [ { "primitives": [ { "from": 0, "to": 3 } ] } ]
+    }
+
+POR QUÉ NO (b): la atracción entre dos aguas es EL PUENTE DE HIDRÓGENO, que es
+  un tema de la lección, no un adorno. Dejarlo solo en el momento colectivo
+  significa que el alumno que repasa solo en el diario no lo ve nunca. La mitad
+  del valor de esta pantalla es que se abre sin docente.
+
+POR QUÉ NO (a) TAL CUAL: montar una mini-escena "con sus ids" reproduce el
+  vocabulario de la clase (m1, m2, moleculeId + atomId) en un sitio que no lo
+  necesita. Dos formas de direccionar lo mismo acaban divergiendo.
+
+POR QUÉ ESTA: el `moleculeId` existe SOLO porque en la escena de clase hay varias
+  moléculas y el servidor tiene que poder nombrarlas entre sondeos. Una
+  explicación es una unidad cerrada que se pide entera de una vez: dentro de
+  ella, un índice plano basta y no hay nada que sincronizar.
+
+  Y cae bien la consecuencia importante: SI LA LISTA DE ÁTOMOS DE LA ANIMACIÓN
+  PUEDE SER MÁS GRANDE QUE LA DE LA MOLÉCULA, los tres momentos caben. El alumno
+  toca un agua, y la animación del puente trae DOS aguas. No hay caso especial.
+
+
+================================================================================
+2. LA FORMA  [PROPUESTO — el contrato definitivo lo vuelcas tú del servidor]
+================================================================================
+
+Un bloque más en lo que ya devuelve /detection/by-smiles:
+
+    GET /api/detection/by-smiles?smiles=O
+
+    "hasAnimation": true,
+    "animation": {
+      "id": "h2o-puente",
+      "title": "Por qué el agua se atrae con el agua",
+
+      "atoms": [
+        { "type": "O", "position": {...}, "en": 3.44, "charge": 0 },
+        { "type": "H", "position": {...}, "en": 2.20, "charge": 0 },
+        ...
+      ],
+      "bonds": [
+        { "beginAtomId": 0, "endAtomId": 1, "order": 1,
+          "kind": "polar", "negativeEnd": 0 }
+      ],
+
+      "steps": [
+        {
+          "caption": "El oxígeno atrae más los electrones: se queda con carga negativa.",
+          "durationMs": 1200,
+          "primitives": [
+            { "kind": "transfer", "from": 1, "to": 0, "durationMs": 900 }
+          ]
+        },
+        {
+          "caption": "El hidrógeno de una molécula se acerca al oxígeno de la otra.",
+          "durationMs": 1400,
+          "primitives": [
+            { "kind": "move",    "from": 3, "toPosition": {...}, "durationMs": 1000 },
+            { "kind": "attract", "from": 4, "to": 0, "durationMs": 400 }
+          ]
+        }
+      ]
+    }
+
+REGLAS
+
+  - `atoms` y `bonds` con la MISMA forma que `structure`. El cliente ya tiene un
+    renderizador escrito contra esa forma; una segunda forma sería un segundo
+    renderizador, y acabarían divergiendo.
+
+  - `from` y `to` son ÍNDICES en `animation.atoms`. Nunca moleculeId.
+
+  - `animation.atoms` PUEDE TENER MÁS ÁTOMOS que `structure.atoms`. Es lo que
+    permite el puente de hidrógeno y la disolución. Los primeros N pueden ser la
+    molécula pedida, pero el cliente NO lo da por hecho: dibuja `animation.atoms`
+    tal cual mientras la animación está abierta.
+
+  - LAS PRIMITIVAS SON LAS CUATRO DE SIEMPRE: move, transfer, bond, attract. No
+    hacen falta más.
+
+  - CADA PASO SE APLICA SOBRE EL ANTERIOR, en orden, desde el estado base. Es la
+    regla que ya acordamos en la Fase 5: cada paso define un estado final y la
+    animación es solo la transición. Así el cliente puede saltar al paso 3
+    directamente aplicando 1, 2 y 3 sin animar, que es lo que hace si el usuario
+    adelanta.
+
+  - `hasAnimation: false` en la inmensa mayoría de moléculas. El modal se abre
+    igual, con capas y tarjeta, y sin botón de reproducir. No es un caso de error.
+
+QUÉ HACE CADA PRIMITIVA, PARA QUE LOS DOS ENTENDAMOS LO MISMO
+
+    move      el átomo `from` se desplaza hasta `toPosition`.
+    transfer  una carga viaja de `from` a `to`. AL TERMINAR, `from` queda +1 y
+              `to` queda -1 respecto a como estaban. Es lo que dibuja el electrón.
+    bond      aparece o cambia un enlace entre `from` y `to` con `order`;
+              order 0 lo quita.
+    attract   línea punteada entre `from` y `to`. NO es un enlace: es justo la
+              distinción que la lección quiere enseñar en el puente de hidrógeno.
+
+
+================================================================================
+3. LOS GUIONES QUE HACEN FALTA: TRES
+================================================================================
+
+Son los que tu §E.3 ya propuso, y los que el guion de la lección identifica:
+
+  1. NaCl — el electrón del sodio al cloro.
+     `transfer` del Na al Cl, y las cargas quedan +1 / -1. La red ya viene
+     prearmada, así que la escenita es la que ya devuelves.
+
+  2. AGUA — el puente de hidrógeno.
+     DOS moléculas de agua en `animation.atoms`. Un `attract` entre el H de una
+     y el O de la otra. Es el caso que justifica toda la sección 1.
+
+  3. AGUA + NaCl — la disolución.
+     Varias aguas rodeando un ion y separándolo de la red. `move` + `attract`.
+     Si este se queda fuera por tiempo, se pierde poco: es el que el guion marca
+     como el más apoyado en la explicación hablada.
+
+DÓNDE VIVEN: `molecules.structure_data` (JSONB), que es donde ya vive la red de
+NaCl. Mismo sitio, mismo mecanismo, ningún esquema nuevo.
+
+SI SOLO DA TIEMPO A UNO, que sea el 1: cubre el enlace iónico, que es la mitad de
+la lección, y es el único de los tres que cabría también en la versión (b).
+
+
+================================================================================
+4. LO QUE HACE EL CLIENTE  (no necesitas nada de esto, es para que sepas qué esperar)
+================================================================================
+
+  - Un botón de reproducir en la pantalla de explicación, solo si hasAnimation.
+  - Dibuja `animation.atoms` mientras la animación está abierta, y vuelve a la
+    molécula al cerrarla.
+  - Interpola cada primitiva durante su durationMs y deja el estado final.
+  - Muestra el `caption` del paso como texto, que es la mitad de la explicación.
+  - Adelantar o retroceder salta aplicando los pasos sin animar.
+  - El electrón del `transfer` lo dibuja el cliente; no mandes ningún asset.
+
+
+================================================================================
+5. LO QUE NO HACE FALTA
+================================================================================
+
+  - NINGÚN endpoint nuevo. Va dentro de /detection/by-smiles, como la entrega 1.
+  - NADA de autenticación, por lo mismo que acordaste en tu §C.4.
+  - NO tocar `state.interaction` de la escena de clase. Sigue existiendo para el
+    momento colectivo que conduce el docente, y esta petición no lo sustituye.
+  - NADA de predicciones ni reveal. Eso es otra cosa y no está pedido.
+
+
+================================================================================
+6. CÓMO SE COMPRUEBA
+================================================================================
+
+  1. by-smiles del agua trae hasAnimation true y un `animation` con MÁS átomos
+     que `structure` (las dos moléculas del puente).
+  2. Los índices de todas las primitivas caen dentro de animation.atoms.
+  3. El NaCl trae su `transfer` del sodio al cloro.
+  4. Una molécula cualquiera del catálogo —metano, por ejemplo— trae
+     hasAnimation false y `animation` vacío pero PRESENTE (no null), como el
+     resto de bloques opcionales del proyecto.
+  5. Aplicar los pasos en orden desde el estado base no deja ningún índice
+     colgado ni ningún enlace a un átomo que no existe.
+
+
+================================================================================
+7. CALENDARIO
+================================================================================
+
+Esto es MEJORA, no requisito: el plan de validación pide capas y tarjeta 2D, y
+eso ya está entregado. Si la animación no llega, el ítem del plan sigue cubierto.
+
+Lo que sigue siendo el camino crítico es EL ENSAYO DE 20 MINUTOS con dos
+celulares y el guion en la mano. Render y el export ya están. Esto va detrás.
+
+================================================================================
+FIN
+================================================================================

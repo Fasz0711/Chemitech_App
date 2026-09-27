@@ -34,6 +34,7 @@ public static class ExplicacionPanelTool
     static readonly Color PANEL   = Hex("242659");
     static readonly Color CARD    = Hex("141633");
     static readonly Color CYAN    = Hex("19A7CE");
+    static readonly Color GREEN   = Hex("2ECC71");
     static readonly Color PURPLE  = Hex("5A5FA5");
     static readonly Color DIM     = Hex("A2A2A2");
 
@@ -144,8 +145,19 @@ public static class ExplicacionPanelTool
         var viewer = Ensure<MoleculeViewer3D>(viewerGo);
 
         MakeText(card.transform, "Hint", "Toca y arrastra para rotar",
-                 new Vector2(0f, 0.5f), new Vector2(60f, -366f), new Vector2(700f, 34f),
+                 new Vector2(0f, 0.5f), new Vector2(60f, -300f), new Vector2(700f, 30f),
                  19f, new Color(1f, 1f, 1f, 0.55f), TextAlignmentOptions.Center, FontStyles.Normal);
+
+        // Reproducir: bajo el visor, y oculto hasta que se sepa si hay guion.
+        var btnPlay = MakeButton(card.transform, "BtnPlay", "Ver cómo ocurre", GREEN,
+                                 new Vector2(0f, 0.5f), new Vector2(230f, -344f), new Vector2(360f, 56f), 22f);
+        btnPlay.gameObject.SetActive(false);
+
+        // El texto del paso. Es MEDIA EXPLICACIÓN: la animación muestra qué pasa y esta
+        // línea dice por qué, así que tiene su propio sitio y no comparte con la pista.
+        var caption = MakeText(card.transform, "Caption", "",
+                               new Vector2(0f, 0.5f), new Vector2(60f, -398f), new Vector2(700f, 60f),
+                               21f, Hex("BFE9F2"), TextAlignmentOptions.Center, FontStyles.Normal);
 
         // ── Tarjeta 2D a la derecha ───────────────────────────────────────────
         var card2D = EnsureChild(card.transform, "Card2D");
@@ -207,6 +219,8 @@ public static class ExplicacionPanelTool
         Set(pso, "card2DText",           card2DText);
         Set(pso, "structure2D",          flat);
         Set(pso, "btnClose",             btnClose);
+        Set(pso, "btnPlay",              btnPlay);
+        Set(pso, "captionLabel",         caption);
         pso.ApplyModifiedProperties();
 
         // ── El botón que lo abre, y el manager ────────────────────────────────

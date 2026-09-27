@@ -39,6 +39,78 @@ public class JournalMolecule
     public float  aqueousSolubilityLogS;
     public JournalComposition[] composition;
     public JournalStructure     structure;
+
+    /// <summary>Si esta molécula tiene un guion de animación. La inmensa mayoría NO, y
+    /// eso no es un error: el modal se abre igual, con capas y tarjeta, sin el botón de
+    /// reproducir.</summary>
+    public bool hasAnimation;
+
+    /// <summary>El guion. Llega PRESENTE PERO VACÍO cuando no hay, nunca null: JsonUtility
+    /// instancia un objeto vacío y el cliente no podría distinguir "vacío" de "ausente".
+    /// Por eso manda 'hasAnimation' y no la comprobación del objeto.
+    ///
+    /// OJO: SOLO VIENE POR /detection/by-smiles. El listado del diario NO la trae, a
+    /// propósito: incrusta el detalle completo por entrada y cada molécula arrastraría su
+    /// guion entero, multiplicando una respuesta que ya es cara. Si aparece ahí, es un
+    /// error del servidor.</summary>
+    public MoleculeAnimation animation;
+}
+
+/// <summary>Un guion de animación: una escenita AUTOCONTENIDA con sus propios átomos.
+///
+/// POR QUÉ NO REUSA moleculeId: ese identificador existe solo porque la escena de clase
+/// tiene varias moléculas que el servidor debe poder nombrar ENTRE SONDEOS. Una
+/// explicación se pide entera de una vez, así que dentro de ella un índice plano basta y
+/// no hay nada que sincronizar.
+///
+/// Y POR ESO 'atoms' PUEDE SER MÁS GRANDE que la estructura de la molécula: el puente de
+/// hidrógeno necesita DOS aguas. El alumno toca una y la animación trae las dos.</summary>
+[Serializable]
+public class MoleculeAnimation
+{
+    public string id;
+    public string title;
+
+    // Misma forma que JournalStructure, para que el cliente use un solo renderizador.
+    public JournalAtom[] atoms;
+    public JournalBond[] bonds;
+
+    public AnimationStep[] steps;
+
+    public bool Has => steps != null && steps.Length > 0 && atoms != null && atoms.Length > 0;
+}
+
+/// <summary>Un paso. SE APLICA SOBRE EL ANTERIOR, en orden desde el estado base: así
+/// saltar al paso 3 es aplicar 1, 2 y 3 sin animar, que es lo que se hace al adelantar.</summary>
+[Serializable]
+public class AnimationStep
+{
+    public string caption;       // lo que se explica en este paso; es media explicación
+    public int    durationMs;
+    public AnimationPrimitive[] primitives;
+}
+
+/// <summary>Una primitiva del guion.
+///
+/// NO ES el StepPrimitiveDTO de la escena de clase, aunque se parezcan. Aquella es la
+/// FORMA DE CABLE del estado de una escena viva, donde el destino de un 'move' es la
+/// posición guardada del estado final. Esta es CONTENIDO autorado, autocontenido, y por
+/// eso necesita coordenadas explícitas. Quedó escrito en el contrato para que nadie
+/// intente unificarlas más adelante.
+///
+/// 'fromAtom' y 'toAtom' son ÍNDICES en MoleculeAnimation.atoms. Se llaman así y no
+/// 'from'/'to' porque 'from' es palabra reservada en Python y el servidor tendría que
+/// declararla con un alias — justo la indirección donde se cuelan los errores de nombre
+/// que ya costaron una clase de depuración.</summary>
+[Serializable]
+public class AnimationPrimitive
+{
+    public string kind;          // "move" | "transfer" | "bond" | "attract"
+    public int    fromAtom;
+    public int    toAtom;
+    public JournalVec3 toPosition;   // solo "move": a dónde va
+    public int    order;             // solo "bond"; 0 lo quita
+    public int    durationMs;
 }
 
 [Serializable]

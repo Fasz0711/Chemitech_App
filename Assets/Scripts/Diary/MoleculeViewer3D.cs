@@ -56,6 +56,18 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
     readonly List<Renderer> bondRend   = new List<Renderer>();
     readonly List<string>   bondKind   = new List<string>();
 
+    // Los enlaces se recolocan cuando un átomo se mueve. Antes se dibujaban una vez y se
+    // quedaban donde nacieron, que valía porque la molécula era estática; en una
+    // animación un 'move' los dejaría flotando desconectados.
+    // El 'kind' va AQUÍ y no en una lista paralela: bondKind es por CILINDRO —un enlace
+    // doble añade dos entradas— así que indexarla por enlace se desalinea en cuanto hay
+    // un doble, y el enlace siguiente se pintaría del color equivocado.
+    struct BondRec { public int a, b, order; public string kind; }
+    readonly List<BondRec> bondRecs = new List<BondRec>();
+
+    // Lo que dibuja cada primitiva: el electrón que viaja y las líneas de atracción.
+    readonly List<Transform> effectTf = new List<Transform>();
+
     /// <summary>Capas encendidas. El diario las deja apagadas y se ve como siempre.</summary>
     public bool ShowSymbols          { get; private set; } = true;
     public bool ShowElectronegativity { get; private set; }
@@ -63,8 +75,10 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
 
     void Reset() { target = GetComponent<RawImage>(); }
 
-    /// <summary>Lo que usa el diario. Su estructura no trae electronegatividad ni tipo de
-    /// enlace, así que esas capas quedan sin dato y no se pueden encender.</summary>
+    /// <summary>Lo que usa el diario. Desde que el servidor enriqueció el detalle, su
+    /// estructura SÍ trae electronegatividad y tipo de enlace, así que las tres capas
+    /// funcionan igual que en la pizarra. Si algún día llegara sin ellos, en queda en 0 y
+    /// kind vacío, y esas dos capas simplemente no se pueden encender.</summary>
     public void Show(JournalStructure s)
     {
         var atoms = new List<ExplanationContext.Atom>();
@@ -78,7 +92,8 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
                 {
                     element  = a?.type,
                     position = p != null ? new Vector3(p.x, p.y, p.z) : Vector3.zero,
-                    en = 0f, charge = 0,
+                    en       = a != null ? a.en : 0f,
+                    charge   = a != null ? a.charge : 0,
                 });
             }
 
@@ -87,7 +102,9 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
                 bonds.Add(new ExplanationContext.Bond
                 {
                     beginAtomId = b.beginAtomId, endAtomId = b.endAtomId,
-                    order = b.order, kind = "", negativeEnd = -1,
+                    order       = b.order,
+                    kind        = b.kind ?? "",
+                    negativeEnd = b.negativeEnd,
                 });
 
         Show(atoms, bonds);
@@ -129,8 +146,10 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
             {
                 if (b.beginAtomId < 0 || b.beginAtomId >= n) continue;
                 if (b.endAtomId   < 0 || b.endAtomId   >= n) continue;
+                int order = Mathf.Clamp(b.order, 1, 3);
+                bondRecs.Add(new BondRec { a = b.beginAtomId, b = b.endAtomId, order = order, kind = b.kind ?? "" });
                 SpawnBond(atomTf[b.beginAtomId].localPosition, atomTf[b.endAtomId].localPosition,
-                          Mathf.Clamp(b.order, 1, 3), b.kind);
+                          order, b.kind);
                 SpawnDeltas(b);
             }
 
@@ -268,6 +287,122 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
         deltaLabels.Add(new Pegada { tf = go.transform, atom = atomIndex, up = 0.60f });
     }
 
+    // ── Piezas para la animación ──────────────────────────────────────────────
+
+    /// <summary>Cuántos átomos hay dibujados. Lo consulta el reproductor para descartar
+    /// un guion cuyos índices no cuadren en vez de reventar a media explicación.</summary>
+    public int AtomCount => atomTf.Count;
+
+    /// <summary>Mueve un átomo. Los enlaces se rehacen solos.</summary>
+    public void SetAtomPosition(int index, Vector3 localPos)
+    {
+        if (index < 0 || index >= atomTf.Count || !atomTf[index]) return;
+        atomTf[index].localPosition = localPos;
+        RebuildBondTransforms();
+    }
+
+    public Vector3 GetAtomPosition(int index)
+        => (index >= 0 && index < atomTf.Count && atomTf[index]) ? atomTf[index].localPosition : Vector3.zero;
+
+    /// <summary>Recoloca los cilindros según dónde estén AHORA los átomos.
+    ///
+    /// Se destruyen y se vuelven a crear en vez de moverlos: un enlace doble son dos
+    /// cilindros separados por una perpendicular que cambia al girar el enlace, y
+    /// recalcularla a mano para cada uno sería reescribir SpawnBond peor.</summary>
+    void RebuildBondTransforms()
+    {
+        foreach (var r in bondRend) if (r) Destroy(r.gameObject);
+        bondRend.Clear();
+        bondKind.Clear();
+
+        foreach (var rec in bondRecs)
+        {
+            if (rec.a < 0 || rec.a >= atomTf.Count || rec.b < 0 || rec.b >= atomTf.Count) continue;
+            SpawnBond(atomTf[rec.a].localPosition, atomTf[rec.b].localPosition, rec.order, rec.kind);
+        }
+        ApplyLayers();
+    }
+
+    /// <summary>Cambia un enlace: lo crea, le cambia el orden, o lo quita con order 0.</summary>
+    public void SetBond(int a, int b, int order, string kind)
+    {
+        int at = bondRecs.FindIndex(r => (r.a == a && r.b == b) || (r.a == b && r.b == a));
+
+        // Al cambiar de orden se conserva el tipo que ya tenía si no llega uno nuevo: un
+        // paso que solo dice "ahora es doble" no debería despintar un enlace polar.
+        string keep = (at >= 0 && string.IsNullOrEmpty(kind)) ? bondRecs[at].kind : (kind ?? "");
+
+        if (order <= 0) { if (at >= 0) bondRecs.RemoveAt(at); }
+        else if (at >= 0) bondRecs[at] = new BondRec { a = a, b = b, order = order, kind = keep };
+        else              bondRecs.Add(new BondRec { a = a, b = b, order = order, kind = keep });
+
+        RebuildBondTransforms();
+    }
+
+    /// <summary>El electrón que viaja de un átomo a otro. Es lo que hace visible la
+    /// palabra "entrega" del guion: el sodio ENTREGA su electrón al cloro.</summary>
+    public Transform SpawnElectron(Vector3 at)
+    {
+        var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        go.name = "Electron";
+        var c = go.GetComponent<Collider>(); if (c) Destroy(c);
+        go.transform.SetParent(stageRoot, false);
+        go.layer = stageRoot.gameObject.layer;
+        go.transform.localPosition = at;
+        go.transform.localScale = Vector3.one * 0.26f;
+
+        if (atomMaterial)
+        {
+            var mat = new Material(atomMaterial);
+            mat.SetColor(BaseColorId, new Color(0.55f, 0.85f, 1f));
+            mat.EnableKeyword("_EMISSION");
+            mat.SetColor(Shader.PropertyToID("_EmissionColor"), new Color(0.35f, 0.75f, 1f) * 2f);
+            go.GetComponent<Renderer>().sharedMaterial = mat;
+        }
+
+        effectTf.Add(go.transform);
+        return go.transform;
+    }
+
+    /// <summary>La línea punteada de una atracción. NO es un enlace, y esa distinción es
+    /// justo lo que la lección enseña en el puente de hidrógeno: se dibuja como una fila
+    /// de puntos, no como un cilindro.</summary>
+    public void SpawnAttraction(int a, int b)
+    {
+        if (a < 0 || a >= atomTf.Count || b < 0 || b >= atomTf.Count) return;
+        Vector3 pa = atomTf[a].localPosition, pb = atomTf[b].localPosition;
+
+        float len = Vector3.Distance(pa, pb);
+        int dots = Mathf.Clamp(Mathf.RoundToInt(len / 0.22f), 3, 14);
+
+        for (int i = 1; i < dots; i++)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.name = "AttractDot";
+            var c = go.GetComponent<Collider>(); if (c) Destroy(c);
+            go.transform.SetParent(stageRoot, false);
+            go.layer = stageRoot.gameObject.layer;
+            go.transform.localPosition = Vector3.Lerp(pa, pb, i / (float)dots);
+            go.transform.localScale = Vector3.one * 0.07f;
+
+            if (bondMaterial)
+            {
+                var mat = new Material(bondMaterial);
+                mat.SetColor(BaseColorId, new Color(0.95f, 0.85f, 0.45f));
+                go.GetComponent<Renderer>().sharedMaterial = mat;
+            }
+            effectTf.Add(go.transform);
+        }
+    }
+
+    /// <summary>Quita electrones y líneas de atracción, dejando la molécula. Lo usa el
+    /// reproductor al rebobinar: los efectos son de un paso, no del estado.</summary>
+    public void ClearEffects()
+    {
+        foreach (var t in effectTf) if (t) Destroy(t.gameObject);
+        effectTf.Clear();
+    }
+
     // ── Capas ─────────────────────────────────────────────────────────────────
 
     public void SetLayers(bool symbols, bool electronegativity, bool bondTypes)
@@ -310,6 +445,7 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
             Destroy(stageRoot.GetChild(i).gameObject);
         atomTf.Clear(); labelTf.Clear(); atomRad.Clear();
         enLabels.Clear(); deltaLabels.Clear(); bondRend.Clear(); bondKind.Clear();
+        bondRecs.Clear(); effectTf.Clear();
         if (stageRoot) stageRoot.localRotation = Quaternion.identity;
     }
 

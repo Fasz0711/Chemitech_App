@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Globalization;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -35,12 +36,35 @@ public class MoleculeDetailManager : MonoBehaviour
     [Header("Visor 3D")]
     [SerializeField] private MoleculeViewer3D viewer;
 
+    [Header("Capas del visor")]
+    [SerializeField] private Toggle tglSymbols;
+    [SerializeField] private Toggle tglElectronegativity;
+    [SerializeField] private Toggle tglBondTypes;
+
+    [Header("Animación")]
+    [SerializeField] private Button          btnPlay;
+    [SerializeField] private TextMeshProUGUI captionLabel;
+
+    private AnimationPlayer player;
+
     [Header("Escenas")]
     [SerializeField] private string escenaDiario = "DiaryScene";
 
     private void Start()
     {
         if (btnBack) btnBack.onClick.AddListener(() => SceneManager.LoadScene(escenaDiario));
+
+        player = new AnimationPlayer(viewer, this);
+        if (btnPlay)
+        {
+            btnPlay.onClick.AddListener(PlayAnimation);
+            btnPlay.gameObject.SetActive(false);
+        }
+        if (captionLabel) captionLabel.text = "";
+
+        if (tglSymbols)           tglSymbols.onValueChanged.AddListener(_ => ApplyLayers());
+        if (tglElectronegativity) tglElectronegativity.onValueChanged.AddListener(_ => ApplyLayers());
+        if (tglBondTypes)         tglBondTypes.onValueChanged.AddListener(_ => ApplyLayers());
 
         var entry = DiaryDetailContext.Current;
         if (entry == null) { Debug.LogWarning("[Detail] Sin molécula en contexto."); Fill(null); return; }
@@ -64,6 +88,95 @@ public class MoleculeDetailManager : MonoBehaviour
         BuildComposition(m != null ? m.composition : null);
 
         if (viewer) viewer.Show(m != null ? m.structure : null);
+        RefreshLayerToggles();
+        ResolveAnimation(m != null ? m.canonicalSmiles : null);
+    }
+
+    // ── Animación ────────────────────────────────────────────────────────────────
+
+    /// <summary>Busca si esta molécula tiene guion.
+    ///
+    /// HAY QUE PEDIRLO APARTE: el listado del diario NO trae la animación, a propósito —
+    /// incrusta el detalle completo por entrada y cada molécula arrastraría su guion,
+    /// multiplicando una respuesta que ya es cara. Solo la puebla /detection/by-smiles.
+    ///
+    /// Y tiene que estar aquí: el argumento que decidió el diseño del guion fue que el
+    /// alumno que repasa SOLO, en el diario, pueda ver el puente de hidrógeno. Sin este
+    /// botón esa razón se queda sin cumplir.</summary>
+    private void ResolveAnimation(string canonicalSmiles)
+    {
+        if (btnPlay) btnPlay.gameObject.SetActive(false);
+        if (string.IsNullOrEmpty(canonicalSmiles)) return;
+
+        ApiManager.Instance.GetMoleculeBySmiles(canonicalSmiles,
+            onSuccess: resp =>
+            {
+                if (!this || resp?.molecule == null) return;
+                if (!resp.molecule.hasAnimation || resp.molecule.animation == null) return;
+                if (!resp.molecule.animation.Has) return;
+
+                if (player != null && player.Load(resp.molecule.animation) && btnPlay)
+                    btnPlay.gameObject.SetActive(true);
+            },
+            onError: (code, detail) => { /* sin guion la pantalla sigue sirviendo */ });
+    }
+
+    private void PlayAnimation()
+    {
+        if (player == null) return;
+        if (btnPlay) btnPlay.interactable = false;
+        player.Play(onFinished: () => { if (btnPlay) btnPlay.interactable = true; });
+        StartCoroutine(FollowCaption());
+    }
+
+    private IEnumerator FollowCaption()
+    {
+        while (player != null && player.IsPlaying)
+        {
+            if (captionLabel) captionLabel.text = player.Caption;
+            yield return null;
+        }
+        if (captionLabel) captionLabel.text = player?.Caption ?? "";
+    }
+
+    // ── Capas ────────────────────────────────────────────────────────────────────
+
+    /// <summary>Los mismos tres interruptores que la pantalla de explicación, sobre el
+    /// visor que esta pantalla ya tenía. No se abre un modal encima: sería tapar una
+    /// molécula con la misma molécula.
+    ///
+    /// Un interruptor sin dato se apaga y se deshabilita en vez de esconderse: que la
+    /// capa exista y esté vacía dice algo —"de esta molécula no tenemos eso"— y quitarla
+    /// lo convertiría en un misterio.</summary>
+    private void RefreshLayerToggles()
+    {
+        SetToggle(tglSymbols,           true,  true);
+        SetToggle(tglElectronegativity, false, viewer && viewer.HasElectronegativity);
+        SetToggle(tglBondTypes,         false, viewer && viewer.HasBondTypes);
+        ApplyLayers();
+    }
+
+    private static void SetToggle(Toggle t, bool on, bool usable)
+    {
+        if (!t) return;
+        t.isOn         = on && usable;
+        t.interactable = usable;
+
+        var label = t.GetComponentInChildren<TextMeshProUGUI>(true);
+        if (label)
+        {
+            var c = label.color;
+            label.color = new Color(c.r, c.g, c.b, usable ? 1f : 0.35f);
+        }
+    }
+
+    private void ApplyLayers()
+    {
+        if (!viewer) return;
+        viewer.SetLayers(
+            tglSymbols           && tglSymbols.isOn,
+            tglElectronegativity && tglElectronegativity.isOn,
+            tglBondTypes         && tglBondTypes.isOn);
     }
 
     // ── Composición ──────────────────────────────────────────────────────────────

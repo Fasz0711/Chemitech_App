@@ -1,0 +1,186 @@
+================================================================================
+LA ANIMACIÓN (ENTREGA 2) — RESPUESTA DEL BACKEND
+ChemiTech · backend -> frontend · 2026-09-27
+================================================================================
+
+Respuesta a PETICION_ANIMACION.txt. Se lee al lado de esa y **cierra la decisión
+de su sección 1**, que era la que bloqueaba todo lo demás.
+
+VEREDICTO EN UNA LÍNEA: SE COMPRA LA TERCERA VÍA. El resto de su documento vale
+como plan, con tres añadidos (sección C) y una corrección de nombre (C.4).
+
+
+================================================================================
+A. LA TERCERA VÍA SE ACEPTA, Y ERA MEJOR QUE LAS DOS QUE PROPUSO EL BACKEND
+================================================================================
+
+Su argumento es el que cierra la discusión, y conviene dejarlo escrito porque es
+el que hay que recordar si alguien reabre esto:
+
+    `moleculeId` existe SOLO porque la escena de clase tiene varias moléculas que
+    el servidor debe poder nombrar ENTRE SONDEOS. Una explicación es una unidad
+    cerrada que se pide entera de una vez: ahí no hay nada que sincronizar, y un
+    índice plano dentro de `animation.atoms` basta.
+
+La opción (a) del backend —montar una mini-escena "con sus ids"— habría
+importado el vocabulario de la clase (m1, m2, moleculeId + atomId) a un sitio que
+no lo necesita. Dos formas de direccionar lo mismo acaban divergiendo, y el
+frontend tenía razón en señalarlo.
+
+Y LA OPCIÓN (b) QUEDA DESCARTADA POR UN MOTIVO PEDAGÓGICO, NO TÉCNICO: el puente
+de hidrógeno es un TEMA DE LA LECCIÓN, no un adorno. Dejarlo solo en el momento
+colectivo significa que el alumno que repasa solo en el diario no lo ve nunca, y
+la mitad del valor de esta pantalla es que se abre sin docente. El argumento del
+backend era "más barato"; el del frontend es "se pierde contenido de la lección".
+Gana el segundo.
+
+CONSECUENCIA QUE DESBLOQUEA TODO, y se acepta tal cual: `animation.atoms` PUEDE
+SER MÁS GRANDE que `structure.atoms`. Así los tres momentos caben sin ningún caso
+especial: el alumno toca un agua y la animación del puente trae dos.
+
+
+================================================================================
+B. LA FORMA, ACEPTADA
+================================================================================
+
+Tal como la propusieron en su sección 2, con estas reglas confirmadas:
+
+  - `animation.atoms` y `animation.bonds` con la MISMA forma que `structure`
+    (incluidos `en`, `charge`, `kind`, `negativeEnd`), para que el cliente use un
+    solo renderizador.
+  - Los índices de las primitivas son índices en `animation.atoms`. Nunca ids.
+  - Las cuatro primitivas de siempre: move, transfer, bond, attract.
+  - Cada paso se aplica sobre el anterior, desde el estado base.
+  - `hasAnimation: false` y `animation` PRESENTE PERO VACÍA en la inmensa mayoría
+    de moléculas: nunca null, como el resto de bloques opcionales (JsonUtility
+    instancia un objeto vacío y el cliente no puede distinguirlo de ausente).
+
+
+================================================================================
+C. LO QUE HAY QUE AÑADIR
+================================================================================
+
+C.1 `move` CON `toPosition` ES UNA DIVERGENCIA, Y SE NOMBRA COMO TAL
+--------------------------------------------------------------------------------
+Se acepta, pero con la etiqueta puesta. El `StepPrimitive` de la escena de clase
+dice literalmente:
+
+    "No hay coordenadas: el destino de un move es la posición del estado final."
+
+Porque allí el estado final está GUARDADO en el documento de escena. En un guion
+autocontenido no lo está, así que hacen falta coordenadas explícitas. Correcto.
+
+PERO ENTONCES LAS PRIMITIVAS DE LA EXPLICACIÓN SON UN TIPO DISTINTO del
+`StepPrimitive` de la clase, y queda escrito aquí para que nadie intente
+unificarlos más adelante: una es CONTENIDO autorado en el servidor, la otra es la
+FORMA DE CABLE del estado de una escena viva. Se parecen y no son lo mismo.
+
+C.2 LA ANIMACIÓN NO VIAJA EN EL LISTADO DEL DIARIO
+--------------------------------------------------------------------------------
+Esto no estaba en la petición y es un problema real. `GET /journal/{id}`
+**incrusta el detalle completo por entrada**, así que cada molécula del diario
+arrastraría su guion entero. Con la disolución (varias aguas + un fragmento de red
++ los pasos) eso multiplica una respuesta que ya está documentada como costosa:
+hoy recalcula química, embedding y una consulta al catálogo POR ENTRADA.
+
+Sale gratis arreglarlo, porque ya hay dos caminos separados:
+
+    build_for_smiles     (lo que pide la pantalla)  -> puebla `animation`
+    build_for_discovery  (el listado del diario)    -> `animation` vacía
+
+El modal llama a `by-smiles` de todas formas, así que no pierden nada. Cero
+endpoints nuevos y el diario no engorda.
+
+C.3 HACE FALTA UN VALIDADOR, QUE ES EL MECANISMO QUE FALTABA
+--------------------------------------------------------------------------------
+Dicen DÓNDE viven los guiones y está bien elegido: `molecules.structure_data`,
+donde ya vive la red de NaCl, y no chocan porque el lector de red mira
+`kind == "lattice"`. Un agua con animación y sin red es simplemente
+`{"animation": {...}}` sin `kind`.
+
+Lo que falta es el mecanismo: un guion escrito a mano con un índice fuera de rango
+o un enlace a un átomo que no existe da una animación rota, o una excepción
+sirviendo el detalle de una molécula del catálogo. Su comprobación 5 pide
+exactamente eso, así que **el sembrador valida antes de escribir**: índices dentro
+de rango, enlaces coherentes, primitivas conocidas y duraciones positivas. Un
+guion que no valida no entra en la base.
+
+C.4 UNA CORRECCIÓN DE NOMBRE: `fromAtom` / `toAtom`, NO `from` / `to`
+--------------------------------------------------------------------------------
+Dos razones, y la primera es dura:
+
+  - **`from` es una PALABRA RESERVADA de Python.** Un campo con ese nombre no se
+    puede declarar directamente; habría que declararlo con otro nombre y un alias,
+    que es precisamente el tipo de indirección donde se cuelan los errores de
+    nombre que ya nos costaron una clase (`prompt` contra `promptText`).
+  - El vocabulario que ya existe usa `from*` / `to*` (`fromMoleculeId`,
+    `fromAtomId`, `toMoleculeId`, `toAtomId`), así que `fromAtom` / `toAtom` es
+    coherente con lo que el cliente ya lee.
+
+Es lo único del contrato que se cambia respecto a su propuesta.
+
+
+================================================================================
+D. LOS GUIONES: DOS AHORA, EL TERCERO NO
+================================================================================
+
+No cuestan lo mismo, y el reparto honesto es este:
+
+  1. NaCl — el electrón del sodio al cloro.            SE HACE
+     BARATO: la red ya viene prearmada, así que la escenita es la que el detalle
+     ya devuelve. Es un `transfer` y las cargas resultantes.
+
+  2. AGUA — el puente de hidrógeno.                    SE HACE
+     MEDIO, y el coste está donde no se ve: hay que AUTORAR LA GEOMETRÍA. Dos
+     aguas colocadas a distancia de puente (O···H ~1.8 Å) y casi alineadas no
+     salen de un embedding: se construyen a mano. Es el guion que justifica toda
+     la sección 1 de su petición y es tema de la lección, así que entra.
+
+  3. AGUA + NaCl — la disolución.                      NO SE HACE, por ahora
+     CARO: varias aguas rodeando un ion y separándolo, con `move` coreografiado
+     para cada una. Y ustedes mismos dicen que se pierde poco, porque es el que el
+     guion de la lección marca como el más apoyado en la explicación hablada.
+     Si sobra tiempo después del ensayo, se añade sin cambiar nada del contrato:
+     es un guion más en la misma columna.
+
+Se respeta su prioridad: si solo entrara uno, sería el 1.
+
+
+================================================================================
+E. SU LISTA DE COMPROBACIÓN, RESPONDIDA
+================================================================================
+
+  1. agua con hasAnimation true y MÁS átomos que structure .... sí (dos aguas)
+  2. todos los índices dentro de animation.atoms .............. lo garantiza el
+                                                                validador de C.3
+  3. NaCl con su transfer del sodio al cloro .................. sí
+  4. metano con hasAnimation false y animation VACÍA pero
+     PRESENTE, no null ....................................... sí, es la regla del
+                                                                proyecto
+  5. aplicar los pasos no deja índices colgados ............... lo garantiza el
+                                                                validador, y se
+                                                                prueba en el banco
+
+  Y uno más, que el backend añade: la animación NO aparece en el listado del
+  diario (C.2). Si la ven ahí, es un error.
+
+
+================================================================================
+F. CALENDARIO
+================================================================================
+
+Se firma su sección 7: esto es MEJORA, no requisito. El plan de validación pide
+capas y tarjeta 2D, y eso ya está entregado y verificado en producción.
+
+Y hay dos cosas POR DELANTE de esto, en este orden:
+
+  1. EL DEPLOY DEL ÚLTIMO COMMIT, que todavía no ha entrado. En producción la sal
+     sigue saliendo con 0 enlaces porque el servicio quedó sirviendo un commit
+     anterior tras la incidencia de AWS en Oregón del 26/09. Hasta que eso entre,
+     la entrega 1 está a medias EN EL SERVIDOR aunque esté completa en el repo.
+  2. EL ENSAYO DE 20 MINUTOS con dos celulares y el guion en la mano. Sigue siendo
+     la única prueba que descubre lo que ninguno de los dos lados ve por separado.
+
+================================================================================
+FIN
+================================================================================

@@ -57,6 +57,12 @@ public static class ExplanationContext
     /// la pantalla tiene que pedirla por SMILES antes de poder encender las capas.</summary>
     public static bool HasChemistry;
 
+    /// <summary>El guion, si ya se trajo. SOLO llega por /detection/by-smiles: desde la
+    /// pizarra el contexto se llena del estado de la clase, que no lo incluye, así que la
+    /// pantalla lo pide aparte. Null o vacío = esta molécula no tiene animación, que es
+    /// el caso de casi todas.</summary>
+    public static MoleculeAnimation Animation;
+
     public static bool Has => Atoms != null && Atoms.Count > 0;
 
     /// <summary>Desde la pizarra: la molécula llega entera y no hace falta pedir nada.</summary>
@@ -153,6 +159,10 @@ public static class ExplanationContext
             foreach (var p in st.atoms2D)
                 Flat2D.Add(p != null ? new Vector2(p.x, p.y) : Vector2.zero);
 
+        // Se cree a 'hasAnimation' y no al objeto: JsonUtility nunca deja un objeto en
+        // null, así que un 'animation' vacío no se distingue de uno ausente.
+        Animation = (m.hasAnimation && m.animation != null && m.animation.Has) ? m.animation : null;
+
         HasChemistry = true;
     }
 
@@ -162,6 +172,7 @@ public static class ExplanationContext
         Atoms.Clear();
         Bonds.Clear();
         Flat2D.Clear();
+        Animation    = null;
         HasChemistry = false;
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -37,8 +38,14 @@ public class ExplanationPanel : MonoBehaviour
     [SerializeField] private TextMeshProUGUI card2DText;   // respaldo: la fórmula molecular
     [SerializeField] private Structure2DCard structure2D;  // la fórmula estructural dibujada
 
+    [Header("Animación")]
+    [SerializeField] private Button          btnPlay;
+    [SerializeField] private TextMeshProUGUI captionLabel;
+
     [Header("Salir")]
     [SerializeField] private Button btnClose;
+
+    AnimationPlayer player;
 
     void Awake()
     {
@@ -47,6 +54,9 @@ public class ExplanationPanel : MonoBehaviour
         if (tglSymbols)           tglSymbols.onValueChanged.AddListener(_ => ApplyLayers());
         if (tglElectronegativity) tglElectronegativity.onValueChanged.AddListener(_ => ApplyLayers());
         if (tglBondTypes)         tglBondTypes.onValueChanged.AddListener(_ => ApplyLayers());
+
+        if (btnPlay) btnPlay.onClick.AddListener(PlayAnimation);
+        player = new AnimationPlayer(viewer, this);
     }
 
     /// <summary>Se rellena al ENCENDERSE, no al abrirse desde fuera: así quien lo abre
@@ -74,12 +84,17 @@ public class ExplanationPanel : MonoBehaviour
 
         ApplyLayers();
         RefreshCard();
+
+        if (captionLabel) captionLabel.text = "";
+        if (btnPlay) btnPlay.gameObject.SetActive(false);
+        ResolveAnimation();
     }
 
     void OnDisable()
     {
         // El visor mantiene esferas, cilindros y una RenderTexture vivos. Con el panel
         // cerrado no se ven, y detrás hay una clase sondeando cada dos segundos.
+        player?.Stop();
         if (viewer)      viewer.Clear();
         if (structure2D) structure2D.Clear();
     }
@@ -106,6 +121,72 @@ public class ExplanationPanel : MonoBehaviour
             var c = label.color;
             label.color = new Color(c.r, c.g, c.b, usable ? 1f : 0.35f);
         }
+    }
+
+    // ── Animación ─────────────────────────────────────────────────────────────
+
+    /// <summary>Consigue el guion, si esta molécula tiene.
+    ///
+    /// Desde el universo y el diario ya viene en el contexto, porque esos entran por
+    /// /detection/by-smiles. DESDE LA PIZARRA NO: allí el contexto se llena del estado de
+    /// la clase, que no incluye guiones, así que hay que pedirlo. Se hace en segundo
+    /// plano y el botón aparece cuando llega: la pantalla ya es útil sin él.</summary>
+    void ResolveAnimation()
+    {
+        if (ExplanationContext.Animation != null) { OfferPlay(ExplanationContext.Animation); return; }
+
+        string smiles = ExplanationContext.CanonicalSmiles;
+        if (string.IsNullOrEmpty(smiles)) return;
+
+        ApiManager.Instance.GetMoleculeBySmiles(smiles,
+            onSuccess: resp =>
+            {
+                // Se pudo haber cerrado mientras llegaba, o haber abierto OTRA molécula.
+                if (!gameObject.activeInHierarchy) return;
+                if (resp?.molecule == null) return;
+                if (resp.molecule.canonicalSmiles != ExplanationContext.CanonicalSmiles) return;
+
+                if (resp.molecule.hasAnimation && resp.molecule.animation != null
+                                               && resp.molecule.animation.Has)
+                {
+                    ExplanationContext.Animation = resp.molecule.animation;
+                    OfferPlay(resp.molecule.animation);
+                }
+            },
+            onError: (code, detail) => { /* sin guion la pantalla sigue sirviendo */ });
+    }
+
+    void OfferPlay(MoleculeAnimation animation)
+    {
+        if (!btnPlay || player == null) return;
+        if (!player.Load(animation)) return;
+        btnPlay.gameObject.SetActive(true);
+    }
+
+    void PlayAnimation()
+    {
+        if (player == null) return;
+
+        // Las capas se apagan al reproducir: durante la animación lo que importa es el
+        // movimiento, y tres capas de etiquetas encima lo tapan.
+        SetToggle(tglSymbols, true, true);
+        SetToggle(tglElectronegativity, false, viewer && viewer.HasElectronegativity);
+        SetToggle(tglBondTypes, false, viewer && viewer.HasBondTypes);
+        ApplyLayers();
+
+        if (btnPlay) btnPlay.interactable = false;
+        player.Play(onFinished: () => { if (btnPlay) btnPlay.interactable = true; });
+        StartCoroutine(FollowCaption());
+    }
+
+    IEnumerator FollowCaption()
+    {
+        while (player != null && player.IsPlaying)
+        {
+            if (captionLabel) captionLabel.text = player.Caption;
+            yield return null;
+        }
+        if (captionLabel) captionLabel.text = player?.Caption ?? "";
     }
 
     void ApplyLayers()

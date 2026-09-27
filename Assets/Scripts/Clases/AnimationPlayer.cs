@@ -1,0 +1,250 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+/// <summary>
+/// Reproduce el guion de una molécula sobre el visor 3D.
+///
+/// LA REGLA QUE LO ORDENA TODO: cada paso se aplica SOBRE EL ANTERIOR, desde el estado
+/// base. Así "ir al paso 3" es aplicar 1, 2 y 3 sin animar, y no hay que guardar un
+/// estado por paso ni poder deshacer nada. Es la misma regla que la Fase 5 acordó para
+/// la escena de clase, por el mismo motivo: quien llega a mitad dibuja el estado directo.
+///
+/// Los índices de las primitivas son posiciones en animation.atoms, nunca ids. Se
+/// comprueban contra lo que el visor tiene dibujado: un guion con un índice fuera de
+/// rango se salta esa primitiva en vez de reventar a media explicación delante de la
+/// clase.
+/// </summary>
+public class AnimationPlayer
+{
+    readonly MoleculeViewer3D viewer;
+    readonly MonoBehaviour    host;      // quien presta las corrutinas
+
+    MoleculeAnimation script;
+    Coroutine playing;
+
+    /// <summary>Paso actual, base incluida: 0 = nada aplicado.</summary>
+    public int  Step  { get; private set; }
+    public int  Total => script?.steps?.Length ?? 0;
+    public bool IsPlaying => playing != null;
+
+    /// <summary>Lo que se explica ahora mismo, para ponerlo en pantalla.</summary>
+    public string Caption { get; private set; } = "";
+
+    public AnimationPlayer(MoleculeViewer3D viewer, MonoBehaviour host)
+    {
+        this.viewer = viewer;
+        this.host   = host;
+    }
+
+    /// <summary>Carga el guion y deja la escena en su estado base.</summary>
+    public bool Load(MoleculeAnimation animation)
+    {
+        Stop();
+        script = (animation != null && animation.Has) ? animation : null;
+        if (script == null) return false;
+
+        ShowBase();
+        return true;
+    }
+
+    /// <summary>Dibuja los átomos del GUION, que pueden ser más que los de la molécula:
+    /// el puente de hidrógeno trae dos aguas aunque el alumno tocara una.</summary>
+    void ShowBase()
+    {
+        Step = 0;
+        Caption = "";
+        if (viewer == null || script == null) return;
+
+        var st = new JournalStructure { atoms = script.atoms, bonds = script.bonds };
+        viewer.Show(st);
+    }
+
+    /// <summary>Reproduce desde el principio.</summary>
+    public void Play(System.Action onFinished = null)
+    {
+        Stop();
+        if (script == null || host == null) return;
+        ShowBase();
+        playing = host.StartCoroutine(Run(onFinished));
+    }
+
+    public void Stop()
+    {
+        if (playing != null && host != null) host.StopCoroutine(playing);
+        playing = null;
+    }
+
+    /// <summary>Deja la escena como al final del paso indicado, SIN animar. Lo usa
+    /// adelantar y rebobinar.</summary>
+    public void GoTo(int step)
+    {
+        Stop();
+        if (script == null) return;
+
+        ShowBase();
+        int target = Mathf.Clamp(step, 0, Total);
+        for (int i = 0; i < target; i++) ApplyInstant(script.steps[i]);
+        Step = target;
+        Caption = target > 0 ? (script.steps[target - 1].caption ?? "") : "";
+    }
+
+    IEnumerator Run(System.Action onFinished)
+    {
+        for (int i = 0; i < Total; i++)
+        {
+            var step = script.steps[i];
+            Caption = step.caption ?? "";
+            Step    = i + 1;
+
+            yield return AnimateStep(step);
+
+            // Respiro entre pasos: sin él, el texto de uno se lee encima del siguiente.
+            float pausa = Mathf.Max(0.35f, step.durationMs / 1000f * 0.25f);
+            yield return new WaitForSecondsRealtime(pausa);
+        }
+
+        playing = null;
+        onFinished?.Invoke();
+    }
+
+    // ── Aplicar un paso ───────────────────────────────────────────────────────
+
+    /// <summary>Todas las primitivas de un paso corren A LA VEZ, no una tras otra: un
+    /// paso es un momento, no una lista de tareas. "El hidrógeno se acerca mientras la
+    /// carga se desplaza" es un paso, y contarlo en serie lo rompería.</summary>
+    IEnumerator AnimateStep(AnimationStep step)
+    {
+        if (step?.primitives == null) yield break;
+
+        var pendientes = new List<IEnumerator>();
+        foreach (var p in step.primitives)
+        {
+            var rutina = Animate(p);
+            if (rutina != null) pendientes.Add(rutina);
+        }
+
+        bool vivo = true;
+        while (vivo)
+        {
+            vivo = false;
+            foreach (var r in pendientes) if (r.MoveNext()) vivo = true;
+            yield return null;
+        }
+    }
+
+    IEnumerator Animate(AnimationPrimitive p)
+    {
+        if (p == null || viewer == null) return null;
+        if (!Valid(p)) return null;
+
+        switch (p.kind)
+        {
+            case "move":     return MoveAtom(p);
+            case "transfer": return Transfer(p);
+            case "bond":     return BondNow(p);
+            case "attract":  return AttractNow(p);
+            default:         return null;
+        }
+    }
+
+    /// <summary>Un índice fuera de rango se salta. El servidor valida los guiones antes
+    /// de guardarlos, pero un guion viejo en una base vieja no debería tumbar la
+    /// explicación entera: perder una primitiva es mejor que perder la pantalla.</summary>
+    bool Valid(AnimationPrimitive p)
+    {
+        int n = viewer.AtomCount;
+        bool from = p.fromAtom >= 0 && p.fromAtom < n;
+        bool to   = p.toAtom   >= 0 && p.toAtom   < n;
+
+        switch (p.kind)
+        {
+            case "move":     return from;
+            case "transfer":
+            case "bond":
+            case "attract":  return from && to;
+            default:         return false;
+        }
+    }
+
+    IEnumerator MoveAtom(AnimationPrimitive p)
+    {
+        Vector3 desde = viewer.GetAtomPosition(p.fromAtom);
+        Vector3 hasta = p.toPosition != null
+            ? new Vector3(p.toPosition.x, p.toPosition.y, p.toPosition.z)
+            : desde;
+
+        float dur = Secs(p.durationMs);
+        for (float t = 0f; t < dur; t += Time.unscaledDeltaTime)
+        {
+            viewer.SetAtomPosition(p.fromAtom, Vector3.Lerp(desde, hasta, Suave(t / dur)));
+            yield return null;
+        }
+        viewer.SetAtomPosition(p.fromAtom, hasta);
+    }
+
+    IEnumerator Transfer(AnimationPrimitive p)
+    {
+        Vector3 desde = viewer.GetAtomPosition(p.fromAtom);
+        Vector3 hasta = viewer.GetAtomPosition(p.toAtom);
+
+        var electron = viewer.SpawnElectron(desde);
+        float dur = Secs(p.durationMs);
+
+        for (float t = 0f; t < dur; t += Time.unscaledDeltaTime)
+        {
+            if (electron) electron.localPosition = Vector3.Lerp(desde, hasta, Suave(t / dur));
+            yield return null;
+        }
+
+        // El electrón se queda en el destino: es donde acabó, y verlo ahí es la mitad de
+        // lo que el paso explica.
+        if (electron) electron.localPosition = hasta;
+    }
+
+    IEnumerator BondNow(AnimationPrimitive p)
+    {
+        viewer.SetBond(p.fromAtom, p.toAtom, p.order, null);
+        yield break;
+    }
+
+    IEnumerator AttractNow(AnimationPrimitive p)
+    {
+        viewer.SpawnAttraction(p.fromAtom, p.toAtom);
+        yield break;
+    }
+
+    // ── Sin animar, para saltar ───────────────────────────────────────────────
+
+    void ApplyInstant(AnimationStep step)
+    {
+        if (step?.primitives == null) return;
+
+        foreach (var p in step.primitives)
+        {
+            if (p == null || !Valid(p)) continue;
+
+            switch (p.kind)
+            {
+                case "move":
+                    if (p.toPosition != null)
+                        viewer.SetAtomPosition(p.fromAtom,
+                            new Vector3(p.toPosition.x, p.toPosition.y, p.toPosition.z));
+                    break;
+
+                case "transfer":
+                    viewer.SpawnElectron(viewer.GetAtomPosition(p.toAtom));
+                    break;
+
+                case "bond":    viewer.SetBond(p.fromAtom, p.toAtom, p.order, null); break;
+                case "attract": viewer.SpawnAttraction(p.fromAtom, p.toAtom);        break;
+            }
+        }
+    }
+
+    // Duración con suelo: un guion con durationMs 0 quedaría en un salto invisible.
+    static float Secs(int ms) => Mathf.Max(0.2f, ms / 1000f);
+
+    // Arranca y frena suave; el movimiento lineal se ve mecánico.
+    static float Suave(float t) => Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t));
+}
