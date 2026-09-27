@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.SceneManagement;
@@ -50,6 +51,16 @@ public class GraphicsManager : MonoBehaviour
     Vignette      vignette;
     Tonemapping   tonemapping;
 
+    /// <summary>Brillo de pantalla, 0..100. 50 es neutro.</summary>
+    public int Brightness { get; private set; } = BrightnessPrefs.DEFAULT;
+
+    // Cuánto tapa el velo en cada extremo. Oscurecer admite mucho más que aclarar:
+    // un velo blanco fuerte no ilumina, solo apaga el contraste y lo deja lechoso.
+    const float MAX_OSCURO = 0.55f;
+    const float MAX_CLARO  = 0.18f;
+
+    Image veil;
+
     Light fillLight, rimLight;
     string appliedUser;
 
@@ -67,6 +78,7 @@ public class GraphicsManager : MonoBehaviour
         DontDestroyOnLoad(gameObject);
 
         BuildVolume();
+        BuildVeil();
         BuildExtraLights();
         ReloadFromPrefs();
 
@@ -112,6 +124,42 @@ public class GraphicsManager : MonoBehaviour
     }
 
     /// <summary>
+    /// El velo del brillo: un rectángulo a pantalla completa por encima de TODO.
+    ///
+    /// POR QUÉ NO SE HACE CON EXPOSICIÓN (ColorAdjustments), que sería lo elegante: las
+    /// 19 escenas de ChemiTech tienen su Canvas en Screen Space - Overlay, y en URP ese
+    /// modo se dibuja DESPUÉS del post-procesado. La exposición habría aclarado el 3D y
+    /// no habría tocado ni un botón, así que en Ajustes —que es solo interfaz— el slider
+    /// se movería sin que pasara nada: exactamente el defecto que venimos a arreglar.
+    /// El velo, en cambio, cubre interfaz y mundo por igual en cualquier escena.
+    ///
+    /// Vive en el manager persistente, así que se monta una vez y sobrevive a los cambios
+    /// de escena. No captura toques: el Canvas no lleva GraphicRaycaster y la imagen tiene
+    /// raycastTarget apagado, o taparía la pantalla entera de forma invisible.
+    /// </summary>
+    void BuildVeil()
+    {
+        var canvasGo = new GameObject("BrightnessVeil");
+        canvasGo.transform.SetParent(transform, false);
+
+        var canvas = canvasGo.AddComponent<Canvas>();
+        canvas.renderMode   = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 30000;   // todas las escenas usan 0, hasta los modales
+
+        var go = new GameObject("Veil", typeof(RectTransform));
+        go.transform.SetParent(canvasGo.transform, false);
+
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+
+        veil = go.AddComponent<Image>();
+        veil.raycastTarget = false;
+        veil.color   = Color.clear;
+        veil.enabled = false;
+    }
+
+    /// <summary>
     /// Relleno y contraluz. Son direccionales, así que solo importa su rotación,
     /// no su posición: pueden vivir en el propio manager persistente y alumbran
     /// la escena 3D sin necesidad de tocar ZonaJuegoScene.
@@ -142,9 +190,11 @@ public class GraphicsManager : MonoBehaviour
     {
         Quality     = GraphicsPrefs.Quality;
         Effects     = GraphicsPrefs.Effects;
+        Brightness  = BrightnessPrefs.Value;   // se guarda por cuenta, como el volumen
         appliedUser = SessionData.UserId ?? "";
         ApplyEffects();
         ApplyQuality();
+        ApplyBrightness();
     }
 
     void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -171,6 +221,26 @@ public class GraphicsManager : MonoBehaviour
         Quality = level;
         GraphicsPrefs.Quality = level;
         ApplyQuality();
+    }
+
+    /// <summary>Cambia el brillo y lo recuerda. Lo llama el slider de Ajustes.</summary>
+    public void SetBrightness(int value)
+    {
+        Brightness = Mathf.Clamp(value, 0, 100);
+        BrightnessPrefs.Value = Brightness;
+        ApplyBrightness();
+    }
+
+    void ApplyBrightness()
+    {
+        if (!veil) return;
+
+        float t = (Brightness - 50) / 50f;   // -1 .. +1, y 0 justo en el centro
+        veil.color = t < 0f ? new Color(0f, 0f, 0f, -t * MAX_OSCURO)
+                            : new Color(1f, 1f, 1f,  t * MAX_CLARO);
+
+        // En 50 el velo se apaga del todo: ni un draw call de más por el camino neutro.
+        veil.enabled = Mathf.Abs(t) > 0.001f;
     }
 
     void ApplyEffects()

@@ -76,8 +76,6 @@ public class SettingsManager : MonoBehaviour
         Wire(tabButtons, SelectTab);
         Wire(qualityButtons, SelectQuality);
         Wire(fxButtons,      SelectEffects);
-
-        WireSlider(sliderBrillo, lblBrillo);
         WireAudioSliders();
 
         if (btnCerrarSesion)      btnCerrarSesion.onClick.AddListener(ShowLogoutModal);
@@ -111,7 +109,7 @@ public class SettingsManager : MonoBehaviour
         Highlight(qualityButtons, (int)GraphicsPrefs.Quality);
         Highlight(fxButtons,      (int)GraphicsPrefs.Effects);
 
-        RefreshLabel(sliderBrillo, lblBrillo);
+        SetupBrightness();
     }
 
     // Volcamos las preferencias a disco al salir de Ajustes, no en cada frame
@@ -141,9 +139,22 @@ public class SettingsManager : MonoBehaviour
         }
     }
 
-    private void WireSlider(Slider s, TextMeshProUGUI lbl)
+    /// <summary>El slider de brillo, al mismo patrón que los de audio: carga lo guardado
+    /// sin disparar el evento, y cada movimiento lo aplica y lo persiste.
+    ///
+    /// Antes solo movía su propia etiqueta: se veía funcionar y no hacía nada.</summary>
+    private void SetupBrightness()
     {
-        if (s != null) s.onValueChanged.AddListener(_ => RefreshLabel(s, lbl));
+        if (!sliderBrillo) return;
+
+        sliderBrillo.SetValueWithoutNotify(GraphicsManager.Instance.Brightness);
+        RefreshLabel(sliderBrillo, lblBrillo);
+
+        sliderBrillo.onValueChanged.AddListener(v =>
+        {
+            GraphicsManager.Instance.SetBrightness(Mathf.RoundToInt(v));
+            RefreshLabel(sliderBrillo, lblBrillo);
+        });
     }
 
     private void RefreshLabel(Slider s, TextMeshProUGUI lbl)
