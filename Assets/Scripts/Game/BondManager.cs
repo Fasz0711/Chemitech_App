@@ -43,6 +43,26 @@ public class BondManager : MonoBehaviour
     /// fragmentos con el mismo criterio con el que se mandan a detectar.</summary>
     public float ClusterDistance => clusterDistance;
 
+    /// <summary>Lo que el servidor reconoció en un grupo de átomos.</summary>
+    public struct Detected
+    {
+        public string name;
+        public string formula;
+        public string canonicalSmiles;
+    }
+
+    // Qué molécula resultó de cada átomo. Sin esto el universo detecta el agua, dibuja
+    // sus enlaces y OLVIDA que era agua: no queda nada a lo que preguntarle "¿qué toqué?".
+    //
+    // Solo se apuntan las VÁLIDAS. Una estructura a medias no tiene canonicalSmiles, y sin
+    // él no hay nada que pedirle al servidor: el botón de explicar no debe aparecer.
+    readonly Dictionary<int, Detected> detectedByAtom = new Dictionary<int, Detected>();
+
+    /// <summary>La molécula completa a la que pertenece un átomo, si el servidor llegó a
+    /// reconocerla.</summary>
+    public bool TryGetDetected(int atomId, out Detected molecule)
+        => detectedByAtom.TryGetValue(atomId, out molecule);
+
     /// <summary>Se dispara al detectar una molécula por PRIMERA vez para el usuario
     /// (isNewDiscovery del backend). Args: (fórmula, nombre). Lo usa el modal de
     /// "¡Nuevo descubrimiento!" en ZonaJuegoManager.</summary>
@@ -172,6 +192,8 @@ public class BondManager : MonoBehaviour
         newDiscoveryThisBatch = false;
         batchBonds.Clear();
         batchValidBonds.Clear();
+        // La estructura cambió: lo que se reconoció antes ya no describe lo que hay.
+        detectedByAtom.Clear();
         ShowBanner("Detectando interacción atómica…", C_DETECT);
         Debug.Log($"[Detect] {candidates.Count} candidato(s) · userId='{SessionData.UserId}'");
 
@@ -232,6 +254,15 @@ public class BondManager : MonoBehaviour
             if (m.bonds != null)
                 foreach (var bd in m.bonds) AddBond(batchValidBonds, bd, map);
 
+            // Se apunta qué salió, para poder explicarla después si el jugador la toca.
+            var found = new Detected
+            {
+                name            = m.name,
+                formula         = m.molecularFormula,
+                canonicalSmiles = m.canonicalSmiles,
+            };
+            foreach (var atom in map) if (atom) detectedByAtom[atom.id] = found;
+
             // Primera vez que se descubre esta molécula → avisar para el modal.
             if (m.isNewDiscovery)
             {
@@ -286,6 +317,7 @@ public class BondManager : MonoBehaviour
         bondRenderer.Clear();
         batchBonds.Clear();
         batchValidBonds.Clear();
+        detectedByAtom.Clear();
         prevBondsSig = "";
     }
 

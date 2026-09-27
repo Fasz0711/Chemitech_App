@@ -40,6 +40,10 @@ public class ZonaJuegoManager : MonoBehaviour
     [SerializeField] private Button btnSalir;
     [SerializeField] private GameObject savedToast;         // "Guardado ✓"
 
+    [Header("Explicación de molécula")]
+    [SerializeField] private Button     btnExplicar;
+    [SerializeField] private GameObject explanationPanel;
+
     [Header("Modal confirmar salida")]
     [SerializeField] private GameObject exitModal;
     [SerializeField] private Button btnExitConfirm;
@@ -113,6 +117,16 @@ public class ZonaJuegoManager : MonoBehaviour
         if (btnExitConfirm) btnExitConfirm.onClick.AddListener(ConfirmLeave);
         if (btnExitCancel)  btnExitCancel.onClick.AddListener(CloseExitConfirm);
 
+        // Explicación de la molécula que se toque
+        if (place != null) place.AtomTapped += OnAtomTapped;
+        if (btnExplicar)
+        {
+            btnExplicar.onClick.AddListener(OpenExplanation);
+            explainLabel = btnExplicar.GetComponentInChildren<TMP_Text>(true);
+        }
+        if (explanationPanel) explanationPanel.SetActive(false);
+        RefreshExplainButton();
+
         // Modal de descubrimiento (nueva molécula)
         if (bondManager != null) bondManager.OnNewDiscovery += ShowDiscovery;
         if (btnContinuar) btnContinuar.onClick.AddListener(CloseDiscovery);
@@ -127,7 +141,91 @@ public class ZonaJuegoManager : MonoBehaviour
     void OnDestroy()
     {
         if (bondManager != null) bondManager.OnNewDiscovery -= ShowDiscovery;
+        if (place != null) place.AtomTapped -= OnAtomTapped;
     }
+
+    // ── Explicación de una molécula ────────────────────────────────────────────
+
+    // Lo último que se tocó, si el servidor llegó a reconocerlo.
+    BondManager.Detected tapped;
+    bool hasTapped;
+
+    /// <summary>El botón aparece SOLO sobre una molécula completa. Una estructura a
+    /// medias no tiene SMILES canónico —el servidor solo lo da cuando es válida— y sin él
+    /// no hay nada que pedir: ofrecer el botón sería prometer una pantalla vacía.</summary>
+    void OnAtomTapped(Atom3D atom)
+    {
+        hasTapped = atom != null
+                 && bondManager != null
+                 && bondManager.TryGetDetected(atom.id, out tapped)
+                 && !string.IsNullOrEmpty(tapped.canonicalSmiles);
+
+        RefreshExplainButton();
+    }
+
+    void RefreshExplainButton()
+    {
+        if (!btnExplicar) return;
+        bool show = hasTapped && explanationPanel;
+        if (btnExplicar.gameObject.activeSelf != show) btnExplicar.gameObject.SetActive(show);
+    }
+
+    /// <summary>Pide la química al servidor y abre la pantalla.
+    ///
+    /// Aquí no basta con lo que hay en pantalla: la detección devuelve enlaces y nombre,
+    /// pero NO electronegatividad ni tipo de enlace. Eso vive en el detalle por SMILES.
+    ///
+    /// OJO: esa geometría es la IDEALIZADA del catálogo, no la colocación del jugador. La
+    /// molécula se verá ordenada, distinta de como la armó. Es a propósito —lo que se
+    /// explica es la molécula, no su disposición— pero sorprende la primera vez.</summary>
+    void OpenExplanation()
+    {
+        if (!hasTapped || !explanationPanel || !btnExplicar) return;
+
+        btnExplicar.interactable = false;
+        string smiles = tapped.canonicalSmiles;
+
+        ApiManager.Instance.GetMoleculeBySmiles(smiles,
+            onSuccess: resp =>
+            {
+                btnExplicar.interactable = true;
+                if (resp?.molecule == null) { ShowExplainError(); return; }
+
+                ExplanationContext.SetFromDetail(resp.molecule);
+                explanationPanel.SetActive(true);
+            },
+            onError: (code, detail) =>
+            {
+                btnExplicar.interactable = true;
+                ShowExplainError();
+            });
+    }
+
+    /// <summary>Sin conexión NO se abre una pantalla vacía: una molécula sin sus capas no
+    /// explica nada y parece que la app falló.
+    ///
+    /// El aviso se da en el propio botón durante unos segundos. El universo no tiene barra
+    /// de avisos, y montarle una por un caso de red sería más pieza de la que merece: el
+    /// botón que acabas de pulsar es donde estás mirando.</summary>
+    void ShowExplainError()
+    {
+        Debug.LogWarning("[Universo] No se pudo traer la explicación de la molécula.");
+        if (explainLabel == null) return;
+        if (explainFlash != null) StopCoroutine(explainFlash);
+        explainFlash = StartCoroutine(FlashExplainLabel());
+    }
+
+    IEnumerator FlashExplainLabel()
+    {
+        string original = explainLabel.text;
+        explainLabel.text = "Sin conexión";
+        yield return new WaitForSecondsRealtime(2.2f);
+        if (explainLabel) explainLabel.text = original;
+        explainFlash = null;
+    }
+
+    TMP_Text  explainLabel;
+    Coroutine explainFlash;
 
     // ── Modal de descubrimiento ────────────────────────────────────────────────
     void ShowDiscovery(string formula, string name)

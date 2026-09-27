@@ -34,7 +34,8 @@ public class ExplanationPanel : MonoBehaviour
 
     [Header("Tarjeta 2D")]
     [SerializeField] private GameObject      card2D;
-    [SerializeField] private TextMeshProUGUI card2DText;
+    [SerializeField] private TextMeshProUGUI card2DText;   // respaldo: la fórmula molecular
+    [SerializeField] private Structure2DCard structure2D;  // la fórmula estructural dibujada
 
     [Header("Salir")]
     [SerializeField] private Button btnClose;
@@ -79,7 +80,8 @@ public class ExplanationPanel : MonoBehaviour
     {
         // El visor mantiene esferas, cilindros y una RenderTexture vivos. Con el panel
         // cerrado no se ven, y detrás hay una clase sondeando cada dos segundos.
-        if (viewer) viewer.Clear();
+        if (viewer)      viewer.Clear();
+        if (structure2D) structure2D.Clear();
     }
 
     /// <summary>Deja un interruptor en su estado inicial y dice si se puede usar.
@@ -115,17 +117,28 @@ public class ExplanationPanel : MonoBehaviour
             tglBondTypes          && tglBondTypes.isOn);
     }
 
-    /// <summary>La tarjeta con la notación del libro. Mientras el servidor no mande las
-    /// coordenadas 2D se muestra la fórmula molecular, que ya es media comparación: el
-    /// alumno ve "H2O" al lado de la forma doblada. El puente completo —tocar el oxígeno
-    /// en la tarjeta y que se encienda en el 3D— necesita las coordenadas.</summary>
+    /// <summary>La tarjeta con la notación del libro, al lado de la forma espacial.
+    ///
+    /// Se dibuja la fórmula ESTRUCTURAL si el servidor mandó coordenadas. Si no —le pasa a
+    /// la sal, cuya red de 27 iones no tiene fórmula plana— se cae a la fórmula
+    /// molecular, que sigue siendo media comparación: el alumno ve "NaCl" junto a la red.
+    /// Quedarse sin tarjeta no sería mejor, sería menos.</summary>
     void RefreshCard()
     {
         if (!card2D) return;
 
+        bool drawn = structure2D && structure2D.Show(ExplanationContext.Flat2D,
+                                                     ExplanationContext.Atoms,
+                                                     ExplanationContext.Bonds);
+
         string formula = ExplanationContext.Formula ?? "";
-        card2D.SetActive(!string.IsNullOrEmpty(formula));
-        if (card2DText) card2DText.text = formula;
+        if (card2DText)
+        {
+            card2DText.gameObject.SetActive(!drawn && !string.IsNullOrEmpty(formula));
+            card2DText.text = formula;
+        }
+
+        card2D.SetActive(drawn || !string.IsNullOrEmpty(formula));
     }
 
     public void Close() => gameObject.SetActive(false);

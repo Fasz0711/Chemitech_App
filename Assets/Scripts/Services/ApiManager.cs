@@ -267,6 +267,54 @@ public class ApiManager : MonoBehaviour
             StartCoroutine(PostRaw("/detection/molecule", body, OnOk, onError, DETECT_TIMEOUT_SECONDS));
     }
 
+    /// <summary>El detalle químico de una molécula por su SMILES canónico: nombre,
+    /// fórmula, descriptores, la estructura 3D con electronegatividad y tipo de enlace, y
+    /// las coordenadas 2D.
+    ///
+    /// Es lo que alimenta la pantalla de explicación fuera de la pizarra. En la pizarra no
+    /// hace falta: allí la química viaja en el estado de la clase.
+    ///
+    /// EL SMILES VA ESCAPADO: canonicaliza con caracteres que en una URL significan otra
+    /// cosa. El 2-buteno sale "C/C=C/C", y sin escapar esas barras el servidor recibiría
+    /// una ruta que no existe.</summary>
+    public void GetMoleculeBySmiles(string canonicalSmiles,
+                                    Action<MoleculeDetailResponse> onSuccess, Action<int, string> onError)
+    {
+        if (string.IsNullOrEmpty(canonicalSmiles)) { onError?.Invoke(0, "ERR_NO_SMILES"); return; }
+
+        string endpoint = "/detection/by-smiles?smiles=" + UnityWebRequest.EscapeURL(canonicalSmiles);
+        Debug.Log($"[API] GET {BASE_URL}{endpoint}");
+
+        StartCoroutine(GetRaw(endpoint,
+            json => onSuccess?.Invoke(ParseMoleculeDetail(json)),
+            onError));
+    }
+
+    /// <summary>Acepta las DOS envolturas posibles: el detalle dentro de "molecule", o el
+    /// detalle suelto en la raíz.
+    ///
+    /// No es indecisión: JsonUtility no avisa cuando un nombre no coincide, devuelve el
+    /// objeto con todo a null y la pantalla sale vacía sin un solo error. Este proyecto ya
+    /// perdió tiempo tres veces con esa familia de fallo ('promptText', 'structure2D',
+    /// 'atoms2D'). Probar las dos y decir en el log cuál valió cuesta cuatro líneas y
+    /// convierte un misterio en un dato.</summary>
+    static MoleculeDetailResponse ParseMoleculeDetail(string json)
+    {
+        var wrapped = JsonUtility.FromJson<MoleculeDetailResponse>(json);
+        if (wrapped?.molecule != null && !string.IsNullOrEmpty(wrapped.molecule.canonicalSmiles))
+            return wrapped;
+
+        var flat = JsonUtility.FromJson<JournalMolecule>(json);
+        if (flat != null && !string.IsNullOrEmpty(flat.canonicalSmiles))
+        {
+            Debug.Log("[API] by-smiles vino SIN envoltura 'molecule'; leído de la raíz.");
+            return new MoleculeDetailResponse { molecule = flat };
+        }
+
+        Debug.LogWarning($"[API] by-smiles: no reconocí la forma de la respuesta.\n{json}");
+        return wrapped;
+    }
+
     // ── Modo clase (Fase 1) ────────────────────────────────────────────────────
     // Contrato: docs/CONTRATO_CLASES_FASE1.txt. Todas exigen Bearer y {id} es el
     // publicId de la clase. Los 403 de clase (ERR_NOT_TEACHER, ERR_NOT_CLASS_OWNER,
@@ -690,6 +738,35 @@ public class ApiManager : MonoBehaviour
         }
     }
 
+    /// <summary>GET sin cabecera de sesión. Hasta ahora todas las GET del proyecto iban
+    /// autenticadas; esta no puede, y no debe: /detection/by-smiles es química de
+    /// catálogo, la misma para todo el mundo, así que el servidor la sirve sin token y
+    /// puede cachearla.</summary>
+    IEnumerator GetRaw(string endpoint, Action<string> onSuccess, Action<int, string> onError,
+                       int timeoutSeconds = 0)
+    {
+        string url = BASE_URL + endpoint;
+
+        using var req = UnityWebRequest.Get(url);
+        req.SetRequestHeader("Accept", "application/json");
+        req.timeout = timeoutSeconds > 0 ? timeoutSeconds : DEFAULT_TIMEOUT_SECONDS;
+
+        yield return req.SendWebRequest();
+
+        string responseText = req.downloadHandler.text;
+
+        if (req.result == UnityWebRequest.Result.Success)
+        {
+            onSuccess?.Invoke(responseText);
+        }
+        else
+        {
+            int code = (int)req.responseCode;
+            Debug.LogWarning($"[API] GET {url} FALLÓ · result={req.result} · code={code} · error='{req.error}'");
+            onError?.Invoke(code, TryParseDetail(responseText));
+        }
+    }
+
     static string TryParseDetail(string json)
     {
         try { return JsonUtility.FromJson<DetailResponse>(json).detail; }
@@ -776,6 +853,16 @@ public class ApiManager : MonoBehaviour
     // asume si falta: mandarlo explícito no cambia el comportamiento de nadie.
     [Serializable] class DetectRequest      { public string userPublicId; public AtomDTO[] atoms; public BondDTO[] bonds; public bool record; }
     [Serializable] class DetectRequestGuest { public AtomDTO[] atoms; public BondDTO[] bonds; public bool record; } // sin userPublicId (invitado)
+
+    /// <summary>Respuesta de GET /detection/by-smiles. El cuerpo es el MISMO detalle que
+    /// el diario ya incrusta por entrada, así que se reutilizan sus modelos en vez de
+    /// declarar una segunda copia que se separaría en cuanto el backend cambiara uno.</summary>
+    [Serializable]
+    public class MoleculeDetailResponse
+    {
+        public string         message;
+        public JournalMolecule molecule;
+    }
 
     [Serializable]
     public class MoleculeDTO

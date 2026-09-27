@@ -20,6 +20,12 @@ LO NUEVO DE ESTA FASE, EN UNA LÍNEA CADA UNO
   - POST /classes/{id}/commands/interpret  la vista previa (Fase 3a, ver 3.1)
   - dos campos nuevos en la escena: "scale" por molécula y el foco de cámara
 
+HAY UN APÉNDICE POSTERIOR: CONTRATO_PIZARRA_UNIVERSO.txt
+  La acción `setAtoms` (el docente construye a mano y publica), el flag
+  {"record": false} de /detection/molecule y los topes nuevos de la escena
+  (30 pesados por molécula, 12 moléculas, 60 átomos en total). Nada de lo que
+  dice ESTE archivo cambió; aquello solo agrega.
+
 
 ================================================================================
 1. CÓMO SE DIBUJA UNA ESCENA  (lo más importante de este documento)
@@ -179,6 +185,46 @@ JsonUtility.ToJson, que emitiría todos los campos con su valor por defecto):
   Quitar resaltado   [{"action":"highlight"}]
   Fijar vista        [{"action":"view","locked":true}]
   Liberar vista      [{"action":"view","locked":false}]
+
+  TODOS A MI VISTA   [CAMBIO DEL 26/09 — antes esto no existia]
+      [{"action":"view","locked":false,
+        "x":-4.05,"y":4.31,"z":-5.79,"yaw":41.5,"pitch":22.0}]
+
+    Es UN EMPUJON, NO UN CANDADO: tras el salto el alumno sigue pudiendo girar y
+    desplazarse. `locked` sigue en el contrato pero manden false: reescribia la
+    camara del alumno cada frame y le dejaba la pantalla sin responder al dedo.
+
+    Es POSICION y no distancia porque la camara es de PRIMERA PERSONA: ya no
+    orbita un centro del que alejarse. `distance` se queda en camera por
+    compatibilidad y NINGUNA accion lo escribe.
+
+    x/y/z van en las unidades de la escena — las fija el cliente y el servidor
+    devuelve lo que le guardaron.
+
+    LO QUE VUELVE EN state.camera (volcado real del servidor):
+      {
+        "locked": false,
+        "yaw": 41.5,
+        "pitch": 22.0,
+        "distance": 16.0,
+        "x": -4.05,
+        "y": 4.31,
+        "z": -5.79,
+        "viewSeq": 1,
+        "focusMoleculeId": "",
+        "focusAtomId": -1
+      }
+
+    >>> viewSeq ES LA CLAVE. Sube en UNO en cada empujon, AUNQUE los numeros sean
+        identicos a los de la vez anterior. Salten cuando ESE NUMERO CRECE, no
+        cuando cambien los valores: si el docente pulsa dos veces sin haberse
+        movido, los valores son iguales y el alumno que se fue a mirar por detras
+        tiene que volver las dos veces.
+        Cambiar solo `locked` o el foco NO sube el contador: no es un empujon.
+
+    UN VALOR RARO NO ROMPE EL COMANDO: un float no finito se descarta (se conserva
+    el anterior), un yaw de 400 se normaliza a 40 y un pitch de 170 se recorta a
+    90. El contador sube igual, y el descarte queda en el log del servidor.
   Limpiar            [{"action":"clear"}]
   Capa (Fase 4)      [{"action":"overlay","layer":"labels","visible":true}]
 

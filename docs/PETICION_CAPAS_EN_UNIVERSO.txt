@@ -1,0 +1,157 @@
+================================================================================
+PETICIÓN AL BACKEND: LAS CAPAS TAMBIÉN EN EL UNIVERSO
+ChemiTech · frontend -> backend · 2026-09-26
+================================================================================
+
+EN UNA LÍNEA: la pantalla de explicación ya funciona en la pizarra; para que
+funcione también en el universo y en el diario hace falta EXACTAMENTE lo que ya
+te comprometiste a hacer en tu §C.1. Este documento solo añade el porqué de un
+tercer consumidor y una recomendación sobre DÓNDE ponerlo.
+
+No hay nada nuevo que diseñar. Es un recordatorio con una decisión pequeña.
+
+
+================================================================================
+1. DÓNDE ESTAMOS
+================================================================================
+
+La pantalla de explicación está construida y funcionando:
+
+    modelo 3D rotable + fórmula + tres capas activables
+    (símbolos · electronegatividad · tipo de enlace con δ+/δ−)
+
+Se abre tocando un átomo y pulsando "Ver explicación". Ya está montada en
+ClaseDocenteScene y ClaseEstudianteScene, y AHÍ FUNCIONA ENTERA porque el estado
+de clase trae `en`, `charge`, `kind` y `negativeEnd` en cada sondeo.
+
+También se resolvió el δ: Fredoka no tiene ese carácter (verificado en su cmap),
+así que se le puso como reserva la fuente dinámica de TextMesh Pro, que sí lo
+tiene. Ya se dibuja.
+
+AHORA SE PIDE ABRIRLA TAMBIÉN EN EL UNIVERSO (ZonaJuegoScene), donde el alumno
+construye por su cuenta. Y ahí aparece el hueco.
+
+
+================================================================================
+2. EL HUECO, MEDIDO
+================================================================================
+
+En el universo la química no viene de una escena de clase: viene de la detección
+que el cliente ya hace al construir. Y eso devuelve esto:
+
+    BondDTO  { beginAtomId, endAtomId, order }     <- sin kind, sin negativeEnd
+    AtomDTO  { id, element, x, y, z }              <- sin en, sin charge
+
+Es decir: `/detection/molecule` NO devuelve electronegatividad ni tipo de enlace.
+
+CONSECUENCIA CONCRETA: abierta desde el universo, la pantalla mostraría hoy solo
+la capa de SÍMBOLOS. Las otras dos saldrían apagadas y atenuadas, que es lo que
+el cliente hace cuando una molécula no trae el dato.
+
+Y ES EL MISMO HUECO QUE EL DEL DIARIO, que tú ya identificaste: su estructura
+tampoco lleva esos cuatro campos.
+
+
+================================================================================
+3. DÓNDE PONERLO: LA ÚNICA DECISIÓN
+================================================================================
+
+Hay dos sitios donde cabría, y no dan igual.
+
+  (a) EN /detection/by-smiles          <- RECOMENDADO
+      Es lo que ya prometiste en tu §C.1. El cliente pide la química por SMILES
+      cuando el alumno ABRE la pantalla, no antes.
+
+  (b) EN /detection/molecule
+      La química llegaría junto con la detección que el cliente ya hace, sin
+      viaje extra.
+
+POR QUÉ (a), Y NO (b):
+
+  /detection/molecule ES CAMINO CALIENTE. Se llama CADA VEZ que la estructura
+  cambia, una petición POR GRUPO de átomos, con un tope de 120/min por usuario
+  que tú mismo avisaste que se acerca más rápido de lo que parece. Engordar esa
+  respuesta hace más caro lo que ocurre CONSTANTEMENTE para servir algo que
+  ocurre RARA VEZ: abrir la explicación es un gesto deliberado, no un efecto de
+  construir.
+
+  /detection/by-smiles es lo contrario: se llama una vez, cuando hace falta, es
+  química de catálogo, no lleva token (tu §C.4) y por tanto es cacheable.
+
+  Y cierra TRES puertas con UN cambio: el diario, el universo, y cualquier sitio
+  futuro que quiera explicar una molécula. La pizarra ya no lo necesita.
+
+  El coste del viaje extra es un toque del alumno, no un frame.
+
+
+================================================================================
+4. LO QUE HACE FALTA, LITERALMENTE
+================================================================================
+
+Lo de tu §C.1, sin cambios:
+
+    GET /api/detection/by-smiles?smiles=O
+
+    "structure": {
+      "atoms": [ { "type": "O", "position": {...}, "en": 3.44, "charge": 0 } ],
+      "bonds": [ { "beginAtomId": 0, "endAtomId": 1, "order": 1,
+                   "kind": "polar", "negativeEnd": 0 } ],
+      "structure2d": { "atoms": [ {"x":0.50,"y":0.50}, ... ] }
+    }
+
+  - MISMOS NOMBRES Y TIPOS que en la escena de clase. El cliente ya tiene el
+    renderizador escrito contra esa forma; si los nombres cambian, hay que
+    escribir un segundo y acabarán divergiendo.
+  - `negativeEnd` es el ÍNDICE del átomo con δ−, o -1. El cliente lo compara con
+    los dos extremos del enlace, así que un booleano no vale.
+  - `structure2d` con la paridad de índices que acordaste: atoms[i] de la 2D es
+    el mismo átomo que atoms[i] de la 3D.
+
+DATO QUE QUIZÁ NO SABES: el cliente NUNCA ha llamado a /detection/by-smiles. Solo
+lo conoce porque el diario incrusta ese mismo detalle. O sea que esa llamada hay
+que escribirla de cero de este lado — lo cual está bien, pero significa que no
+hay código viejo que dependa de la forma actual de esa respuesta. Si te conviene
+cambiarla, este es el momento sin coste.
+
+
+================================================================================
+5. LO QUE NO HACE FALTA
+================================================================================
+
+  - NINGÚN endpoint nuevo. Ya lo descartamos los dos.
+  - NADA en /detection/molecule. Se queda como está, y mejor.
+  - NADA de autenticación (tu §C.4).
+  - NADA sobre animaciones. Eso es la entrega 2, y sigue pendiente de decidir tu
+    punto B (las primitivas suponen una escena con ids).
+
+
+================================================================================
+6. CÓMO SE COMPRUEBA
+================================================================================
+
+  1. GET /api/detection/by-smiles?smiles=O devuelve `en` en los átomos y `kind` +
+     `negativeEnd` en los enlaces.
+  2. Para el agua: los dos O–H con kind "polar" y negativeEnd apuntando AL
+     OXÍGENO (no al hidrógeno). Es el que se ve mal a simple vista si se invierte.
+  3. Para el cloruro de sodio: kind "ionic".
+  4. Para el oxígeno (O=O): kind "nonpolar" y negativeEnd -1.
+  5. structure2d.atoms tiene la MISMA longitud que structure.atoms.
+
+
+================================================================================
+7. ESTADO DEL FRONTEND MIENTRAS TANTO
+================================================================================
+
+Se espera a estos endpoints antes de montar la pantalla en el universo. Es una
+decisión del autor, y tiene sentido: montarla ahora daría una pantalla con dos de
+tres capas apagadas, y el trabajo de conectarla habría que repetirlo igual para
+añadir la llamada.
+
+Lo que SÍ está hecho y no depende de ti:
+    - la pantalla completa, con sus tres capas
+    - el δ dibujándose
+    - la pizarra, funcionando entera
+
+================================================================================
+FIN
+================================================================================

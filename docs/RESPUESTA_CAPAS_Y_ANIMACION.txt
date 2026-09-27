@@ -85,6 +85,17 @@ de los dos, y hay que resolverlo ANTES de escribir la entrega 2.
 C. ENTREGA 1: LO QUE HACE EL BACKEND  [DECIDIDO]
 ================================================================================
 
+>>> LA ENTREGA 1 DEL BACKEND YA ESTÁ HECHA (2026-09-26). Todo lo de esta sección
+    C está implementado y probado: `python -m app.detection.test.layers`, 26
+    checks. El JSON de C.3 es ahora un volcado real, no una propuesta. Pueden
+    empezar cuando quieran.
+    Un aviso de nombre que salió al implementar: el campo va en el cable como
+    **"atoms2D"**, con la D mayúscula — `to_camel` capitaliza después de un
+    dígito, la misma trampa que ya obligó a documentar "structure2D". JsonUtility
+    compara los nombres EXACTAMENTE y lee una lista vacía si no coincide, sin
+    avisar.
+    Y una limitación conocida, al final de esta sección (C.5).
+
 C.1 NO SE CREA UN ENDPOINT NUEVO. SE ENRIQUECE EL QUE YA HAY.
 --------------------------------------------------------------------------------
 El 6.1 pide `GET /molecules/{smiles}/explanation`. No hace falta: **ya existe casi
@@ -129,24 +140,102 @@ C.3 LA FORMA, CON ?smiles= COMO QUERY Y NO EN LA RUTA
 canonicaliza a `C/C=C/C`. El proyecto ya tomó esta decisión cuando nació
 `/detection/by-smiles?smiles=`; ser inconsistente ahora sería peor que el riesgo.
 
-FORMA OBJETIVO (propuesta; el contrato definitivo saldrá volcado del servidor
-real cuando esté construido, como el resto de los contratos del proyecto):
+VOLCADO REAL DEL SERVIDOR (agua). Este es el JSON que llega hoy:
 
     GET /api/detection/by-smiles?smiles=O
 
     "structure": {
       "atoms": [
-        { "type": "O", "position": {"x":0.5,"y":0.31,"z":0.5}, "en": 3.44, "charge": 0 },
-        { "type": "H", "position": {"x":1.0,"y":0.69,"z":0.5}, "en": 2.20, "charge": 0 }
+        {
+          "type": "O",
+          "position": {
+            "x": 0.5074123008818682,
+            "y": 0.70014044006885,
+            "z": 0.5
+          },
+          "en": 3.44,
+          "charge": 0
+        },
+        {
+          "type": "H",
+          "position": {
+            "x": 0.0,
+            "y": 0.31882714879686447,
+            "z": 0.5
+          },
+          "en": 2.2,
+          "charge": 0
+        },
+        {
+          "type": "H",
+          "position": {
+            "x": 1.0,
+            "y": 0.29985955993115,
+            "z": 0.5
+          },
+          "en": 2.2,
+          "charge": 0
+        }
       ],
       "bonds": [
-        { "beginAtomId": 0, "endAtomId": 1, "order": 1,
-          "kind": "polar", "negativeEnd": 0 }
+        {
+          "beginAtomId": 0,
+          "endAtomId": 1,
+          "order": 1,
+          "kind": "polar",
+          "negativeEnd": 0
+        },
+        {
+          "beginAtomId": 0,
+          "endAtomId": 2,
+          "order": 1,
+          "kind": "polar",
+          "negativeEnd": 0
+        }
       ],
-      "structure2d": {
-        "atoms": [ {"x":0.50,"y":0.50}, {"x":0.79,"y":0.68} ]
-      }
+      "atoms2D": [
+        {
+          "x": 0.5,
+          "y": 0.3557
+        },
+        {
+          "x": 1.0,
+          "y": 0.6443
+        },
+        {
+          "x": 0.0,
+          "y": 0.6443
+        }
+      ]
     }
+
+C.5 LA SAL YA TRAE SU ENLACE IÓNICO  [ARREGLADO el 2026-09-26]
+--------------------------------------------------------------------------------
+Esto estaba como limitación conocida y se cerró porque vuestra lista de
+verificación lo pedía (punto 3: "kind ionic" para el cloruro de sodio) y porque es
+el ejemplo iónico de la lección.
+
+El problema: "[Na+].[Cl-]" son dos iones sueltos, así que RDKit no da NINGÚN
+enlace y el detalle salía con las dos cargas y `bonds` VACÍO — la capa de tipo de
+enlace no tenía nada que colorear.
+
+Ahora el detalle lee el fragmento de red prearmado de `molecules.structure_data`,
+el MISMO que ya usaba la escena de clase. Volcado real:
+
+    GET /api/detection/by-smiles?smiles=%5BNa%2B%5D.%5BCl-%5D
+
+    27 iones · 54 enlaces · todos kind "ionic" · cargas +1 y -1 · extent 5.64 Å
+
+  >>> atoms2D VIENE VACÍA para la sal, a propósito. Una "fórmula estructural
+      plana" de una red de 27 iones no existe: lo que el libro escribe es la
+      unidad fórmula (Na+ Cl-), y esa tendría 2 átomos contra los 27 de la 3D,
+      rompiendo la paridad de índices que es justamente lo que hace útil la
+      tarjeta. Lista vacía = sin tarjeta, que es lo que el contrato ya significa.
+      Las capas de símbolos, electronegatividad y tipo de enlace SÍ funcionan.
+
+De paso se quitó la duplicación: la normalización de la red vive ahora en
+MoleculeStructureService y la escena de clase la usa también, así que la sal no
+puede verse distinta según por dónde se pida.
 
 C.4 SIN AUTENTICACIÓN
 --------------------------------------------------------------------------------

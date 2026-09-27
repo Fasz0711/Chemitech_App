@@ -8,7 +8,7 @@ using TMPro;
 using Object = UnityEngine.Object;
 
 /// <summary>
-/// Monta la pantalla de explicación de molécula en las dos escenas de clase, y el botón
+/// Monta la pantalla de explicación de molécula en las dos escenas de clase y en el universo, y el botón
 /// que la abre.
 ///
 /// EL VISOR 3D NECESITA SU PROPIA CÁMARA, y eso es lo delicado aquí. Se resuelve
@@ -21,12 +21,13 @@ using Object = UnityEngine.Object;
 /// única de su escena; aquí robaría Camera.main y con ella el cielo estrellado
 /// (ZoneEnvironment) y el respaldo de detección de toques del alumno.
 ///
-/// Es aditiva y se puede volver a correr. Abre las dos escenas: guarda antes.
+/// Es aditiva y se puede volver a correr. Abre las tres escenas: guarda antes.
 /// </summary>
 public static class ExplicacionPanelTool
 {
-    const string TEACHER = "Assets/Scenes/ClaseDocenteScene.unity";
-    const string STUDENT = "Assets/Scenes/ClaseEstudianteScene.unity";
+    const string TEACHER  = "Assets/Scenes/ClaseDocenteScene.unity";
+    const string STUDENT  = "Assets/Scenes/ClaseEstudianteScene.unity";
+    const string UNIVERSE = "Assets/Scenes/ZonaJuegoScene.unity";
 
     const float STAGE_Y = 1000f;   // lejos de la clase, ver nota de arriba
 
@@ -45,8 +46,8 @@ public static class ExplicacionPanelTool
     {
         if (!EditorUtility.DisplayDialog("Pantalla de explicación",
                 "Monta el modal de capas (símbolos, electronegatividad, tipo de enlace) " +
-                "y el botón \"Ver explicación\" en las dos escenas de clase.\n\n" +
-                "Abre las dos escenas: guarda antes lo que tengas sin guardar.\n\n¿Continuar?",
+                "y el botón \"Ver explicación\" en las dos escenas de clase y en el universo.\n\n" +
+                "Abre las tres escenas: guarda antes lo que tengas sin guardar.\n\n¿Continuar?",
                 "Sí, continuar", "Cancelar"))
             return;
 
@@ -56,10 +57,10 @@ public static class ExplicacionPanelTool
         if (!fnt)     problems.Add("No encontré la fuente Fredoka-Medium SDF.");
         if (!rounded) problems.Add("No encontré el sprite rounded-panel.");
 
-        foreach (var path in new[] { TEACHER, STUDENT })
+        foreach (var path in new[] { TEACHER, STUDENT, UNIVERSE })
         {
             var scene = EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
-            BuildInto(scene, path == TEACHER);
+            BuildInto(scene, path);
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
         }
@@ -68,8 +69,11 @@ public static class ExplicacionPanelTool
         Report();
     }
 
-    static void BuildInto(Scene scene, bool teacher)
+    static void BuildInto(Scene scene, string path)
     {
+        bool teacher  = path == TEACHER;
+        bool universe = path == UNIVERSE;
+
         var canvas = FindRoot(scene, "Canvas");
         if (!canvas) { problems.Add($"No hay Canvas en {scene.name}."); return; }
 
@@ -143,29 +147,42 @@ public static class ExplicacionPanelTool
                  new Vector2(0f, 0.5f), new Vector2(60f, -366f), new Vector2(700f, 34f),
                  19f, new Color(1f, 1f, 1f, 0.55f), TextAlignmentOptions.Center, FontStyles.Normal);
 
-        // Tarjeta 2D a la derecha
+        // ── Tarjeta 2D a la derecha ───────────────────────────────────────────
         var card2D = EnsureChild(card.transform, "Card2D");
-        SetRT(card2D, new Vector2(1f, 1f), new Vector2(-60f, -150f), new Vector2(680f, 250f));
+        SetRT(card2D, new Vector2(1f, 1f), new Vector2(-60f, -110f), new Vector2(680f, 330f));
         var c2Img = Ensure<Image>(card2D);
         c2Img.sprite = rounded; c2Img.type = Image.Type.Sliced; c2Img.color = CARD;
-        MakeText(card2D.transform, "Caption", "Fórmula",
+        MakeText(card2D.transform, "Caption", "Fórmula estructural",
                  new Vector2(0.5f, 1f), new Vector2(0f, -18f), new Vector2(640f, 32f),
                  20f, DIM, TextAlignmentOptions.Center, FontStyles.Normal);
+
+        // Donde se dibujan los átomos y los enlaces planos. Va separado del rótulo para
+        // que Structure2DCard pueda vaciarlo entero sin llevarse el título por delante.
+        var drawing = EnsureChild(card2D.transform, "Drawing");
+        SetRT(drawing, new Vector2(0.5f, 0.5f), new Vector2(0f, -22f), new Vector2(620f, 250f));
+
+        // Respaldo: la fórmula molecular, para las moléculas sin fórmula plana (la sal).
         var card2DText = MakeText(card2D.transform, "Text", "",
-                                  new Vector2(0.5f, 0.5f), new Vector2(0f, -14f), new Vector2(640f, 120f),
+                                  new Vector2(0.5f, 0.5f), new Vector2(0f, -22f), new Vector2(640f, 120f),
                                   64f, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
 
-        // Capas, bajo la tarjeta
+        var flat = Ensure<Structure2DCard>(card2D);
+        var fso  = new SerializedObject(flat);
+        Set(fso, "canvasArea", drawing.GetComponent<RectTransform>());
+        Set(fso, "labelFont",  fnt);
+        fso.ApplyModifiedProperties();
+
+        // ── Capas, bajo la tarjeta ────────────────────────────────────────────
         MakeText(card.transform, "LayersCaption", "Capas",
-                 new Vector2(1f, 1f), new Vector2(-60f, -300f), new Vector2(680f, 34f),
+                 new Vector2(1f, 1f), new Vector2(-60f, -470f), new Vector2(680f, 34f),
                  22f, DIM, TextAlignmentOptions.Left, FontStyles.Bold);
 
         var tglSymbols = MakeToggle(card.transform, "TglSymbols", "Símbolos",
-                                    new Vector2(-60f, -348f));
+                                    new Vector2(-60f, -516f));
         var tglEn      = MakeToggle(card.transform, "TglElectronegativity", "Electronegatividad",
-                                    new Vector2(-60f, -420f));
+                                    new Vector2(-60f, -584f));
         var tglBonds   = MakeToggle(card.transform, "TglBondTypes", "Tipo de enlace (δ+ / δ−)",
-                                    new Vector2(-60f, -492f));
+                                    new Vector2(-60f, -652f));
 
         var comp = Ensure<ExplanationPanel>(panel);
 
@@ -188,41 +205,25 @@ public static class ExplicacionPanelTool
         Set(pso, "tglBondTypes",         tglBonds);
         Set(pso, "card2D",               card2D);
         Set(pso, "card2DText",           card2DText);
+        Set(pso, "structure2D",          flat);
         Set(pso, "btnClose",             btnClose);
         pso.ApplyModifiedProperties();
 
         // ── El botón que lo abre, y el manager ────────────────────────────────
-        Button btnExplicar = teacher
-            ? MakeButton(canvas.transform, "BtnExplicar", "Ver explicación", CYAN,
-                         new Vector2(0f, 1f), new Vector2(1290f, -108f), new Vector2(280f, 56f), 22f)
-            : MakeButton(canvas.transform, "BtnExplicar", "Ver explicación", CYAN,
-                         new Vector2(0.5f, 0f), new Vector2(-300f, 80f), new Vector2(440f, 62f), 23f);
+        // En el universo el botón va ARRIBA A LA IZQUIERDA, bajo el de pausa: abajo lo
+        // ocupan la barra de ranuras y el de colocar, que se usan constantemente.
+        Button btnExplicar =
+            teacher  ? MakeButton(canvas.transform, "BtnExplicar", "Ver explicación", CYAN,
+                                  new Vector2(0f, 1f), new Vector2(1290f, -108f), new Vector2(280f, 56f), 22f)
+          : universe ? MakeButton(canvas.transform, "BtnExplicar", "Ver explicación", CYAN,
+                                  new Vector2(0f, 1f), new Vector2(24f, -100f), new Vector2(280f, 56f), 22f)
+                     : MakeButton(canvas.transform, "BtnExplicar", "Ver explicación", CYAN,
+                                  new Vector2(0.5f, 0f), new Vector2(-300f, 80f), new Vector2(440f, 62f), 23f);
         btnExplicar.gameObject.SetActive(false);   // aparece al elegir una molécula
 
-        if (teacher)
-        {
-            var mgr = FindInScene<ClaseDocenteManager>(scene);
-            if (!mgr) problems.Add("No encontré ClaseDocenteManager.");
-            else
-            {
-                var so = new SerializedObject(mgr);
-                Set(so, "btnExplicar",      btnExplicar);
-                Set(so, "explanationPanel", panel);
-                so.ApplyModifiedProperties();
-            }
-        }
-        else
-        {
-            var mgr = FindInScene<ClaseEstudianteManager>(scene);
-            if (!mgr) problems.Add("No encontré ClaseEstudianteManager.");
-            else
-            {
-                var so = new SerializedObject(mgr);
-                Set(so, "btnExplicar",      btnExplicar);
-                Set(so, "explanationPanel", panel);
-                so.ApplyModifiedProperties();
-            }
-        }
+        if (teacher)       WireManager(FindInScene<ClaseDocenteManager>(scene),    "ClaseDocenteManager",    btnExplicar, panel);
+        else if (universe) WireManager(FindInScene<ZonaJuegoManager>(scene),       "ZonaJuegoManager",       btnExplicar, panel);
+        else               WireManager(FindInScene<ClaseEstudianteManager>(scene), "ClaseEstudianteManager", btnExplicar, panel);
 
         // El modal por encima de todo, y apagado.
         panel.transform.SetAsLastSibling();
@@ -230,6 +231,18 @@ public static class ExplicacionPanelTool
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>Los tres managers declaran los MISMOS DOS campos, así que se cablean
+    /// igual. Si alguno los renombra, Set() lo dice en el informe en vez de dejar el
+    /// botón muerto en silencio.</summary>
+    static void WireManager(Component mgr, string nombre, Button btn, GameObject panel)
+    {
+        if (!mgr) { problems.Add($"No encontré {nombre}."); return; }
+        var so = new SerializedObject(mgr);
+        Set(so, "btnExplicar",      btn);
+        Set(so, "explanationPanel", panel);
+        so.ApplyModifiedProperties();
+    }
 
     static Toggle MakeToggle(Transform parent, string name, string label, Vector2 pos)
     {
@@ -374,9 +387,9 @@ public static class ExplicacionPanelTool
     {
         if (problems.Count == 0)
         {
-            Debug.Log("[Explicacion] ✓ Pantalla montada en las dos escenas de clase.");
+            Debug.Log("[Explicacion] ✓ Pantalla montada en las tres escenas.");
             EditorUtility.DisplayDialog("¡Listo!",
-                "El modal está montado en las dos escenas.\n\n" +
+                "El modal está montado en las tres escenas.\n\n" +
                 "Para verlo: entra a una clase con algo en la pizarra, TOCA UN ÁTOMO y " +
                 "aparecerá \"Ver explicación\".\n\n" +
                 "Las capas de electronegatividad y tipo de enlace solo se pueden encender " +

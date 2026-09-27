@@ -357,7 +357,7 @@ public class ClaseDocenteManager : MonoBehaviour
         // que la cámara del docente saltara a la posición almacenada cada vez que pulsaba
         // cualquier botón: se colocaba en un buen ángulo, mostraba agua, y la vista se le
         // iba sola. El docente es quien conduce; su cámara es suya.
-        if (!cameraRestored && HasPosition(state.camera))
+        if (!cameraRestored && state.camera != null && state.camera.viewSeq > 0)
         {
             cameraRestored = true;
             var c = state.camera;
@@ -716,12 +716,6 @@ public class ClaseDocenteManager : MonoBehaviour
     /// factor sigue importando aquí: si no fuera el inverso, lo publicado volvería con
     /// otro tamaño y el universo daría un salto en cada comando.</summary>
     float WorldToScene => worldScale > 0f ? 1f / worldScale : 1f;
-
-    /// <summary>¿El estado trae una vista de verdad? Mientras el servidor no guarde la
-    /// posición, los tres valores llegan en cero y aplicarlos teletransportaría a quien
-    /// entra al origen, dentro de las moléculas. Sin posición, no se toca la cámara.</summary>
-    static bool HasPosition(CameraDTO c)
-        => c != null && (c.x != 0f || c.y != 0f || c.z != 0f);
 
     /// <summary>El mismo corte con el que se mandan los grupos a detectar, para que la
     /// cuenta de fragmentos y lo que se detecta hablen de lo mismo.</summary>

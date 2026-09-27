@@ -255,38 +255,35 @@ public class ClaseEstudianteManager : MonoBehaviour
         RefreshExplainButton();
     }
 
-    /// <summary>Recibe la vista del docente. Salta a ella UNA VEZ, solo si es distinta de
-    /// la última que se recibió: pulsar "todos a mi vista" cambia los tres números, y eso
-    /// es lo que dispara el salto.
+    /// <summary>Recibe la vista del docente y salta a ella de un empujón.
     ///
-    /// 'camera.locked' se IGNORA a propósito. El docente comparte su vista de un empujón,
-    /// no encadena al alumno a ella.</summary>
+    /// 'camera.locked' se IGNORA a propósito: el docente comparte su vista, no encadena
+    /// al alumno a ella.</summary>
     void ApplyCamera(CameraDTO camera)
     {
         if (camera == null) return;
 
-        // Sin posición no hay vista que compartir: el servidor todavía no la guarda y los
-        // tres valores llegan en cero. Saltar ahí metería al alumno dentro de las
-        // moléculas, en el origen.
-        Vector3 pos = new Vector3(camera.x, camera.y, camera.z);
-        if (pos == Vector3.zero) return;
+        // viewSeq EN CERO significa que el docente no ha empujado su vista nunca. Los
+        // x/y/z que llegan son relleno, y saltar ahí metería al alumno en el origen,
+        // dentro de las moléculas.
+        if (camera.viewSeq <= 0) return;
 
-        bool first   = !hasDocView;
-        bool changed = !first
-                    && (camera.viewSeq != docSeq            // el docente volvió a pulsar
-                     || docPos != pos
-                     || !Mathf.Approximately(docYaw,   camera.yaw)
-                     || !Mathf.Approximately(docPitch, camera.pitch));
+        // SE SALTA CUANDO EL CONTADOR CRECE, no cuando cambian los valores. Es la regla
+        // del contrato, y cubre el caso que los valores no pueden: si el docente pulsa
+        // dos veces sin haberse movido, los números son idénticos pero el contador sube,
+        // y el alumno que se fue a mirar por detrás vuelve las dos veces.
+        bool first  = !hasDocView;
+        bool pushed = camera.viewSeq > docSeq;
 
-        docPos     = pos;
+        docPos     = new Vector3(camera.x, camera.y, camera.z);
         docYaw     = camera.yaw;
         docPitch   = camera.pitch;
         docSeq     = camera.viewSeq;
         hasDocView = true;
 
-        // AL ENTRAR TAMBIÉN SE SALTA: quien llega tarde empieza mirando lo mismo que el
-        // resto en vez de tener que buscarlo. A partir de ahí se mueve libremente.
-        if (first || changed) { SnapToTeacherView(); if (!first) FlashBadge(); }
+        // Quien entra a mitad de clase se alinea con lo último que se empujó, en vez de
+        // aparecer mirando a otro lado y tener que buscar de qué se está hablando.
+        if (first || pushed) { SnapToTeacherView(); if (!first) FlashBadge(); }
     }
 
     void SnapToTeacherView()
