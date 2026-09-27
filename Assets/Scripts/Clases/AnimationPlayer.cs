@@ -37,15 +37,19 @@ public class AnimationPlayer
         this.host   = host;
     }
 
-    /// <summary>Carga el guion y deja la escena en su estado base.</summary>
+    /// <summary>Guarda el guion y dice si sirve. NO TOCA LO QUE SE VE.
+    ///
+    /// Esto importa: la escena del guion PUEDE SER OTRA COSA que la molécula. En la sal
+    /// son dos iones contra los 27 de la red, porque lo que se explica es el gesto y con
+    /// la red entera el electrón se perdería entre las aristas. Si cargar dibujara, abrir
+    /// la sal convertiría la red en dos átomos sin que nadie pulsara nada.
+    ///
+    /// La escena del guion se dibuja al REPRODUCIR, que es cuando el usuario lo pidió.</summary>
     public bool Load(MoleculeAnimation animation)
     {
         Stop();
         script = (animation != null && animation.Has) ? animation : null;
-        if (script == null) return false;
-
-        ShowBase();
-        return true;
+        return script != null;
     }
 
     /// <summary>Dibuja los átomos del GUION, que pueden ser más que los de la molécula:
@@ -170,9 +174,7 @@ public class AnimationPlayer
     IEnumerator MoveAtom(AnimationPrimitive p)
     {
         Vector3 desde = viewer.GetAtomPosition(p.fromAtom);
-        Vector3 hasta = p.toPosition != null
-            ? new Vector3(p.toPosition.x, p.toPosition.y, p.toPosition.z)
-            : desde;
+        Vector3 hasta = Destino(p, desde);
 
         float dur = Secs(p.durationMs);
         for (float t = 0f; t < dur; t += Time.unscaledDeltaTime)
@@ -229,7 +231,7 @@ public class AnimationPlayer
                 case "move":
                     if (p.toPosition != null)
                         viewer.SetAtomPosition(p.fromAtom,
-                            new Vector3(p.toPosition.x, p.toPosition.y, p.toPosition.z));
+                            Destino(p, viewer.GetAtomPosition(p.fromAtom)));
                     break;
 
                 case "transfer":
@@ -240,6 +242,17 @@ public class AnimationPlayer
                 case "attract": viewer.SpawnAttraction(p.fromAtom, p.toAtom);        break;
             }
         }
+    }
+
+    /// <summary>A dónde va un 'move', ya en el espacio del visor.
+    ///
+    /// El guion manda coordenadas NORMALIZADAS, las mismas en que viene la molécula. El
+    /// visor las centra y las escala al dibujar, así que un destino crudo apuntaría a un
+    /// espacio distinto y el átomo se iría de la pantalla.</summary>
+    Vector3 Destino(AnimationPrimitive p, Vector3 porDefecto)
+    {
+        if (p.toPosition == null) return porDefecto;
+        return viewer.SourceToLocal(new Vector3(p.toPosition.x, p.toPosition.y, p.toPosition.z));
     }
 
     // Duración con suelo: un guion con durationMs 0 quedaría en un salto invisible.

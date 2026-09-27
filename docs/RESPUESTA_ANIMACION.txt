@@ -182,5 +182,162 @@ Y hay dos cosas POR DELANTE de esto, en este orden:
      la única prueba que descubre lo que ninguno de los dos lados ve por separado.
 
 ================================================================================
+G. VOLCADO REAL DEL SERVIDOR  [IMPLEMENTADO el 2026-09-27]
+================================================================================
+
+Los dos guiones estan hechos, validados y probados: 48 checks en
+`python -m app.detection.test.layers`. Esto es lo que devuelve hoy
+GET /api/detection/by-smiles?smiles=O — recortado en los atomos, completo en los
+pasos:
+
+  {
+    "hasAnimation": true,
+    "animation": {
+      "id": "h2o-puente",
+      "title": "Por qué el agua se atrae con el agua",
+      "atoms": [
+        {
+          "type": "O",
+          "position": {
+            "x": 0.3604,
+            "y": 0.902,
+            "z": 0.5
+          },
+          "en": 3.44,
+          "charge": 0
+        },
+        "... (6 en total: DOS aguas, contra 3 en structure)"
+      ],
+      "bonds": [
+        {
+          "beginAtomId": 0,
+          "endAtomId": 1,
+          "order": 1,
+          "kind": "polar",
+          "negativeEnd": 0
+        },
+        "... (4 en total)"
+      ],
+      "steps": [
+        {
+          "caption": "En cada agua, el oxígeno jala más los electrones: su lado queda negativo.",
+          "durationMs": 1600,
+          "primitives": [
+            {
+              "kind": "transfer",
+              "fromAtom": 1,
+              "toAtom": 0,
+              "toPosition": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "order": 0,
+              "durationMs": 700
+            },
+            {
+              "kind": "transfer",
+              "fromAtom": 2,
+              "toAtom": 0,
+              "toPosition": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "order": 0,
+              "durationMs": 700
+            }
+          ]
+        },
+        {
+          "caption": "El hidrógeno de una molécula se acerca al oxígeno de la otra.",
+          "durationMs": 1800,
+          "primitives": [
+            {
+              "kind": "move",
+              "fromAtom": 3,
+              "toAtom": -1,
+              "toPosition": {
+                "x": 0.3604,
+                "y": 0.441,
+                "z": 0.5
+              },
+              "order": 0,
+              "durationMs": 1500
+            },
+            {
+              "kind": "move",
+              "fromAtom": 4,
+              "toAtom": -1,
+              "toPosition": {
+                "x": 0.3604,
+                "y": 0.6013,
+                "z": 0.5
+              },
+              "order": 0,
+              "durationMs": 1500
+            },
+            {
+              "kind": "move",
+              "fromAtom": 5,
+              "toAtom": -1,
+              "toPosition": {
+                "x": 0.5155,
+                "y": 0.4009,
+                "z": 0.5
+              },
+              "order": 0,
+              "durationMs": 1500
+            }
+          ]
+        },
+        {
+          "caption": "Se atraen, pero NO se enlazan: eso es un puente de hidrógeno.",
+          "durationMs": 1600,
+          "primitives": [
+            {
+              "kind": "attract",
+              "fromAtom": 4,
+              "toAtom": 0,
+              "toPosition": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "order": 0,
+              "durationMs": 1200
+            }
+          ]
+        }
+      ]
+    }
+  }
+
+LO QUE CONVIENE MIRAR DE AHI
+  - animation.atoms son SEIS y structure.atoms son TRES. Es el caso que justifico
+    toda la seccion 1 de su peticion, funcionando.
+  - En la SAL pasa al reves: animation.atoms son DOS y structure.atoms son 27. El
+    guion explica el GESTO (un atomo entrega un electron y los dos quedan
+    cargados); con los 27 iones de la red el electron se perderia entre las
+    aristas. La red sigue siendo lo que se dibuja en la escena de clase.
+  - Las posiciones vienen NORMALIZADAS a [0,1] como en structure, y la caja se
+    calcula sobre los atomos MAS los destinos de los move: asi ningun atomo se
+    sale del rango a mitad de la animacion.
+  - El tercer paso del agua es `attract` y NO `bond`, a proposito: esa distincion
+    es el tramo de la leccion.
+  - metano (y el resto del catalogo) responde hasAnimation false con `animation`
+    PRESENTE y vacia. No es un error.
+  - Y el listado del diario NO la trae (C.2): ahi hasAnimation es false incluso
+    para el agua. La pide by-smiles, que es lo que llama el modal.
+
+LA GEOMETRIA DEL PUENTE, MEDIDA (esta en el banco de pruebas)
+    O-H de cada agua ............ 0.96 A
+    angulo H-O-H ................ 104.4 grados
+    H...O al final del paso 2 .... 1.80 A   <- el puente
+    O...O al final del paso 2 .... 2.76 A
+    recorrido de la segunda agua . 2.83 A   (para que el acercamiento se vea)
+
+
+================================================================================
 FIN
 ================================================================================

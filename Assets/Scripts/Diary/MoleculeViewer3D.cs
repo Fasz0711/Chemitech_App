@@ -68,6 +68,13 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
     // Lo que dibuja cada primitiva: el electrón que viaja y las líneas de atracción.
     readonly List<Transform> effectTf = new List<Transform>();
 
+    // El encuadre que se aplicó al dibujar: la molécula llega normalizada y aquí se
+    // centra y se escala para que quepa. Se guarda porque la ANIMACIÓN manda destinos en
+    // las coordenadas ORIGINALES, y hay que traerlos a este mismo espacio o el átomo
+    // saldría disparado a un sitio que no tiene nada que ver.
+    Vector3 fitCentroid;
+    float   fitScale = 1f;
+
     /// <summary>Capas encendidas. El diario las deja apagadas y se ve como siempre.</summary>
     public bool ShowSymbols          { get; private set; } = true;
     public bool ShowElectronegativity { get; private set; }
@@ -134,6 +141,9 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
 
         float targetRadius = VisibleRadius() * fitFactor;
         float scale = (n == 1) ? 0f : targetRadius / maxLen;
+
+        fitCentroid = centroid;
+        fitScale    = scale;
 
         for (int i = 0; i < n; i++)
         {
@@ -292,6 +302,13 @@ public class MoleculeViewer3D : MonoBehaviour, IDragHandler
     /// <summary>Cuántos átomos hay dibujados. Lo consulta el reproductor para descartar
     /// un guion cuyos índices no cuadren en vez de reventar a media explicación.</summary>
     public int AtomCount => atomTf.Count;
+
+    /// <summary>Lleva una coordenada del guion al espacio en que está dibujada la
+    /// molécula. El servidor manda las posiciones normalizadas —los destinos de los
+    /// 'move' incluidos— y aquí ya se centró y se escaló para que cupiera, así que sin
+    /// esta conversión un destino crudo mandaría el átomo fuera de la pantalla.</summary>
+    public Vector3 SourceToLocal(Vector3 sourcePosition)
+        => (sourcePosition - fitCentroid) * fitScale;
 
     /// <summary>Mueve un átomo. Los enlaces se rehacen solos.</summary>
     public void SetAtomPosition(int index, Vector3 localPos)
