@@ -1,0 +1,319 @@
+================================================================================
+ENSAYO DE 20 MINUTOS — GUION OPERATIVO
+ChemiTech · Fabrizio (docente) + Rubén (alumno) · 2026-09-27
+================================================================================
+
+QUÉ ES ESTO
+  El ensayo general de la lección de 20 minutos del taller, con dos celulares.
+  Es lo último que queda del camino crítico: el despliegue en Render y el script
+  de exportación ya están hechos (RESPUESTA_CAPAS_Y_ANIMACION.txt, sección G).
+
+  ES UN ENSAYO, NO UNA DEMO. El objetivo no es que salga bien: es que salga mal
+  AQUÍ y no delante de 25 alumnos. Un ensayo donde no falla nada es un ensayo
+  que no midió nada.
+
+  REGLA DE ORO: durante los 20 minutos NADIE ARREGLA NADA. Se anota y se sigue.
+  Parar a corregir destruye la única medida que importa, que es si la lección
+  entera cabe en 20 minutos seguidos.
+
+  Autocontenido: se puede seguir sin leer el resto de la documentación.
+
+
+================================================================================
+0. POR QUÉ EXISTE ESTE ARCHIVO
+================================================================================
+
+Cuatro documentos dicen "el ensayo de 20 minutos con el guion en la mano". El
+guion no estaba escrito en ninguna parte. La sección 3 lo escribe, y lo escribe
+SOLO CON LO QUE HOY FUNCIONA:
+
+  SÍ existe hoy    botones Agua / Sal / CO2 / Limpiar, construcción manual en el
+                   universo y publicar, resaltado por elemento, "Todos a mi
+                   vista", instrucción en lenguaje natural con vista previa,
+                   explicación con capas + tarjeta 2D + animación genérica,
+                   "Copiar a un universo" en el alumno.
+
+  NO existe hoy    el catálogo de 4 interacciones de la Fase 5 (NaCl, H2, puente
+                   de hidrógeno, disolución) y la predicción con 3 opciones antes
+                   de revelar. El guion NO los usa. Donde el plan pedía una
+                   predicción en pantalla, aquí se hace en voz alta: se pregunta,
+                   se cuentan manos, y recién entonces se enciende la capa.
+
+
+================================================================================
+1. EL DÍA ANTERIOR — LISTA DE PREPARACIÓN
+================================================================================
+
+  [ ] COMPILAR EL APK. Hoy no hay ninguno: en Build/ solo hay logs. La URL ya
+      apunta a producción (ApiManager.cs línea 33, chemitechbackend.onrender.com),
+      así que no hay que tocar nada, pero hay que verificarlo DESPUÉS de
+      compilar: si el APK sale con 127.0.0.1, el teléfono del alumno no conecta
+      y el ensayo se cae en el minuto 2.
+
+  [ ] INSTALARLO EN LOS DOS TELÉFONOS. El docente también en teléfono, no en el
+      Editor de Unity: el día del taller el docente conduce desde un celular, y
+      la mitad de lo que este ensayo busca son problemas de pantalla pequeña.
+
+  [ ] CREAR LA CLASE DEL ENSAYO POR ADELANTADO, desde la cuenta docente
+      (fabriziosanchez0711@gmail.com) en Mis clases > Crear clase. Nombre algo
+      como "ENSAYO 27-09". Pedir 3 alumnos aunque solo se use 1: sobra margen.
+
+      >>> NO BORRAR LA CLASE DEMO NI NINGUNA CLASE CON DATOS. Borrar una clase
+          se lleva por delante sus classroom_commands, que son la evidencia de
+          la tesis. La clase del ensayo TAMPOCO se borra al terminar.
+
+  [ ] GUARDAR LOS CÓDIGOS. Al crear la clase sale el modal con las filas
+      "3A_07 / Luna-4827". Botón Copiar y pegarlos en algún lado. El alumno entra
+      con el CÓDIGO en el campo de correo, tal cual, sin arroba.
+
+  [ ] DOS REDES DISTINTAS. El alumno con datos móviles, no en el WiFi de casa.
+      Si los dos teléfonos salen por el mismo router, el ensayo mide el router,
+      no la red del colegio.
+
+  [ ] PROBAR EL CANDADO (ver PETICION_CANDADO_APP.txt). Con el interruptor en
+      false: el teléfono del alumno tiene que quedarse en la pantalla de
+      agradecimiento, y el tuyo, con la cuenta docente, tiene que entrar igual.
+      Levantar el interruptor y comprobar que el teléfono del alumno se abre SOLO,
+      sin cerrar ni reinstalar la app, en menos de 10 segundos. Volver a bajarlo
+      al terminar el ensayo.
+
+  [ ] RUBÉN, CON LOS LOGS DEL SERVIDOR ABIERTOS antes de empezar, y con el id de
+      la clase del ensayo a mano.
+
+
+================================================================================
+2. QUINCE MINUTOS ANTES — DESPERTAR EL SERVIDOR
+================================================================================
+
+  [ ] Abrir https://chemitechbackend.onrender.com/api en el navegador y esperar
+      a que conteste. Si el plan de Render duerme el servicio por inactividad, la
+      PRIMERA petición después del sueño puede tardar cerca de un minuto, y el
+      cliente corta la detección a los 8 segundos (DETECT_TIMEOUT_SECONDS). Con
+      el servidor frío, el primer "Publicar" del docente falla por timeout y
+      parece un defecto de la app.
+
+      Rubén: si el plan es de pago y no duerme, esta casilla sobra. Confírmalo
+      una vez y lo tachamos también del checklist del día del taller.
+
+  [ ] Login en los dos teléfonos, y el alumno hasta la sala de espera. Dejarlos
+      ahí. Así el reloj de los 20 minutos empieza donde empieza de verdad.
+
+  [ ] Cronómetro a la vista y alguien anotando. Si están los dos ocupados,
+      grabar la pantalla del teléfono docente: sirve para revisar después.
+
+
+================================================================================
+3. EL GUION, MINUTO A MINUTO
+================================================================================
+
+Los tiempos son del cronómetro, desde 00:00. Entre paréntesis, lo que se toca.
+
+--------------------------------------------------------------------------------
+00:00 - 02:00   ENCUADRE, SIN APP
+--------------------------------------------------------------------------------
+  La pregunta que se contesta al final:
+      "La sal se disuelve en agua. El aceite no. Las dos son sustancias, las dos
+       se echan al mismo vaso. ¿Qué hace distinta a una de la otra?"
+
+  No se contesta ahora. Se anota en la pizarra de verdad y se deja ahí.
+  Los alumnos ya están en la sala de espera, viendo "Espera a que tu docente
+  inicie la clase". No ven NADA del contenido: eso es a propósito, porque si
+  vieran la lección antes, la comparación con el otro grupo se cae.
+
+--------------------------------------------------------------------------------
+02:00 - 03:00   INICIAR LA CLASE
+--------------------------------------------------------------------------------
+  (Docente: Iniciar)
+  El alumno entra solo, sin tocar nada. Debería ver la plataforma VACÍA y el
+  aviso "El docente aún no ha puesto nada".
+
+  MEDIR: cuánto tarda el teléfono del alumno en pasar de la sala de espera a la
+  clase. El sondeo es cada 2.5 s, así que lo normal son 1-3 s.
+
+--------------------------------------------------------------------------------
+03:00 - 06:00   LO SIMPLE: DOS ÁTOMOS QUE ATRAEN IGUAL  (H2)
+--------------------------------------------------------------------------------
+  (Docente: "Ir a universo" > selector > dos hidrógenos, uno al lado del otro >
+   "Ir a pizarra" > Publicar)
+
+  Esto se construye A MANO a propósito, aunque sea lo más lento del guion: es el
+  único bloque que ejercita el camino nuevo (construir y publicar) y el único
+  momento en que los alumnos VEN APARECER la molécula átomo por átomo en vez de
+  encontrársela hecha.
+
+  Mientras se coloca, el docente tiene el aviso de "sin publicar" encendido y los
+  alumnos no ven nada todavía. Decirlo en voz alta: "todavía no lo ven ustedes".
+
+  (Docente: toca un átomo > Ver explicación > capa Símbolos > Ver cómo se forma)
+  La frase que tiene que quedar: LOS DOS ATRAEN IGUAL, ASÍ QUE EL PAR SE QUEDA
+  EN MEDIO. El enlace no tiene lados.
+
+--------------------------------------------------------------------------------
+06:00 - 10:00   LO POLAR: EL AGUA
+--------------------------------------------------------------------------------
+  (Docente: Limpiar > Agua > "Todos a mi vista")
+
+  "Todos a mi vista" es UN SALTO, no una atadura: después del salto el alumno
+  vuelve a mover su cámara libremente. Pedirles expresamente que la giren, para
+  que vean que la forma doblada se mantiene desde cualquier ángulo.
+
+  (Docente: Ver explicación > capa Electronegatividad)
+  PREGUNTA EN VOZ ALTA, ANTES DE ENCENDER LA SIGUIENTE CAPA:
+      "El oxígeno marca 3.44 y el hidrógeno 2.20. Si los dos jalan del mismo par
+       de electrones, ¿hacia dónde se va a ir el par?"
+  Contar manos. Recién entonces:
+
+  (Docente: capa Tipo de enlace)
+  Aparecen los δ− y δ+. El par se corrió, pero SIGUE COMPARTIDO: eso es lo que
+  separa este caso del siguiente.
+
+  (Docente: Ver cómo se forma)
+  Y al lado, la tarjeta 2D: el H-O-H del cuaderno y la forma doblada de la
+  pantalla son la misma cosa. Ese puente es el ítem que pide el plan de
+  validación, así que esta es la parte que NO se puede saltar si el tiempo
+  aprieta.
+
+--------------------------------------------------------------------------------
+10:00 - 14:00   LO IÓNICO: LA SAL
+--------------------------------------------------------------------------------
+  (Docente: Limpiar > Sal)
+
+  Son 27 iones. Dejar que la vean y que la giren: una red no se entiende de
+  frente.
+
+  (Docente: toca un ion > Ver explicación > Ver cómo se forma)
+  La frase que tiene que quedar: AQUÍ NO SE COMPARTE, SE ENTREGA. El electrón se
+  va del todo y quedan iones con carga.
+
+  OJO, ES LO ESPERADO Y NO ES UN FALLO: la tarjeta 2D de la sal dice "Sin
+  fórmula". Una red cristalina no tiene fórmula estructural plana. Si el docente
+  no lo explica, el alumno lee "sin fórmula" como un error de la app. Decirlo:
+  "esto no se dibuja como H-O-H porque no es una molécula suelta, es una red".
+
+  (Docente: Resaltar Na, luego Resaltar Cl)
+  Para que se vea que la red alterna, y que eso es la estructura.
+
+--------------------------------------------------------------------------------
+14:00 - 17:00   EL CONTRASTE: CO2, Y UNA PREDICCIÓN
+--------------------------------------------------------------------------------
+  (Docente: Limpiar > CO2)
+
+  PREGUNTA EN VOZ ALTA, ANTES DE ENCENDER LA CAPA:
+      "El carbono marca 2.55 y el oxígeno 3.44. En cada enlace C=O, ¿de qué lado
+       va a quedar el δ−?"
+  Contar manos, y ENCENDER LA CAPA DESPUÉS. El orden importa: si la capa ya está
+  encendida, no hay predicción, hay lectura.
+
+  (Docente: Ver explicación > Tipo de enlace)
+  También se ve el enlace DOBLE, que no había aparecido hasta ahora.
+
+--------------------------------------------------------------------------------
+17:00 - 19:00   EL CIERRE QUE CONTESTA LA PREGUNTA DEL INICIO
+--------------------------------------------------------------------------------
+  Volver a la pizarra de verdad, a la pregunta del minuto 0.
+      El agua tiene lados: δ− de un lado, δ+ del otro.
+      La sal son cargas sueltas.
+      Cargas y lados se atraen. Por eso la sal se disuelve.
+      El aceite no tiene lados, y por eso se queda aparte.
+
+  (Alumno: Copiar a un universo)
+  Se llevan la molécula a su propio universo para seguir después. Es lo que
+  convierte la clase en algo que sigue existiendo cuando termina.
+
+--------------------------------------------------------------------------------
+19:00 - 20:00   TERMINAR
+--------------------------------------------------------------------------------
+  (Docente: Terminar > confirmar)
+  El alumno tiene que ver que la clase terminó. Comprobar que ya no puede
+  aplicarse nada más: es el cerrojo que protege la evidencia.
+
+
+================================================================================
+4. LO QUE HAY QUE MIRAR MIENTRAS PASA
+================================================================================
+
+Esto es lo que el ensayo viene a descubrir. Anotar SÍ / NO / cuánto, sin parar.
+
+  DEL LADO DEL ALUMNO
+    [ ] Segundos entre "el docente publica" y "aparece en el teléfono".
+        Esperado 1-4 s (sondeo de 3 s + red). Anotar el PEOR de la sesión.
+    [ ] ¿Vio algo antes de Iniciar? Tiene que ser NO, rotundo.
+    [ ] "Todos a mi vista": ¿salta una sola vez y lo deja libre?
+    [ ] Al tocar un átomo, ¿se resalta LA MOLÉCULA ENTERA?
+    [ ] ¿La animación sale en las tres (agua, sal, CO2) y en el H2 construido?
+    [ ] ¿Se quedó algún botón bloqueado? El verde de la animación tuvo ese
+        defecto; si vuelve, anotar en qué paso exacto.
+    [ ] ¿Se lee la pantalla? Probar el brillo de Ajustes en el sitio real.
+
+  DEL LADO DEL DOCENTE
+    [ ] ¿El aviso de "sin publicar" aparece al colocar y se apaga al publicar?
+    [ ] ¿Cuánto tarda Publicar de verdad? (la detección va al servidor)
+    [ ] La instrucción en lenguaje natural: probarla UNA VEZ, en el bloque del
+        agua, y si no responde seguir con los botones sin perder tiempo. El plan
+        B es que la clase entera se pueda dar sin ese campo.
+
+  DEL LADO DE RUBÉN, EN LOS LOGS
+    [ ] Peticiones por minuto del alumno (tope 60) y del docente.
+    [ ] ¿Algún 429 ERR_RATE_LIMITED?
+    [ ] ¿Algún 409 ERR_STALE_SCENE?
+    [ ] Tiempo de respuesta de /commands/apply con detección.
+    [ ] ¿La sal devuelve 54 enlaces iónicos y atoms2D vacío?
+
+  EL RELOJ
+    [ ] A qué minuto real terminó cada bloque. Si el guion se pasa de 20:00,
+        el bloque que se recorta es el CO2, no el agua.
+
+
+================================================================================
+5. DESPUÉS DEL RELOJ — LOS SABOTAJES
+================================================================================
+
+Diez minutos más, ya fuera del cronómetro y con la clase todavía abierta. Cada
+uno se hace A PROPÓSITO, uno por vez:
+
+  [ ] El alumno bloquea la pantalla 30 segundos y vuelve. (La app deja de
+      sondear en segundo plano: al volver, ¿se pone al día sola?)
+  [ ] El alumno en modo avión 20 segundos, y de vuelta.
+  [ ] El alumno cierra la app del todo y vuelve a entrar con la clase en curso.
+  [ ] El docente publica algo mientras el alumno está sin red.
+  [ ] Dos publicaciones seguidas, muy rápido.
+
+Ninguno de los cinco se ha probado nunca. Son la causa más probable de que algo
+se caiga el día del taller, porque 25 adolescentes van a hacer los cinco sin que
+nadie se lo pida.
+
+
+================================================================================
+6. LA EVIDENCIA — LO ÚLTIMO, Y LO QUE DE VERDAD IMPORTA
+================================================================================
+
+  [ ] Rubén corre scripts.export_classroom con el id de la clase del ensayo.
+  [ ] Comprobar que están: marca de inicio, marca de cierre, y TODOS los comandos
+      del docente con su hora. Contarlos contra el guion: deberían salir unos 12
+      (1 publicación manual, 3 moléculas por botón, 3 limpiezas, 2 resaltados,
+      1 vista, más los que salgan).
+  [ ] Comprobar que NO hay nombres, correos ni identificadores de dispositivo.
+
+Si esta exportación sale bien, la cadena completa está probada: lo que pasa en
+el aula queda registrado y se puede leer después. Eso es lo que sostiene el OE4.
+
+  >>> Y NO BORRAR LA CLASE DEL ENSAYO. Sirve de referencia para comparar el día
+      del taller, y borrarla borra sus comandos.
+
+
+================================================================================
+7. LAS TRES PREGUNTAS QUE SOLO ESTE ENSAYO CONTESTA
+================================================================================
+
+Si al terminar no se pueden contestar estas tres, el ensayo hay que repetirlo:
+
+  1. Cuánto tarda de verdad, sobre una red que no es la de casa, entre que el
+     docente pulsa y el alumno ve.
+  2. Si la lección cabe en 20 minutos seguidos. Nunca se ha cronometrado.
+  3. Si la evidencia queda registrada tal como la tesis la necesita.
+
+Lo demás —un botón torcido, una letra chica— se anota y se arregla después.
+
+================================================================================
+FIN
+================================================================================

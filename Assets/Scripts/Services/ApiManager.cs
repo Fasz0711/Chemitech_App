@@ -290,6 +290,23 @@ public class ApiManager : MonoBehaviour
             onError));
     }
 
+    /// <summary>El candado: pregunta si la app se puede usar todavía.
+    ///
+    /// Va sin autenticar pero MANDA EL TOKEN SI LO HAY, para que el servidor pueda
+    /// reconocer a un docente y dejarlo pasar aunque la app esté cerrada para el resto.
+    ///
+    /// Tiempo de espera corto: esta llamada retrasa el arranque de la app, y si el
+    /// servidor tarda, más vale reintentar que dejar al usuario mirando una pantalla
+    /// quieta. Quien la llama ya sabe reintentar.</summary>
+    public void GetAppStatus(Action<AppStatusResponse> onSuccess, Action<int, string> onError)
+    {
+        StartCoroutine(GetRaw("/app/status",
+            json => onSuccess?.Invoke(AppStatusResponse.Parse(json)),
+            onError,
+            timeoutSeconds: 8,
+            sendSessionToken: true));
+    }
+
     /// <summary>Acepta las DOS envolturas posibles: el detalle dentro de "molecule", o el
     /// detalle suelto en la raíz.
     ///
@@ -743,12 +760,20 @@ public class ApiManager : MonoBehaviour
     /// catálogo, la misma para todo el mundo, así que el servidor la sirve sin token y
     /// puede cachearla.</summary>
     IEnumerator GetRaw(string endpoint, Action<string> onSuccess, Action<int, string> onError,
-                       int timeoutSeconds = 0)
+                       int timeoutSeconds = 0, bool sendSessionToken = false)
     {
         string url = BASE_URL + endpoint;
 
         using var req = UnityWebRequest.Get(url);
         req.SetRequestHeader("Accept", "application/json");
+
+        // El token va SOLO si se pide y si lo hay. Es distinto de GetAuthed: aquí no se
+        // renueva la sesión ni se expulsa al login si el servidor lo rechaza. El candado
+        // manda el token para que el servidor reconozca a un docente, pero un token
+        // vencido no puede sacar a nadie de la app: se resuelve como anónimo y ya.
+        if (sendSessionToken && !string.IsNullOrEmpty(SessionData.AccessToken))
+            req.SetRequestHeader("Authorization", "Bearer " + SessionData.AccessToken);
+
         req.timeout = timeoutSeconds > 0 ? timeoutSeconds : DEFAULT_TIMEOUT_SECONDS;
 
         yield return req.SendWebRequest();
@@ -853,6 +878,34 @@ public class ApiManager : MonoBehaviour
     // asume si falta: mandarlo explícito no cambia el comportamiento de nadie.
     [Serializable] class DetectRequest      { public string userPublicId; public AtomDTO[] atoms; public BondDTO[] bonds; public bool record; }
     [Serializable] class DetectRequestGuest { public AtomDTO[] atoms; public BondDTO[] bonds; public bool record; } // sin userPublicId (invitado)
+
+    /// <summary>Respuesta de GET /app/status, el candado previo al taller.
+    ///
+    /// 'answered' NO VIENE DEL SERVIDOR: dice si el JSON traía de verdad la clave
+    /// 'canBeUsed'. Hace falta porque JsonUtility rellena con el valor por defecto
+    /// cuando un nombre no coincide, y el valor por defecto de un bool es false, o sea
+    /// BLOQUEADO. Sin esta comprobación, una errata en el contrato —o un 200 de un
+    /// servidor que no conoce el candado— dejaría la app cerrada para siempre sin un
+    /// solo error en pantalla. Este proyecto ya perdió tiempo tres veces con esa familia
+    /// de fallo ('promptText', 'structure2D', 'atoms2D'); aquí el precio sería el
+    /// taller entero.</summary>
+    [Serializable]
+    public class AppStatusResponse
+    {
+        public bool   canBeUsed;
+        public string message;
+
+        [NonSerialized] public bool answered;
+
+        public static AppStatusResponse Parse(string json)
+        {
+            AppStatusResponse r = null;
+            try { r = JsonUtility.FromJson<AppStatusResponse>(json); } catch { }
+            r ??= new AppStatusResponse();
+            r.answered = !string.IsNullOrEmpty(json) && json.Contains("canBeUsed");
+            return r;
+        }
+    }
 
     /// <summary>Respuesta de GET /detection/by-smiles. El cuerpo es el MISMO detalle que
     /// el diario ya incrusta por entrada, así que se reutilizan sus modelos en vez de

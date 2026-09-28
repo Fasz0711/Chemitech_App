@@ -480,4 +480,35 @@ public class ClassSceneRenderer
 
         go.AddComponent<Billboard>();
     }
+
+    /// <summary>El átomo más cercano al toque en PANTALLA, o null si ninguno cae dentro
+    /// del radio. Es el repuesto de un rayo exacto.
+    ///
+    /// Hace falta porque EL DEDO TAPA JUSTO LO QUE QUIERE TOCAR: el alumno apunta a una
+    /// esfera, la yema cubre medio centímetro de pantalla y el punto que el sistema
+    /// reporta cae a un lado. Con un rayo infinitamente fino eso es un fallo; con un
+    /// radio de dedo, es el átomo que el alumno estaba mirando.
+    ///
+    /// Se mide en pantalla y no en el mundo a propósito: "mi dedo cubre esto" es una
+    /// distancia en píxeles, y en píxeles un átomo lejano ocupa menos, que es justo el
+    /// comportamiento que se quiere.
+    ///
+    /// La ruta del docente hace esto mismo en AtomPlacementController.</summary>
+    public Atom3D NearestAtomOnScreen(Camera camera, Vector2 screenPosition, float maxPixels)
+    {
+        if (!camera) return null;
+
+        Atom3D best = null;
+        float  bestD = maxPixels;
+
+        foreach (var atom in byId.Values)
+        {
+            if (!atom) continue;
+            Vector3 sp = camera.WorldToScreenPoint(atom.transform.position);
+            if (sp.z <= 0f) continue;   // detrás de la cámara: se proyecta al revés
+            float d = Vector2.Distance(screenPosition, new Vector2(sp.x, sp.y));
+            if (d < bestD) { bestD = d; best = atom; }
+        }
+        return best;
+    }
 }

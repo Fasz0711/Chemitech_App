@@ -151,15 +151,18 @@ public class ClaseEstudianteManager : MonoBehaviour
         var camera = cam ? cam.GetComponent<Camera>() : Camera.main;
         if (!camera) return;
 
+        Atom3D atom = null;
+        if (Physics.Raycast(camera.ScreenPointToRay(screenPosition), out var hit))
+            atom = hit.collider ? hit.collider.GetComponentInParent<Atom3D>() : null;
+
+        // Si el rayo exacto no acertó, vale el átomo más cercano dentro de un radio de
+        // dedo. Sin esto, en el celular había que acertarle al píxel: funcionaba con
+        // ratón y parecía roto en la mano.
+        if (atom == null)
+            atom = sceneRenderer.NearestAtomOnScreen(camera, screenPosition, TapTolerancePx());
+
         // Tocar el vacío suelta la molécula: es la salida más natural y evita que un
         // alumno se quede atascado sin saber cómo volver.
-        if (!Physics.Raycast(camera.ScreenPointToRay(screenPosition), out var hit))
-        {
-            Release();
-            return;
-        }
-
-        var atom = hit.collider ? hit.collider.GetComponent<Atom3D>() : null;
         if (atom == null) { Release(); return; }
 
         string molecule = sceneRenderer.MoleculeOf(atom.id);
@@ -173,6 +176,10 @@ public class ClaseEstudianteManager : MonoBehaviour
         sceneRenderer.SetIsolated(molecule);
         RefreshExplainButton();
     }
+
+    /// <summary>El radio del dedo, en píxeles. El mismo que usa la pizarra del docente,
+    /// para que tocar un átomo se sienta igual en las dos pantallas.</summary>
+    static float TapTolerancePx() => Mathf.Max(45f, Screen.height * 0.06f);
 
     /// <summary>Suelta la molécula tocada: se apaga el resaltado, vuelven las demás a su
     /// brillo y desaparece el botón de explicar.</summary>

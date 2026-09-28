@@ -30,6 +30,7 @@ public class LoginManager : MonoBehaviour
     static readonly Color COLOR_OJO_VISIBLE = new Color(0.45f, 0.93f, 1f, 1f);
 
     private bool passwordVisible = false;
+    private bool gateApplied;      // último estado del candado que se pintó
 
     private void Start()
     {
@@ -43,6 +44,8 @@ public class LoginManager : MonoBehaviour
 
         // Estado inicial: contraseña oculta
         SetPasswordVisible(false);
+
+        ApplyGate(AppGate.IsClosed);
 
         // Si se llegó aquí porque una clase se borró, el alumno merece saber por qué está
         // en el login y no en su clase. Sin esto parecería que la app falló.
@@ -106,6 +109,25 @@ public class LoginManager : MonoBehaviour
     {
         loggingIn = value;
         if (btnIniciarSesion) btnIniciarSesion.interactable = !value;
+    }
+
+    /// <summary>Con el candado echado, esta pantalla sirve para UNA sola cosa: que el
+    /// docente entre, o que el alumno compruebe que su código funciona. Crear una cuenta
+    /// nueva no abre nada —el candado es global y solo cede ante un docente— así que
+    /// ofrecerlo sería mandar al alumno a un camino que no lleva a ninguna parte, y de
+    /// paso llenar la base de cuentas sueltas justo antes del taller.</summary>
+    private void ApplyGate(bool closed)
+    {
+        gateApplied = closed;
+        if (btnRegistrate) btnRegistrate.gameObject.SetActive(!closed);
+    }
+
+    private void Update()
+    {
+        // El candado puede abrirse mientras alguien mira esta pantalla: el docente levanta
+        // el interruptor y el botón tiene que volver sin salir y entrar de aquí.
+        bool closed = AppGate.IsClosed;
+        if (closed != gateApplied) ApplyGate(closed);
     }
 
     private void OnOlvidaste()

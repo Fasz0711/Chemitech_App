@@ -1,0 +1,218 @@
+================================================================================
+EL CANDADO PREVIO AL TALLER — GET /app/status
+ChemiTech · frontend -> backend · 2026-09-27
+================================================================================
+
+LA PROPUESTA ES TUYA Y SE ACEPTA TAL CUAL. Esto solo la precisa en cuatro puntos
+que salieron al implementarla, y pide una cosa que no estaba: cómo se levanta el
+interruptor el día del taller.
+
+EL CLIENTE YA ESTÁ HECHO Y FUNCIONA SIN ESTE ENDPOINT: mientras el servidor
+devuelva 404, la app se comporta como siempre. No bloquea a nadie hasta que
+exista y diga que no. Así que esto no te corre prisa por nosotros; corre prisa
+por el calendario, porque tiene que estar antes de repartir el APK.
+
+
+================================================================================
+1. EL CONTRATO
+================================================================================
+
+GET /app/status
+  Público. NO exige token, pero ACEPTA uno: el cliente manda
+  "Authorization: Bearer <accessToken>" cuando hay sesión.
+
+Respuesta 200:
+{
+  "canBeUsed": false,
+  "message": "Te esperamos el viernes a las 10."
+}
+
+  canBeUsed   OBLIGATORIO. El nombre exacto, con esa capitalización.
+  message     OPCIONAL. Si viene y no está vacío, la app lo muestra EN LUGAR del
+              texto por defecto ("Te esperamos para la clase."). Sirve para
+              cambiar el aviso sin compilar otro APK. Si no lo mandas, no pasa
+              nada.
+
+REGLA DEL DOCENTE
+  Con un Bearer válido de un usuario role = "teacher", la respuesta es
+  SIEMPRE {"canBeUsed": true}, esté el interruptor como esté.
+  Para cualquier otro caso —anónimo, alumno, token vencido o inválido— vale el
+  interruptor global.
+
+  Por qué: el docente tiene que poder preparar la clase, crear los códigos y
+  probar la app los días previos, mientras el resto la tiene cerrada. La
+  alternativa era un código secreto dentro del APK, que es un secreto más que
+  cuidar y que se descubre abriendo el archivo.
+
+  Un token vencido resolviéndose como anónimo NO es un problema: la app recuerda
+  el rol de la última sesión y no se cierra sola a un docente.
+
+
+================================================================================
+2. CÓMO SE LEVANTA EL INTERRUPTOR — LO QUE FALTA EN LA PROPUESTA
+================================================================================
+
+NO SIRVE UNA VARIABLE DE ENTORNO. Cambiarla en Render dispara un redespliegue de
+alrededor de un minuto, y ese minuto cae justo en el arranque de la sesión, con
+25 alumnos mirando. Peor: durante el redespliegue el servidor no contesta, que es
+el peor momento posible para que no conteste.
+
+LO QUE PEDIMOS: el valor vive en la base y se cambia en caliente.
+
+  POST /app/status   {"canBeUsed": true}
+    Solo para role = "teacher" (o admin, como prefieras). Efecto inmediato.
+
+Y una cosa más, que es gratis y vale para la tesis:
+
+  REGISTRA CADA CAMBIO con quién y cuándo. "El interruptor se levantó a las
+  10:04:31 del día del taller" es evidencia de que ningún alumno pudo entrar
+  antes, y es exactamente el tipo de dato que sostiene la validez del pretest.
+  Si cabe en el mismo sitio donde ya guardas classroom_commands, mejor.
+
+
+================================================================================
+3. DOS EXIGENCIAS OPERATIVAS
+================================================================================
+
+3.1 FUERA DEL LIMITADOR DE PETICIONES
+  Mientras la app está cerrada, cada teléfono vuelve a preguntar cada 10 s (ver
+  §4, regla 4). En el colegio eso son 25 teléfonos detrás de UNA SOLA IP: hasta
+  150 peticiones por minuto desde la misma dirección, todas a este endpoint.
+
+  Si cae bajo el limitador por IP, el día del taller los alumnos reciben 429 en
+  vez de la apertura y se quedan cerrados. Este endpoint tiene que estar exento,
+  o tener su propio contador muy alto.
+
+3.2 BARATO Y AUTÓNOMO
+  Sin consultas pesadas y sin depender de RDKit, del intérprete ni de nada que se
+  pueda caer. Es lo primero que toca la app al arrancar: si tarda, la app entera
+  parece colgada. El cliente corta a los 8 segundos y reintenta.
+
+
+================================================================================
+4. QUÉ HACE EL CLIENTE CON CADA RESPUESTA
+================================================================================
+
+Está escrito aquí para que sepas qué depende de qué antes de cambiar nada.
+
+  REGLA 1 — SOLO UN "false" EXPLÍCITO CIERRA.
+    200 con "canBeUsed": false      -> cerrado
+    200 sin la clave "canBeUsed"    -> ABIERTO
+    404                             -> ABIERTO (no hay candado desplegado)
+    cuerpo ilegible                 -> ABIERTO
+
+    No es descuido, es la decisión más importante de las cuatro. JsonUtility
+    rellena los campos que no reconoce con su valor por defecto, y el valor por
+    defecto de un bool es false, o sea CERRADO. Con una errata en el nombre del
+    campo —"canbeused", "can_be_used"— la app se cerraría entera, para todos,
+    sin un solo error en pantalla ni en tus logs. Por eso el cliente comprueba
+    que la clave venga de verdad en el cuerpo antes de hacerle caso.
+
+    Si el candado se va a equivocar, que se equivoque dejando pasar.
+
+  REGLA 2 — SIN RESPUESTA, TODO SIGUE COMO ESTABA.
+    Una instalación nueva nunca oyó un "sí", así que arranca CERRADA. Es lo que
+    impide saltarse el candado con el modo avión, y hace falta de verdad: muchos
+    alumnos no tienen datos en casa.
+    Un aparato que ya se abrió alguna vez arranca ABIERTO. Es lo que impide que
+    un corte del WiFi del colegio deje 25 teléfonos muertos a mitad de clase.
+
+  REGLA 3 — NUNCA SE VUELVE A CERRAR EN MARCHA.
+    Una vez que dijiste que sí en esa ejecución, la app no se cierra aunque el
+    servidor deje de responder o cambie de idea. Si tocas el interruptor por
+    error a mitad de la lección, no apagas el aula. (En el siguiente arranque sí
+    vuelve a hacerte caso.)
+
+  REGLA 4 — SE ABRE SOLA.
+    Mientras está cerrada pregunta cada 10 s. Cuando levantes el interruptor, los
+    teléfonos se abren en menos de 10 segundos sin que nadie cierre ni reinstale
+    nada. Cuando está abierta deja de preguntar: cero carga durante la clase.
+
+
+================================================================================
+5. LO QUE SE DESCARTÓ, POR SI SE TE OCURRE
+================================================================================
+
+UN "unlockAt" CON FECHA Y HORA. Suena mejor —se programa y te olvidas— y es peor:
+el reloj de un teléfono barato se desvía, un taller que empieza 20 minutos tarde
+deja la app abierta con los alumnos todavía haciendo el pretest, y uno que se
+adelanta la deja cerrada con el docente delante. Un interruptor que alguien
+levanta a mano cuando la clase empieza no tiene ninguno de esos dos fallos.
+
+BLOQUEO POR ALUMNO. No hace falta: el candado no distingue personas, distingue si
+la clase ya empezó.
+
+
+================================================================================
+6. LO QUE ESTO NO ES
+================================================================================
+
+Una cortina, no una caja fuerte. Frena la exploración casual, que es la amenaza
+real para la validez del pretest. Un aparato con root o un APK modificado se lo
+saltan, y no importa: ese no es el alumno que contamina la muestra.
+
+Conviene decirlo así también en la tesis. "La aplicación permaneció bloqueada
+hasta el inicio de la sesión, con registro del momento de apertura" es una
+afirmación honesta y verificable; "era imposible acceder antes" no lo sería.
+
+================================================================================
+7. CÓMO LO PROBAMOS JUNTOS — 20 MINUTOS, EN ESTE ORDEN
+================================================================================
+
+Cada prueba aisla UNA de las cuatro reglas. El orden importa: si una falla, las
+siguientes ya no dicen nada.
+
+ANTES DE LLAMARNOS (frontend, sin backend)
+  [ ] Editor: ChemiTech > Candado: simular servidor cerrado, y Play. Tiene que
+      salir la pantalla, no dejar tocar nada por detrás, y el botón "Regístrate"
+      del login no tiene que estar.
+  [ ] Quitar la simulación y volver a Play: la app arranca normal (hoy el
+      servidor devuelve 404, y un 404 abre).
+
+PRUEBA 0 — EL DESPLIEGUE NO ROMPE NADA        interruptor en true
+  [ ] curl https://chemitechbackend.onrender.com/api/app/status  -> canBeUsed true
+  [ ] La app se comporta exactamente como antes.
+
+PRUEBA 1 — CIERRA, Y EL DOCENTE PASA          interruptor en false
+  [ ] Teléfono del alumno: pantalla de bloqueo.
+  [ ] Teléfono del docente, con su sesión: entra igual, sin ver nada.
+  [ ] El alumno toca "Ya tengo mi código", entra con su código: vuelve al
+      bloqueo, ahora con "Listo, 3A_07. Tu código funciona".
+
+PRUEBA 2 — SE ABRE SOLA  (la más importante)  interruptor false -> true
+  [ ] Con el alumno MIRANDO la pantalla de bloqueo y sin tocar nada, levantar el
+      interruptor. La app tiene que abrirse sola en menos de 10 segundos.
+  Si esta falla, el día del taller son 25 alumnos forzando el cierre de la app.
+
+PRUEBA 3 — NO SE CIERRA EN MARCHA             interruptor true -> false
+  [ ] Con la app ya abierta, bajar el interruptor: la app SIGUE abierta.
+  [ ] Cerrarla del todo y volver a abrirla: ahora sí, bloqueada.
+
+PRUEBA 4 — EL MODO AVIÓN NO LO SALTA          interruptor en false
+  [ ] Borrar los datos de la app en el teléfono (Ajustes de Android > la app >
+      Almacenamiento > Borrar datos), o reinstalarla: hace falta para que el
+      aparato "olvide" que alguna vez se abrió. En el Editor esto es
+      ChemiTech > Candado: olvidar estado.
+  [ ] Poner el teléfono en modo avión y abrir la app: BLOQUEADA.
+  [ ] Quitar el avión: sigue bloqueada hasta que el interruptor suba.
+
+PRUEBA 5 — LA ERRATA A PROPÓSITO  (la que más vale)
+  [ ] Rubén devuelve, solo para esta prueba, {"can_be_used": false} con el nombre
+      mal escrito. LA APP TIENE QUE ABRIRSE. Si se cierra, hay un fallo grave en
+      el cliente y hay que arreglarlo antes del taller: significa que cualquier
+      errata futura cierra la app para todos.
+  [ ] Rubén devuelve un 500. La app tiene que quedarse COMO ESTABA, no cerrarse.
+
+PRUEBA 6 — LA CARGA DEL AULA
+  [ ] Rubén dispara 200 peticiones por minuto a /app/status desde una sola IP.
+      Ni un 429, y el tiempo de respuesta estable. Son 25 teléfonos cerrados
+      detrás del router del colegio.
+
+AL TERMINAR
+  [ ] DEJAR EL INTERRUPTOR DONDE TIENE QUE ESTAR. En true si alguien va a probar
+      la app (una exposición, una demo); en false a partir del momento en que se
+      reparta el APK a los alumnos.
+
+================================================================================
+FIN
+================================================================================
