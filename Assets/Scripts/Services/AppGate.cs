@@ -176,7 +176,8 @@ public class AppGate : MonoBehaviour
                 // cosas como estaban. Regla 2.
                 Debug.Log($"[Candado] Sin respuesta (code={code}, {detail}). Se mantiene " +
                           (locked ? "cerrado." : "abierto."));
-                if (!locked && ++silentTries >= MAX_SILENT_TRIES) unlockedThisRun = true;
+                silentTries++;
+                if (!locked && silentTries >= MAX_SILENT_TRIES) unlockedThisRun = true;
                 Refresh();
             });
     }
@@ -310,7 +311,7 @@ public class AppGate : MonoBehaviour
         loginButton = MakeButton("BtnLogin", bg.transform, BTN_LOGIN,
                                  new Vector2(0f, -300f), new Vector2(560f, 110f), GoToLogin);
 
-        statusLabel = MakeText("Estado", bg.transform, "", new Vector2(0f, -470f),
+        statusLabel = MakeText("Estado", bg.transform, "", new Vector2(0f, -405f),
                                new Vector2(880f, 60f), 28f, FAINT, FontStyles.Normal);
     }
 

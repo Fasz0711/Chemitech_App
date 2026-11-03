@@ -85,20 +85,34 @@ public static class GenericAnimation
         });
 
         // ── Paso 2: cada enlace estrena su par compartido, en el medio ────────
+        //
+        // SOLO PARA LOS ENLACES DONDE DE VERDAD SE COMPARTE. En un enlace iónico no hay
+        // par compartido en ningún momento: el electrón se entrega y ya.
+        //
+        // No es un matiz: la frase de este paso —"un par de electrones que los dos átomos
+        // comparten"— es casi literal la ALTERNATIVA INCORRECTA del ítem 5 de la prueba
+        // ("Porque comparten un par de electrones", forma A; "Un par de electrones que
+        // comparten", forma B), y contradice la respuesta correcta del ítem 4. Mostrársela
+        // al alumno durante la lección sería enseñarle el distractor con la app que la
+        // prueba está midiendo. Con la sal, este paso ahora no existe.
         var compartir = new List<AnimationPrimitive>();
         foreach (var b in bonds)
+        {
+            if (b.kind == "ionic") continue;
             compartir.Add(new AnimationPrimitive
             {
                 kind = "share", fromAtom = b.beginAtomId, toAtom = b.endAtomId,
                 amount = 0f, durationMs = MS_COMPARTIR,
             });
+        }
 
-        pasos.Add(new AnimationStep
-        {
-            caption    = "Cada enlace es un par de electrones que los dos átomos comparten.",
-            durationMs = MS_COMPARTIR,
-            primitives = compartir.ToArray(),
-        });
+        if (compartir.Count > 0)
+            pasos.Add(new AnimationStep
+            {
+                caption    = "Cada enlace es un par de electrones que los dos átomos comparten.",
+                durationMs = MS_COMPARTIR,
+                primitives = compartir.ToArray(),
+            });
 
         // ── Paso 3: el par se desplaza, o se entrega ──────────────────────────
         // Se separan polares e iónicos EN PASOS DISTINTOS cuando conviven, porque la frase
@@ -108,17 +122,53 @@ public static class GenericAnimation
 
         foreach (var b in bonds)
         {
-            if (b.negativeEnd < 0) continue;   // no polar: el par se queda donde está
-            int hacia = b.negativeEnd;
-            int desde = (hacia == b.beginAtomId) ? b.endAtomId : b.beginAtomId;
+            bool ionico = b.kind == "ionic";
 
-            var p = new AnimationPrimitive
+            // UN ENLACE IÓNICO LLEGA CON negativeEnd = -1, Y ES CORRECTO QUE ASÍ SEA: δ−
+            // es una carga PARCIAL y en la sal las cargas son enteras, así que el servidor
+            // manda el centinela y deja esa información en 'charge'. Esta función lo
+            // descartaba igual que a un no polar, de modo que los 54 enlaces de la sal se
+            // perdían y la molécula terminaba cayendo en el último recurso: "los dos
+            // atraen igual", que es lo contrario de lo que la sal enseña y de lo que
+            // preguntan los ítems 4 y 5.
+            //
+            // Quién recibe el electrón se deduce de quién atrae más, que es el dato que
+            // define el enlace iónico y que siempre viaja en cada átomo.
+            int hacia, desde;
+
+            if (ionico)
             {
-                kind = "share", fromAtom = desde, toAtom = hacia, durationMs = MS_DESPLAZAR,
-            };
+                bool finAtraeMas = Atraccion(atoms, b.endAtomId) >= Atraccion(atoms, b.beginAtomId);
+                hacia = finAtraeMas ? b.endAtomId : b.beginAtomId;
+                desde = finAtraeMas ? b.beginAtomId : b.endAtomId;
+            }
+            else
+            {
+                if (b.negativeEnd < 0) continue;   // no polar: el par se queda donde está
+                hacia = b.negativeEnd;
+                desde = (hacia == b.beginAtomId) ? b.endAtomId : b.beginAtomId;
+            }
 
-            if (b.kind == "ionic") { p.amount = 1f; ionicos.Add(p); }
-            else                   { p.amount = DESPLAZAMIENTO_POLAR; polares.Add(p); }
+            // IÓNICO: un electrón que SALE del que entrega y LLEGA al que recibe.
+            // No es un par que se desliza, porque en la sal nunca hubo par: deslizar
+            // uno contaría la historia del ítem 5 al revés. Es además lo que la matriz
+            // de especificaciones le promete al ítem 4, "la animación del electrón que
+            // pasa del sodio al cloro".
+            if (ionico)
+                ionicos.Add(new AnimationPrimitive
+                {
+                    kind = "transfer", fromAtom = desde, toAtom = hacia,
+                    durationMs = MS_DESPLAZAR,
+                });
+
+            // POLAR: el par sigue existiendo y solo se corre. La diferencia entre las
+            // dos primitivas ES la diferencia que la prueba mide.
+            else
+                polares.Add(new AnimationPrimitive
+                {
+                    kind = "share", fromAtom = desde, toAtom = hacia,
+                    amount = DESPLAZAMIENTO_POLAR, durationMs = MS_DESPLAZAR,
+                });
         }
 
         if (polares.Count > 0)
@@ -159,6 +209,11 @@ public static class GenericAnimation
             steps  = pasos.ToArray(),
         };
     }
+
+    /// <summary>Cuánto atrae un átomo. Es su electronegatividad tal cual; existe como
+    /// función para que el índice fuera de rango no tumbe la explicación entera.</summary>
+    static float Atraccion(IList<ExplanationContext.Atom> atoms, int i)
+        => (atoms != null && i >= 0 && i < atoms.Count) ? atoms[i].en : 0f;
 
     static JournalVec3 Vec(Vector3 v) => new JournalVec3 { x = v.x, y = v.y, z = v.z };
 }
