@@ -38,6 +38,11 @@ public static class ExplanationContext
     public static string     Name;
     public static string     Formula;          // en ASCII ("H2O"), como en todo el proyecto
     public static string     CanonicalSmiles;  // con esto se pide lo que falte al servidor
+
+    /// <summary>La descripción breve del catálogo ("La molécula de la vida…"), que pide la
+    /// HU0010. Vacía si la molécula no tiene ficha, y desde la pizarra: el estado de la
+    /// clase no la trae.</summary>
+    public static string     Description;
     public static List<Atom> Atoms = new List<Atom>();
     public static List<Bond> Bonds = new List<Bond>();
 
@@ -122,6 +127,7 @@ public static class ExplanationContext
         Name            = m.name ?? "";
         Formula         = m.molecularFormula ?? "";
         CanonicalSmiles = m.canonicalSmiles ?? "";
+        Description     = m.description ?? "";
 
         var st = m.structure;
         if (st?.atoms != null)
@@ -168,7 +174,7 @@ public static class ExplanationContext
 
     public static void Clear()
     {
-        Name = Formula = CanonicalSmiles = "";
+        Name = Formula = CanonicalSmiles = Description = "";
         Atoms.Clear();
         Bonds.Clear();
         Flat2D.Clear();

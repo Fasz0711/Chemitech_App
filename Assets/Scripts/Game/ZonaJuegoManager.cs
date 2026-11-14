@@ -119,6 +119,7 @@ public class ZonaJuegoManager : MonoBehaviour
 
         // Explicación de la molécula que se toque
         if (place != null) place.AtomTapped += OnAtomTapped;
+        if (bondManager != null) bondManager.DetectionFinished += OnDetectionFinished;
         if (btnExplicar)
         {
             btnExplicar.onClick.AddListener(OpenExplanation);
@@ -141,6 +142,7 @@ public class ZonaJuegoManager : MonoBehaviour
     void OnDestroy()
     {
         if (bondManager != null) bondManager.OnNewDiscovery -= ShowDiscovery;
+        if (bondManager != null) bondManager.DetectionFinished -= OnDetectionFinished;
         if (place != null) place.AtomTapped -= OnAtomTapped;
     }
 
@@ -149,12 +151,14 @@ public class ZonaJuegoManager : MonoBehaviour
     // Lo último que se tocó, si el servidor llegó a reconocerlo.
     BondManager.Detected tapped;
     bool hasTapped;
+    Atom3D lastTappedAtom;   // para recalcular el botón cuando termina una detección
 
     /// <summary>El botón aparece SOLO sobre una molécula completa. Una estructura a
     /// medias no tiene SMILES canónico —el servidor solo lo da cuando es válida— y sin él
     /// no hay nada que pedir: ofrecer el botón sería prometer una pantalla vacía.</summary>
     void OnAtomTapped(Atom3D atom)
     {
+        lastTappedAtom = atom;
         hasTapped = atom != null
                  && bondManager != null
                  && bondManager.TryGetDetected(atom.id, out tapped)
@@ -162,6 +166,11 @@ public class ZonaJuegoManager : MonoBehaviour
 
         RefreshExplainButton();
     }
+
+    /// <summary>Terminó una detección: lo que se tocó mientras el servidor pensaba ya puede
+    /// tener molécula. Pasa sobre todo al reabrir un universo, mientras se reidentifica en
+    /// silencio. Un átomo que se borró entretanto cuenta como null y apaga el botón.</summary>
+    void OnDetectionFinished() => OnAtomTapped(lastTappedAtom);
 
     void RefreshExplainButton()
     {
@@ -257,7 +266,10 @@ public class ZonaJuegoManager : MonoBehaviour
     void Update()
     {
         bool tutorialOpen = tutorial != null && tutorial.IsOpen;
-        if (!paused && !tutorialOpen) elapsed += Time.deltaTime;
+        // Con la explicación abierta el universo queda en pausa (HU0010): el panel tapa la
+        // pantalla entera y no deja tocar nada detrás, así que tampoco corre el tiempo.
+        bool explaining = explanationPanel && explanationPanel.activeSelf;
+        if (!paused && !tutorialOpen && !explaining) elapsed += Time.deltaTime;
         if (txtTimer) txtTimer.text = FormatTime(elapsed);
     }
 
@@ -316,7 +328,9 @@ public class ZonaJuegoManager : MonoBehaviour
     }
 
     // Restaura los enlaces guardados (índices → ids de los átomos recién creados)
-    // y los dibuja sin llamar al backend (no re-descubre la molécula).
+    // y los dibuja sin re-descubrir la molécula. Después averigua en silencio qué
+    // molécula es cada grupo: sin eso, en un universo reabierto tocar el agua no
+    // ofrecía "Ver explicación" (ver BondManager.ImportSavedBonds).
     void RestoreBonds()
     {
         if (bondManager == null) return;
@@ -330,7 +344,7 @@ public class ZonaJuegoManager : MonoBehaviour
             if (bs.a >= 0 && bs.a < ordered.Count && bs.b >= 0 && bs.b < ordered.Count)
                 bonds.Add((ordered[bs.a].id, ordered[bs.b].id, bs.order));
 
-        bondManager.ImportBonds(bonds);
+        bondManager.ImportSavedBonds(bonds);
     }
 
     // Suma al backend el tiempo jugado desde el último reporte (cuenta con sesión).

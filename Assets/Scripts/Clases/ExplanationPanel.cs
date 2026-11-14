@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using TMPro;
 
@@ -52,6 +53,25 @@ public class ExplanationPanel : MonoBehaviour
     {
         if (btnClose) btnClose.onClick.AddListener(Close);
 
+        // Tocar FUERA de la tarjeta también cierra (HU0010, escenario 2). El fondo oscuro
+        // cubre la pantalla detrás de la tarjeta, y la tarjeta tiene su propia imagen, así
+        // que lo que cae dentro se queda en ella: solo cierra lo que cae afuera. Se engancha
+        // por código porque ExplicacionPanelTool arma este panel en tres escenas (universo y
+        // las dos de clase), y así vale para todas sin tocarlas.
+        //
+        // Un TOQUE, no un arrastre: con un Button, arrastrar el dedo sobre el fondo —por
+        // ejemplo, intentando girar la cámara con el panel abierto— contaba como clic al
+        // soltar y cerraba el panel sin querer.
+        var fondo = transform.Find("Backdrop");
+        if (fondo && fondo.GetComponent<Graphic>())
+        {
+            var trigger = fondo.GetComponent<EventTrigger>();
+            if (!trigger) trigger = fondo.gameObject.AddComponent<EventTrigger>();
+            var toque = new EventTrigger.Entry { eventID = EventTriggerType.PointerClick };
+            toque.callback.AddListener(CerrarSiFueToque);
+            trigger.triggers.Add(toque);
+        }
+
         if (tglSymbols)           tglSymbols.onValueChanged.AddListener(_ => ApplyLayers());
         if (tglElectronegativity) tglElectronegativity.onValueChanged.AddListener(_ => ApplyLayers());
         if (tglBondTypes)         tglBondTypes.onValueChanged.AddListener(_ => ApplyLayers());
@@ -67,12 +87,20 @@ public class ExplanationPanel : MonoBehaviour
     {
         if (!ExplanationContext.Has) { Close(); return; }
 
-        if (nameLabel)
-            nameLabel.text = string.IsNullOrEmpty(ExplanationContext.Name)
-                ? "Estructura sin identificar"
-                : ExplanationContext.Name;
+        // Sin nombre de catálogo, el título es la FÓRMULA. El H2 es una molécula de verdad
+        // que solo no tiene ficha, y "Estructura sin identificar" se leía como un fallo de
+        // la app (HU0010, escenario 3). Ese texto queda para lo que no trae ni fórmula: un
+        // fragmento sin identificar publicado en la pizarra.
+        bool conNombre  = !string.IsNullOrEmpty(ExplanationContext.Name);
+        bool conFormula = !string.IsNullOrEmpty(ExplanationContext.Formula);
 
-        if (formulaLabel) formulaLabel.text = ExplanationContext.Formula ?? "";
+        if (nameLabel)
+            nameLabel.text = conNombre  ? ExplanationContext.Name
+                           : conFormula ? ExplanationContext.Formula
+                                        : "Estructura sin identificar";
+
+        // Si la fórmula ya es el título, no se repite debajo.
+        if (formulaLabel) formulaLabel.text = conNombre ? ExplanationContext.Formula ?? "" : "";
 
         if (viewer) viewer.Show(ExplanationContext.Atoms, ExplanationContext.Bonds);
 
@@ -86,7 +114,10 @@ public class ExplanationPanel : MonoBehaviour
         ApplyLayers();
         RefreshCard();
 
-        if (captionLabel) captionLabel.text = "";
+        // Antes de reproducir, el pie lleva la descripción breve de la ficha (HU0010,
+        // escenario 1); la animación lo usa después para sus frases. Sin ficha queda vacío:
+        // la ausencia de descripción no es un error que haya que anunciar.
+        if (captionLabel) captionLabel.text = ExplanationContext.Description ?? "";
 
         // La animación de CÓMO SE FORMA se deduce de la química de esta molécula, así que
         // está disponible para todas sin que nadie escriba un guion.
@@ -249,4 +280,16 @@ public class ExplanationPanel : MonoBehaviour
     }
 
     public void Close() => gameObject.SetActive(false);
+
+    /// <summary>Cierra solo si el dedo se levantó cerca de donde bajó: eso es un toque.
+    /// Más lejos que el umbral de arrastre del EventSystem, fue un arrastre.</summary>
+    void CerrarSiFueToque(BaseEventData datos)
+    {
+        if (datos is PointerEventData p)
+        {
+            float umbral = EventSystem.current ? EventSystem.current.pixelDragThreshold : 10f;
+            if ((p.pressPosition - p.position).sqrMagnitude > umbral * umbral) return;
+        }
+        Close();
+    }
 }

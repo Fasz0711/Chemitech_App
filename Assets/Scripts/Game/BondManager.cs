@@ -68,6 +68,12 @@ public class BondManager : MonoBehaviour
     /// "¡Nuevo descubrimiento!" en ZonaJuegoManager.</summary>
     public event System.Action<string, string> OnNewDiscovery;
 
+    /// <summary>Se dispara al terminar cada detección, cuando ya se sabe qué molécula es
+    /// cada grupo. Lo usa el universo para que "Ver explicación" aparezca aunque el jugador
+    /// haya tocado la molécula ANTES de que el servidor contestara: sin esto el botón solo
+    /// se recalculaba al volver a tocar.</summary>
+    public event System.Action DetectionFinished;
+
     // Dibuja los enlaces que devuelve el backend. Vive aparte para que la escena
     // de clase pueda pintar enlaces ya resueltos sin arrastrar la detección.
     BondRenderer bondRenderer;
@@ -93,6 +99,16 @@ public class BondManager : MonoBehaviour
     // Un descubrimiento nuevo ya suena con su propia fanfarria; sin esta marca el
     // batch encadenaría también el chime de "molécula formada" encima.
     bool newDiscoveryThisBatch;
+
+    // Universo REABIERTO: el guardado conserva los enlaces, pero no QUÉ molécula formaban.
+    // Sin ese dato detectedByAtom quedaba vacío, y tocar el agua de un universo reabierto
+    // no ofrecía "Ver explicación" (HU0010, CP010). Se le vuelve a preguntar al servidor
+    // UNA vez y en silencio —sin diario, sin banner, sin celebrar—, porque al reabrir no se
+    // forma ni se descubre nada. Vale mientras la estructura sea la que se cargó: si el
+    // jugador mueve algo antes de que el servidor conteste, lo que sigue es una detección
+    // normal. Con el servicio caído se mantiene, y el reintento sigue siendo silencioso.
+    bool identifyRestored;
+    bool batchSilent;   // el batch en curso es esa reidentificación
 
     // Estado de conexión con el servicio de IA
     bool  online = true;
@@ -153,7 +169,12 @@ public class BondManager : MonoBehaviour
         }
 
         string hash = StructureHash();
-        if (hash != lastHash) { lastHash = hash; lastChangeTime = Time.time; }
+        if (hash != lastHash)
+        {
+            lastHash = hash;
+            lastChangeTime = Time.time;
+            identifyRestored = false;   // el jugador cambió algo: ya no es lo que se cargó
+        }
 
         // Offline: reintenta el estado ACTUAL cada offlineRetryInterval para
         // auto-recuperarse cuando el servicio de IA vuelva (sin requerir interacción).
@@ -190,12 +211,15 @@ public class BondManager : MonoBehaviour
         anyResponse = false;
         detecting = true;
         newDiscoveryThisBatch = false;
+        batchSilent = identifyRestored;
         batchBonds.Clear();
         batchValidBonds.Clear();
         // La estructura cambió: lo que se reconoció antes ya no describe lo que hay.
         detectedByAtom.Clear();
-        ShowBanner("Detectando interacción atómica…", C_DETECT);
-        Debug.Log($"[Detect] {candidates.Count} candidato(s) · userId='{SessionData.UserId}'");
+        // Reidentificar lo que se cargó no es una detección que el jugador haya pedido.
+        if (!batchSilent) ShowBanner("Detectando interacción atómica…", C_DETECT);
+        Debug.Log($"[Detect] {candidates.Count} candidato(s) · userId='{SessionData.UserId}'"
+                + (batchSilent ? " · reidentificando un universo reabierto" : ""));
 
         foreach (var cluster in candidates)
         {
@@ -211,7 +235,7 @@ public class BondManager : MonoBehaviour
 
             var capturedMap = map;
             ApiManager.Instance.DetectMolecule(SessionData.UserId, atomsDTO, new ApiManager.BondDTO[0],
-                record: RecordDiscoveries,
+                record: RecordDiscoveries && !batchSilent,
                 onSuccess: resp => OnClusterResult(batch, resp, capturedMap, false),
                 onError:   (code, detail) =>
                 {
@@ -263,8 +287,10 @@ public class BondManager : MonoBehaviour
             };
             foreach (var atom in map) if (atom) detectedByAtom[atom.id] = found;
 
-            // Primera vez que se descubre esta molécula → avisar para el modal.
-            if (m.isNewDiscovery)
+            // Primera vez que se descubre esta molécula → avisar para el modal. Nunca al
+            // reidentificar: va con record=false y el servidor ya contesta false, pero el
+            // modal no puede depender de eso.
+            if (m.isNewDiscovery && !batchSilent)
             {
                 newDiscoveryThisBatch = true;
                 AudioManager.Instance.PlayDiscovery();
@@ -285,6 +311,7 @@ public class BondManager : MonoBehaviour
         if (pendingRequests <= 0)
         {
             detecting = false;
+            DetectionFinished?.Invoke();   // detectedByAtom ya está completo
 
             // Batch entero sin respuesta (servicio caído): no sabemos nada nuevo, así que
             // no se toca la firma. Resetearla haría que al volver el servicio se celebrara
@@ -295,6 +322,17 @@ public class BondManager : MonoBehaviour
             // una que ya existía (al colocar un átomo aparte, o tras recargar el universo)
             // no vuelve a mostrar el banner, y los pasos intermedios tampoco lo disparan.
             string validSig = BondsSignature(batchValidBonds);
+
+            // Reidentificación de un universo reabierto: ya se sabe qué es cada grupo, que
+            // era lo único que se buscaba. No hay nada que celebrar.
+            if (batchSilent)
+            {
+                identifyRestored = false;
+                prevBondsSig = validSig;
+                HideBanner();
+                return;
+            }
+
             if (anyValid && validSig != prevBondsSig) ShowMoleculeFormed();
             else                                      HideBanner();
             prevBondsSig = validSig;
@@ -348,6 +386,24 @@ public class BondManager : MonoBehaviour
         string h = StructureHash();
         lastHash = h;
         sentHash = h;   // hash == sentHash → DetectionStep no vuelve a detectar
+    }
+
+    /// <summary>
+    /// Como ImportBonds, para un universo que se REABRE: además de dibujar lo guardado sin
+    /// re-descubrirlo, averigua en silencio qué molécula es cada grupo (ver
+    /// identifyRestored), para que tocarla ofrezca "Ver explicación".
+    ///
+    /// No va dentro de ImportBonds porque la pizarra del docente también lo usa, con enlaces
+    /// que el servidor acaba de resolver: ahí volver a detectar sería una petición de más
+    /// tras cada comando, y la pizarra no necesita este registro para explicar.
+    /// </summary>
+    public void ImportSavedBonds(List<(int a, int b, int order)> bonds)
+    {
+        ImportBonds(bonds);
+        if (bonds == null || bonds.Count == 0) return;
+
+        identifyRestored = true;
+        sentHash = "";   // DetectionStep vuelve a mandar ESTA estructura, ya en silencio
     }
 
     // ── Hash de estructura (solo átomos: los enlaces los da el backend) ────────

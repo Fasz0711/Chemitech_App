@@ -412,15 +412,15 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
     }
 
     /// <summary>Un toque que resolvió a un átomo, o null si cayó en el vacío. Se avisa
-    /// SIEMPRE, también mientras se conduce la clase: ahí no se puede mover nada, pero
-    /// tocar una molécula tiene que poder abrir su explicación.</summary>
+    /// SIEMPRE: mientras se conduce la clase, y también con un átomo en la mano listo para
+    /// colocar. En esos dos casos no se selecciona nada, pero tocar una molécula tiene que
+    /// poder abrir su explicación (HU0010).</summary>
     public event System.Action<Atom3D> AtomTapped;
 
     void HandleTap(Vector3 screenPos)
     {
-        // Ni colocando ni moviendo se cambia de átomo: el toque es para soltar, no para
-        // saltar a otro y dejarse el anterior a medio mover.
-        if (!cam || previewGhost != null || editing) return;
+        // Moviendo un átomo, el toque es para soltarlo: no se pregunta por nada más.
+        if (!cam || editing) return;
 
         Atom3D atom = null;
         if (Physics.Raycast(cam.ScreenPointToRay(screenPos), out RaycastHit hit, 500f))
@@ -432,7 +432,13 @@ public class AtomPlacementController : MonoBehaviour, ClassSceneRenderer.IAtomSi
 
         AtomTapped?.Invoke(atom);
 
-        if (!Interactive) return;   // conduciendo: se avisa, pero no se selecciona
+        // Conduciendo, o con la previsualización en la mano: se avisa, pero la selección no
+        // cambia. Colocando, el toque sigue sin saltar de átomo —la previsualización y el
+        // botón de colocar son suyos—; lo que ya no hace es descartarse entero. Como la
+        // previsualización se queda puesta después de colocar (para poner varios), recién
+        // terminada una molécula tocarla no hacía nada y "Ver explicación" nunca aparecía:
+        // por eso se reprobó el CP010 en el primer ciclo de QA.
+        if (!Interactive || previewGhost != null) return;
         if (atom) Select(atom);
         else      Deselect();
     }
